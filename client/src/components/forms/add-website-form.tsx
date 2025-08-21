@@ -76,7 +76,7 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
         <DialogTitle>Add New Website</DialogTitle>
       </DialogHeader>
       
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-h-[70vh] overflow-y-auto px-1">
         <div>
           <Label htmlFor="name">Website Name</Label>
           <Input
@@ -103,14 +103,14 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
         </div>
         
         {/* WordPress Application Password Instructions */}
-        <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-          <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">🔒 Secure WordPress Authentication</h4>
-          <p className="text-sm text-blue-800 dark:text-blue-200 mb-2">
+        <div className="bg-blue-50 dark:bg-blue-950 p-3 sm:p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+          <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-2 text-sm sm:text-base">🔒 Secure WordPress Authentication</h4>
+          <p className="text-xs sm:text-sm text-blue-800 dark:text-blue-200 mb-2">
             We use WordPress Application Passwords for secure, revokable access without storing your main password.
           </p>
-          <details className="text-sm text-blue-700 dark:text-blue-300">
+          <details className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">
             <summary className="cursor-pointer font-medium mb-2">How to create an Application Password →</summary>
-            <ol className="list-decimal list-inside space-y-1 ml-2">
+            <ol className="list-decimal list-inside space-y-1 ml-2 text-xs sm:text-sm">
               <li>Log into your WordPress admin dashboard</li>
               <li>Go to Users → Your Profile</li>
               <li>Scroll to "Application Passwords" section</li>
@@ -231,18 +231,18 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
           </div>
         </div>
         
-        <div className="flex space-x-3 pt-4">
+        <div className="flex flex-col-reverse sm:flex-row space-y-2 space-y-reverse sm:space-y-0 sm:space-x-3 pt-4">
           <Button
             type="button"
             variant="outline"
-            className="flex-1"
+            className="w-full sm:flex-1"
             onClick={onSuccess}
           >
             Cancel
           </Button>
           <Button
             type="submit"
-            className="flex-1 bg-primary-500 hover:bg-primary-600"
+            className="w-full sm:flex-1 bg-primary-500 hover:bg-primary-600"
             disabled={createWebsite.isPending}
           >
             {createWebsite.isPending ? "Connecting..." : "Connect Website"}

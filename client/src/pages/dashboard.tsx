@@ -18,20 +18,20 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="py-6">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
+    <div className="py-4 sm:py-6">
+      <div className="max-w-7xl mx-auto">
         {/* Page Header */}
-        <div className="md:flex md:items-center md:justify-between mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8">
           <div className="flex-1 min-w-0">
-            <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
+            <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold leading-7 text-gray-900 truncate">
               Dashboard Overview
             </h2>
             <p className="mt-1 text-sm text-gray-500">
               Monitor your WordPress sites and AI-powered SEO optimization
             </p>
           </div>
-          <div className="mt-4 flex md:mt-0 md:ml-4">
-            <Button variant="outline" className="inline-flex items-center">
+          <div className="mt-4 sm:mt-0 sm:ml-4">
+            <Button variant="outline" className="inline-flex items-center w-full sm:w-auto justify-center">
               <Download className="w-4 h-4 mr-2" />
               Export Report
             </Button>
@@ -39,7 +39,7 @@ export default function Dashboard() {
         </div>
 
         {/* Stats Overview */}
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+        <div className="grid grid-cols-1 gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-6 sm:mb-8">
           <StatsCard
             title="Active Websites"
             value={statsLoading ? "..." : stats?.activeWebsites || 0}

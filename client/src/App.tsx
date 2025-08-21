@@ -12,7 +12,7 @@ import ContentSchedule from "@/pages/content-schedule";
 import Reports from "@/pages/reports";
 import ActivityLogs from "@/pages/activity-logs";
 import Settings from "@/pages/settings";
-import Sidebar from "@/components/layout/sidebar";
+import Sidebar, { MobileSidebarProvider } from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 
 function Router() {
@@ -35,16 +35,20 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <div className="flex h-screen overflow-hidden bg-gray-50">
-          <Sidebar />
-          <div className="flex flex-col w-0 flex-1 overflow-hidden">
-            <Header />
-            <main className="flex-1 relative overflow-y-auto focus:outline-none">
-              <Router />
-            </main>
+        <MobileSidebarProvider>
+          <div className="flex h-screen overflow-hidden bg-gray-50">
+            <Sidebar />
+            <div className="flex flex-col w-0 flex-1 overflow-hidden">
+              <Header />
+              <main className="flex-1 relative overflow-y-auto focus:outline-none px-4 sm:px-6 lg:px-8">
+                <div className="py-4 sm:py-6">
+                  <Router />
+                </div>
+              </main>
+            </div>
           </div>
-        </div>
-        <Toaster />
+          <Toaster />
+        </MobileSidebarProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

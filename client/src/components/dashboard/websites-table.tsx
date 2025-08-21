@@ -107,12 +107,12 @@ export default function WebsitesTable() {
 
   return (
     <div className="bg-white shadow-sm rounded-lg">
-      <div className="px-6 py-5 border-b border-gray-200">
-        <div className="flex items-center justify-between">
+      <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-gray-200">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <h3 className="text-lg font-medium text-gray-900">Managed Websites</h3>
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:space-x-2">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-32">
+              <SelectTrigger className="w-full sm:w-32">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -125,12 +125,12 @@ export default function WebsitesTable() {
             
             <Dialog open={isAddWebsiteOpen} onOpenChange={setIsAddWebsiteOpen}>
               <DialogTrigger asChild>
-                <Button className="bg-primary-500 hover:bg-primary-600 text-white">
+                <Button className="bg-primary-500 hover:bg-primary-600 text-white w-full sm:w-auto">
                   <Plus className="w-4 h-4 mr-1" />
                   Add Website
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
+              <DialogContent className="sm:max-w-md mx-4 sm:mx-auto">
                 <AddWebsiteForm onSuccess={() => setIsAddWebsiteOpen(false)} />
               </DialogContent>
             </Dialog>
@@ -169,14 +169,14 @@ export default function WebsitesTable() {
               
               return (
                 <tr key={website.id}>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
-                      <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center">
-                        <Icon className="w-5 h-5 text-gray-500" />
+                      <div className="w-8 sm:w-10 h-8 sm:h-10 bg-gray-200 rounded-lg flex items-center justify-center">
+                        <Icon className="w-4 sm:w-5 h-4 sm:h-5 text-gray-500" />
                       </div>
-                      <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900">{website.name}</div>
-                        <div className="text-sm text-gray-500">{website.url}</div>
+                      <div className="ml-2 sm:ml-4 min-w-0">
+                        <div className="text-xs sm:text-sm font-medium text-gray-900 truncate">{website.name}</div>
+                        <div className="text-xs sm:text-sm text-gray-500 truncate">{website.url}</div>
                       </div>
                     </div>
                   </td>
@@ -200,16 +200,16 @@ export default function WebsitesTable() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {formatDistanceToNow(new Date(website.updatedAt), { addSuffix: true })}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-2">
-                      <button className="text-primary-600 hover:text-primary-500">
+                  <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex space-x-1 sm:space-x-2">
+                      <button className="text-primary-600 hover:text-primary-500 p-1">
                         <Eye className="w-4 h-4" />
                       </button>
-                      <button className="text-gray-600 hover:text-gray-500">
+                      <button className="text-gray-600 hover:text-gray-500 p-1">
                         <Edit className="w-4 h-4" />
                       </button>
                       <button 
-                        className="text-red-600 hover:text-red-500"
+                        className="text-red-600 hover:text-red-500 p-1"
                         onClick={() => deleteWebsite.mutate(website.id)}
                         disabled={deleteWebsite.isPending}
                       >
