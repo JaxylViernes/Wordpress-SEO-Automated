@@ -1,5 +1,18 @@
 import { 
+  users,
+  websites,
+  content,
+  seoReports,
+  activityLogs,
+  clientReports,
+  contentApprovals,
+  securityAudits,
+  aiUsageTracking,
+  seoAudits,
+  contentSchedule,
+  backups,
   type User, 
+  type UpsertUser,
   type InsertUser, 
   type Website, 
   type InsertWebsite,
@@ -10,14 +23,29 @@ import {
   type ActivityLog,
   type InsertActivityLog,
   type ClientReport,
-  type InsertClientReport
+  type InsertClientReport,
+  type ContentApproval,
+  type InsertContentApproval,
+  type SecurityAudit,
+  type InsertSecurityAudit,
+  type AiUsageTracking,
+  type InsertAiUsageTracking,
+  type SeoAudit,
+  type InsertSeoAudit,
+  type ContentSchedule,
+  type InsertContentSchedule,
+  type Backup,
+  type InsertBackup
 } from "@shared/schema";
-import { randomUUID } from "crypto";
+import { db } from "./db";
+import { eq, desc, and } from "drizzle-orm";
+import { wordPressAuthService } from "./services/wordpress-auth";
 
 export interface IStorage {
-  // Users
+  // Users (Required for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  upsertUser(user: UpsertUser): Promise<User>;
   createUser(user: InsertUser): Promise<User>;
 
   // Websites
@@ -32,6 +60,7 @@ export interface IStorage {
   getContent(id: string): Promise<Content | undefined>;
   createContent(content: InsertContent): Promise<Content>;
   updateContent(id: string, content: Partial<Content>): Promise<Content | undefined>;
+  getPendingApprovalContent(): Promise<Content[]>;
 
   // SEO Reports
   getSeoReportsByWebsite(websiteId: string): Promise<SeoReport[]>;
@@ -45,280 +74,367 @@ export interface IStorage {
   // Client Reports
   getClientReports(websiteId: string): Promise<ClientReport[]>;
   createClientReport(report: InsertClientReport): Promise<ClientReport>;
+
+  // Enhanced features
+  createContentApproval(approval: InsertContentApproval): Promise<ContentApproval>;
+  createSecurityAudit(audit: InsertSecurityAudit): Promise<SecurityAudit>;
+  trackAiUsage(usage: InsertAiUsageTracking): Promise<AiUsageTracking>;
+  createSeoAudit(audit: InsertSeoAudit): Promise<SeoAudit>;
+  getContentSchedule(websiteId: string): Promise<ContentSchedule[]>;
+  createContentSchedule(schedule: InsertContentSchedule): Promise<ContentSchedule>;
+  createBackup(backup: InsertBackup): Promise<Backup>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private websites: Map<string, Website>;
-  private content: Map<string, Content>;
-  private seoReports: Map<string, SeoReport>;
-  private activityLogs: Map<string, ActivityLog>;
-  private clientReports: Map<string, ClientReport>;
-
+export class DatabaseStorage implements IStorage {
   constructor() {
-    this.users = new Map();
-    this.websites = new Map();
-    this.content = new Map();
-    this.seoReports = new Map();
-    this.activityLogs = new Map();
-    this.clientReports = new Map();
-    
+    // Initialize with sample data if needed
     this.initializeSampleData();
   }
 
-  private initializeSampleData() {
-    // Sample websites
-    const website1: Website = {
-      id: "1",
-      name: "TechBlog.com",
-      url: "https://techblog.com",
-      wpUsername: "admin",
-      wpPassword: "password123",
-      aiModel: "gpt-4o",
-      autoPosting: true,
-      status: "active",
-      seoScore: 92,
-      contentCount: 24,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+  private async initializeSampleData() {
+    try {
+      // Check if sample data already exists
+      const existingWebsites = await db.select().from(websites).limit(1);
+      if (existingWebsites.length > 0) return;
 
-    const website2: Website = {
-      id: "2",
-      name: "E-Commerce.store",
-      url: "https://e-commerce.store",
-      wpUsername: "admin",
-      wpPassword: "password123",
-      aiModel: "gpt-4o",
-      autoPosting: true,
-      status: "processing",
-      seoScore: 78,
-      contentCount: 18,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+      // Create sample websites with secure Application Password format
+      const sampleWebsites = [
+        {
+          name: "TechBlog.com",
+          url: "https://techblog.com",
+          wpApplicationName: "AI Content Manager - TechBlog",
+          wpApplicationPassword: "demo-encrypted-app-password-1", // Would be encrypted in real use
+          wpUsername: "admin",
+          aiModel: "gpt-4o",
+          autoPosting: false, // Default to manual approval
+          requireApproval: true,
+          status: "active",
+          seoScore: 92,
+          contentCount: 24,
+          brandVoice: "technical",
+          targetAudience: "developers",
+        },
+        {
+          name: "E-Commerce.store",
+          url: "https://e-commerce.store",
+          wpApplicationName: "AI Content Manager - ECommerce",
+          wpApplicationPassword: "demo-encrypted-app-password-2",
+          wpUsername: "admin",
+          aiModel: "gpt-4o",
+          autoPosting: false,
+          requireApproval: true,
+          status: "processing",
+          seoScore: 78,
+          contentCount: 18,
+          brandVoice: "friendly",
+          targetAudience: "online shoppers",
+        },
+        {
+          name: "RestaurantSite.com",
+          url: "https://restaurantsite.com",
+          wpApplicationName: "AI Content Manager - Restaurant",
+          wpApplicationPassword: "demo-encrypted-app-password-3",
+          wpUsername: "admin",
+          aiModel: "claude-3",
+          autoPosting: false,
+          requireApproval: true,
+          status: "issues",
+          seoScore: 65,
+          contentCount: 12,
+          brandVoice: "warm",
+          targetAudience: "local diners",
+        },
+      ];
 
-    const website3: Website = {
-      id: "3",
-      name: "RestaurantSite.com",
-      url: "https://restaurantsite.com",
-      wpUsername: "admin",
-      wpPassword: "password123",
-      aiModel: "claude-3",
-      autoPosting: true,
-      status: "issues",
-      seoScore: 65,
-      contentCount: 12,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+      await db.insert(websites).values(sampleWebsites);
 
-    this.websites.set("1", website1);
-    this.websites.set("2", website2);
-    this.websites.set("3", website3);
+      // Sample activity logs
+      const sampleActivities = [
+        {
+          websiteId: null, // System-wide activity
+          type: "system_init",
+          description: "WordPress AI automation platform initialized",
+          metadata: { version: "2.0", secure: true },
+        },
+        {
+          websiteId: null,
+          type: "security_upgrade",
+          description: "Upgraded to WordPress Application Passwords authentication",
+          metadata: { previousAuth: "username/password", newAuth: "application_passwords" },
+        },
+      ];
 
-    // Sample activity logs
-    const activities = [
-      {
-        id: "1",
-        websiteId: "1",
-        type: "content_published",
-        description: 'Content published: "10 SEO Tips for 2024"',
-        metadata: { contentId: "1", title: "10 SEO Tips for 2024" },
-        createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
-      },
-      {
-        id: "2",
-        websiteId: "2",
-        type: "seo_analysis",
-        description: "SEO analysis completed",
-        metadata: { score: 78, previousScore: 76 },
-        createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000), // 4 hours ago
-      },
-      {
-        id: "3",
-        websiteId: "3",
-        type: "content_scheduled",
-        description: "Content scheduled for tomorrow",
-        metadata: { title: "Local SEO for Restaurants", publishDate: new Date(Date.now() + 24 * 60 * 60 * 1000) },
-        createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000), // 6 hours ago
-      },
-      {
-        id: "4",
-        websiteId: "3",
-        type: "seo_issue",
-        description: "SEO issue detected",
-        metadata: { issue: "Missing meta descriptions", severity: "high" },
-        createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000), // 8 hours ago
-      },
-    ];
-
-    activities.forEach(activity => {
-      this.activityLogs.set(activity.id, activity as ActivityLog);
-    });
+      await db.insert(activityLogs).values(sampleActivities);
+    } catch (error) {
+      console.error('Failed to initialize sample data:', error);
+    }
   }
 
-  // Users
+  // Users (Required for Replit Auth)
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: userData,
+      })
+      .returning();
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
     return user;
   }
 
   // Websites
   async getWebsites(): Promise<Website[]> {
-    return Array.from(this.websites.values()).sort((a, b) => 
-      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    );
+    return await db
+      .select()
+      .from(websites)
+      .orderBy(desc(websites.updatedAt));
   }
 
   async getWebsite(id: string): Promise<Website | undefined> {
-    return this.websites.get(id);
+    const [website] = await db.select().from(websites).where(eq(websites.id, id));
+    return website;
   }
 
   async createWebsite(insertWebsite: InsertWebsite): Promise<Website> {
-    const id = randomUUID();
-    const website: Website = {
-      ...insertWebsite,
-      id,
-      status: "active",
-      seoScore: 0,
-      contentCount: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    this.websites.set(id, website);
+    // Encrypt the application password before storing
+    const encryptedPassword = wordPressAuthService.encryptCredentials({
+      applicationName: insertWebsite.wpApplicationName,
+      applicationPassword: insertWebsite.wpApplicationPassword,
+      username: insertWebsite.wpUsername || 'admin'
+    });
+
+    const [website] = await db
+      .insert(websites)
+      .values({
+        ...insertWebsite,
+        wpApplicationPassword: encryptedPassword.encrypted,
+        status: "active",
+        seoScore: 0,
+        contentCount: 0,
+      })
+      .returning();
     
     // Log activity
     await this.createActivityLog({
-      websiteId: id,
+      websiteId: website.id,
       type: "website_connected",
       description: `Website connected: ${website.name}`,
-      metadata: { url: website.url },
+      metadata: { url: website.url, secure: true },
+    });
+
+    // Create security audit log
+    await this.createSecurityAudit({
+      websiteId: website.id,
+      action: "website_connection",
+      success: true,
+      metadata: { 
+        authType: "application_password", 
+        applicationName: insertWebsite.wpApplicationName 
+      },
     });
 
     return website;
   }
 
   async updateWebsite(id: string, updates: Partial<Website>): Promise<Website | undefined> {
-    const website = this.websites.get(id);
-    if (!website) return undefined;
-
-    const updated = { ...website, ...updates, updatedAt: new Date() };
-    this.websites.set(id, updated);
-    return updated;
+    const [website] = await db
+      .update(websites)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(websites.id, id))
+      .returning();
+    return website;
   }
 
   async deleteWebsite(id: string): Promise<boolean> {
-    return this.websites.delete(id);
+    const result = await db.delete(websites).where(eq(websites.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 
   // Content
   async getContentByWebsite(websiteId: string): Promise<Content[]> {
-    return Array.from(this.content.values())
-      .filter(c => c.websiteId === websiteId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return await db
+      .select()
+      .from(content)
+      .where(eq(content.websiteId, websiteId))
+      .orderBy(desc(content.createdAt));
   }
 
   async getContent(id: string): Promise<Content | undefined> {
-    return this.content.get(id);
+    const [contentItem] = await db.select().from(content).where(eq(content.id, id));
+    return contentItem;
+  }
+
+  async getPendingApprovalContent(): Promise<Content[]> {
+    return await db
+      .select()
+      .from(content)
+      .where(eq(content.status, "pending_approval"))
+      .orderBy(desc(content.createdAt));
   }
 
   async createContent(insertContent: InsertContent): Promise<Content> {
-    const id = randomUUID();
-    const content: Content = {
-      ...insertContent,
-      id,
-      status: "draft",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    this.content.set(id, content);
-    return content;
+    const [contentItem] = await db
+      .insert(content)
+      .values({
+        ...insertContent,
+        status: "pending_approval", // Default to requiring approval
+      })
+      .returning();
+    return contentItem;
   }
 
   async updateContent(id: string, updates: Partial<Content>): Promise<Content | undefined> {
-    const content = this.content.get(id);
-    if (!content) return undefined;
-
-    const updated = { ...content, ...updates, updatedAt: new Date() };
-    this.content.set(id, updated);
-    return updated;
+    const [contentItem] = await db
+      .update(content)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(content.id, id))
+      .returning();
+    return contentItem;
   }
 
   // SEO Reports
   async getSeoReportsByWebsite(websiteId: string): Promise<SeoReport[]> {
-    return Array.from(this.seoReports.values())
-      .filter(r => r.websiteId === websiteId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return await db
+      .select()
+      .from(seoReports)
+      .where(eq(seoReports.websiteId, websiteId))
+      .orderBy(desc(seoReports.createdAt));
   }
 
   async getLatestSeoReport(websiteId: string): Promise<SeoReport | undefined> {
-    const reports = await this.getSeoReportsByWebsite(websiteId);
-    return reports[0];
+    const [report] = await db
+      .select()
+      .from(seoReports)
+      .where(eq(seoReports.websiteId, websiteId))
+      .orderBy(desc(seoReports.createdAt))
+      .limit(1);
+    return report;
   }
 
   async createSeoReport(insertReport: InsertSeoReport): Promise<SeoReport> {
-    const id = randomUUID();
-    const report: SeoReport = {
-      ...insertReport,
-      id,
-      createdAt: new Date(),
-    };
-    this.seoReports.set(id, report);
+    const [report] = await db
+      .insert(seoReports)
+      .values(insertReport)
+      .returning();
     return report;
   }
 
   // Activity Logs
   async getActivityLogs(websiteId?: string): Promise<ActivityLog[]> {
-    let logs = Array.from(this.activityLogs.values());
-    
     if (websiteId) {
-      logs = logs.filter(log => log.websiteId === websiteId);
+      return await db
+        .select()
+        .from(activityLogs)
+        .where(eq(activityLogs.websiteId, websiteId))
+        .orderBy(desc(activityLogs.createdAt));
     }
     
-    return logs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return await db
+      .select()
+      .from(activityLogs)
+      .orderBy(desc(activityLogs.createdAt));
   }
 
   async createActivityLog(insertLog: InsertActivityLog): Promise<ActivityLog> {
-    const id = randomUUID();
-    const log: ActivityLog = {
-      ...insertLog,
-      id,
-      createdAt: new Date(),
-    };
-    this.activityLogs.set(id, log);
+    const [log] = await db
+      .insert(activityLogs)
+      .values(insertLog)
+      .returning();
     return log;
   }
 
   // Client Reports
   async getClientReports(websiteId: string): Promise<ClientReport[]> {
-    return Array.from(this.clientReports.values())
-      .filter(r => r.websiteId === websiteId)
-      .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime());
+    return await db
+      .select()
+      .from(clientReports)
+      .where(eq(clientReports.websiteId, websiteId))
+      .orderBy(desc(clientReports.generatedAt));
   }
 
   async createClientReport(insertReport: InsertClientReport): Promise<ClientReport> {
-    const id = randomUUID();
-    const report: ClientReport = {
-      ...insertReport,
-      id,
-      generatedAt: new Date(),
-    };
-    this.clientReports.set(id, report);
+    const [report] = await db
+      .insert(clientReports)
+      .values(insertReport)
+      .returning();
     return report;
+  }
+
+  // Enhanced Security and Management Features
+  async createContentApproval(approval: InsertContentApproval): Promise<ContentApproval> {
+    const [approvalRecord] = await db
+      .insert(contentApprovals)
+      .values(approval)
+      .returning();
+    return approvalRecord;
+  }
+
+  async createSecurityAudit(audit: InsertSecurityAudit): Promise<SecurityAudit> {
+    const [auditRecord] = await db
+      .insert(securityAudits)
+      .values(audit)
+      .returning();
+    return auditRecord;
+  }
+
+  async trackAiUsage(usage: InsertAiUsageTracking): Promise<AiUsageTracking> {
+    const [usageRecord] = await db
+      .insert(aiUsageTracking)
+      .values(usage)
+      .returning();
+    return usageRecord;
+  }
+
+  async createSeoAudit(audit: InsertSeoAudit): Promise<SeoAudit> {
+    const [auditRecord] = await db
+      .insert(seoAudits)
+      .values(audit)
+      .returning();
+    return auditRecord;
+  }
+
+  async getContentSchedule(websiteId: string): Promise<ContentSchedule[]> {
+    return await db
+      .select()
+      .from(contentSchedule)
+      .where(eq(contentSchedule.websiteId, websiteId))
+      .orderBy(desc(contentSchedule.scheduledDate));
+  }
+
+  async createContentSchedule(schedule: InsertContentSchedule): Promise<ContentSchedule> {
+    const [scheduleRecord] = await db
+      .insert(contentSchedule)
+      .values(schedule)
+      .returning();
+    return scheduleRecord;
+  }
+
+  async createBackup(backup: InsertBackup): Promise<Backup> {
+    const [backupRecord] = await db
+      .insert(backups)
+      .values(backup)
+      .returning();
+    return backupRecord;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

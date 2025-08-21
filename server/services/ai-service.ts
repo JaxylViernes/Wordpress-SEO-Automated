@@ -1,24 +1,53 @@
 import OpenAI from "openai";
+import { storage } from "../storage";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 const openai = new OpenAI({ 
   apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || "sk-default-key" 
 });
 
+// OpenAI pricing per 1K tokens (as of 2024)
+const PRICING = {
+  "gpt-4o": {
+    input: 0.005,  // $0.005 per 1K input tokens
+    output: 0.015  // $0.015 per 1K output tokens
+  },
+  "gpt-4": {
+    input: 0.03,
+    output: 0.06
+  }
+};
+
 export interface ContentGenerationRequest {
+  websiteId: string;
   topic: string;
   keywords: string[];
-  tone: "professional" | "casual" | "friendly" | "authoritative";
+  tone: "professional" | "casual" | "friendly" | "authoritative" | "technical" | "warm";
   wordCount: number;
   seoOptimized: boolean;
+  brandVoice?: string;
+  targetAudience?: string;
+  eatCompliance?: boolean; // E-E-A-T compliance for YMYL content
 }
 
 export interface ContentGenerationResult {
   title: string;
   content: string;
+  excerpt: string;
   metaDescription: string;
+  metaTitle: string;
   keywords: string[];
   seoScore: number;
+  readabilityScore: number;
+  brandVoiceScore: number;
+  eatCompliance: boolean;
+  tokensUsed: number;
+  costUsd: number;
+  qualityChecks: {
+    plagiarismRisk: "low" | "medium" | "high";
+    factualAccuracy: "verified" | "needs_review" | "questionable";
+    brandAlignment: "excellent" | "good" | "needs_improvement";
+  };
 }
 
 export class AIService {

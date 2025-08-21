@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { aiService } from "./services/ai-service";
 import { seoService } from "./services/seo-service";
+import { approvalWorkflowService } from "./services/approval-workflow";
 import { insertWebsiteSchema, insertContentSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -74,38 +75,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/content/generate", async (req, res) => {
     try {
-      const { websiteId, topic, keywords, tone, wordCount } = req.body;
+      const { websiteId, topic, keywords, tone, wordCount, brandVoice, targetAudience, eatCompliance } = req.body;
       
       if (!websiteId || !topic) {
         return res.status(400).json({ message: "Website ID and topic are required" });
       }
 
       const result = await aiService.generateContent({
+        websiteId,
         topic,
         keywords: keywords || [],
         tone: tone || "professional",
         wordCount: wordCount || 800,
-        seoOptimized: true
+        seoOptimized: true,
+        brandVoice: brandVoice || "professional",
+        targetAudience,
+        eatCompliance: eatCompliance || false
       });
 
-      // Save the generated content
+      // Save the generated content (defaults to pending_approval)
       const content = await storage.createContent({
         websiteId,
         title: result.title,
         body: result.content,
+        excerpt: result.excerpt,
+        metaDescription: result.metaDescription,
+        metaTitle: result.metaTitle,
         aiModel: "gpt-4o",
         seoKeywords: result.keywords,
+        seoScore: result.seoScore,
+        readabilityScore: result.readabilityScore,
+        brandVoiceScore: result.brandVoiceScore,
+        eatCompliance: result.eatCompliance,
       });
 
       // Log the activity
       await storage.createActivityLog({
         websiteId,
         type: "content_generated",
-        description: `AI content generated: "${result.title}"`,
-        metadata: { contentId: content.id, aiModel: "gpt-4o" }
+        description: `AI content generated: "${result.title}" (${result.tokensUsed} tokens, $${result.costUsd})`,
+        metadata: { 
+          contentId: content.id, 
+          aiModel: "gpt-4o",
+          tokensUsed: result.tokensUsed,
+          costUsd: result.costUsd,
+          qualityChecks: result.qualityChecks
+        }
       });
 
-      res.json({ content, seoData: result });
+      res.json({ content, aiResult: result });
     } catch (error) {
       console.error("Content generation error:", error);
       res.status(500).json({ message: error instanceof Error ? error.message : "Failed to generate content" });
@@ -258,6 +276,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(data);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch performance data" });
+    }
+  });
+
+  // Content Approval Workflow Routes
+  app.get("/api/content/pending-approval", async (req, res) => {
+    try {
+      const pendingContent = await approvalWorkflowService.getPendingApprovals();
+      res.json(pendingContent);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch pending approvals" });
+    }
+  });
+
+  app.post("/api/content/:id/submit-for-approval", async (req, res) => {
+    try {
+      const result = await approvalWorkflowService.submitForApproval(req.params.id);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to submit for approval" });
+    }
+  });
+
+  app.post("/api/content/:id/approve", async (req, res) => {
+    try {
+      const { reviewerId, feedback, qualityScore } = req.body;
+      
+      if (!reviewerId) {
+        return res.status(400).json({ message: "Reviewer ID is required" });
+      }
+
+      const result = await approvalWorkflowService.processApproval({
+        contentId: req.params.id,
+        reviewerId,
+        decision: "approved",
+        feedback,
+        qualityScore
+      });
+
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to approve content" });
+    }
+  });
+
+  app.post("/api/content/:id/reject", async (req, res) => {
+    try {
+      const { reviewerId, feedback, qualityScore } = req.body;
+      
+      if (!reviewerId) {
+        return res.status(400).json({ message: "Reviewer ID is required" });
+      }
+
+      const result = await approvalWorkflowService.processApproval({
+        contentId: req.params.id,
+        reviewerId,
+        decision: "rejected",
+        feedback,
+        qualityScore
+      });
+
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to reject content" });
+    }
+  });
+
+  app.post("/api/content/:id/publish", async (req, res) => {
+    try {
+      const { publishNow, scheduledDate, performBackup } = req.body;
+      
+      const result = await approvalWorkflowService.publishApprovedContent(
+        req.params.id,
+        {
+          publishNow: publishNow || false,
+          scheduledDate: scheduledDate ? new Date(scheduledDate) : undefined,
+          performBackup: performBackup || true
+        }
+      );
+
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to publish content" });
+    }
+  });
+
+  // Emergency Controls
+  app.post("/api/websites/:id/emergency-stop", async (req, res) => {
+    try {
+      const { reason } = req.body;
+      
+      if (!reason) {
+        return res.status(400).json({ message: "Emergency stop reason is required" });
+      }
+
+      const result = await approvalWorkflowService.emergencyStop(req.params.id, reason);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to activate emergency stop" });
+    }
+  });
+
+  // AI Usage Tracking
+  app.get("/api/ai-usage/:websiteId", async (req, res) => {
+    try {
+      const usage = await storage.aiUsageTracking
+        .select()
+        .from(storage.aiUsageTracking)
+        .where(eq(storage.aiUsageTracking.websiteId, req.params.websiteId))
+        .orderBy(desc(storage.aiUsageTracking.createdAt))
+        .limit(100);
+      
+      res.json(usage);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch AI usage data" });
     }
   });
 
