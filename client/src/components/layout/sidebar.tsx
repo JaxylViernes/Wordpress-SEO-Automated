@@ -66,26 +66,26 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
           const Icon = item.icon;
           
           return (
-            <Link key={item.name} href={item.href}>
-              <a 
-                onClick={onLinkClick}
-                className={cn(
-                  "group flex items-center px-2 py-2 text-sm font-medium rounded-md",
-                  isActive
-                    ? "bg-primary-50 border-r-4 border-primary-500 text-primary-700"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                )}
-              >
-                <Icon className={cn(
-                  "mr-3 h-4 w-4",
-                  isActive 
-                    ? "text-primary-500" 
-                    : "text-gray-400 group-hover:text-gray-500"
-                )} />
-                {item.name}
-              </a>
-            </Link>
-          );
+    <Link 
+      key={item.name} 
+      href={item.href}
+      onClick={onLinkClick}
+      className={cn(
+        "group flex items-center px-2 py-2 text-sm font-medium rounded-md",
+        isActive
+          ? "bg-primary-50 border-r-4 border-primary-500 text-primary-700"
+          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+      )}
+    >
+      <Icon className={cn(
+        "mr-3 h-4 w-4",
+        isActive 
+          ? "text-primary-500" 
+          : "text-gray-400 group-hover:text-gray-500"
+      )} />
+      {item.name}
+    </Link>
+  );
         })}
       </nav>
       

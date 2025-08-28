@@ -90,9 +90,10 @@ export default function ContentSchedule() {
   // Mock data for scheduled content
   const scheduledContent = getScheduledContent();
   
-  const filteredContent = selectedWebsite 
-    ? scheduledContent.filter(content => content.websiteId === selectedWebsite)
-    : scheduledContent;
+ // Updated logic
+const filteredContent = selectedWebsite && selectedWebsite !== "all"
+  ? scheduledContent.filter(content => content.websiteId === selectedWebsite)
+  : scheduledContent;
 
   const getWebsiteName = (websiteId: string) => {
     const website = websites?.find(w => w.id === websiteId);
@@ -201,13 +202,13 @@ export default function ContentSchedule() {
               <SelectValue placeholder="All websites" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All websites</SelectItem>
-              {websites?.map((website) => (
-                <SelectItem key={website.id} value={website.id}>
-                  {website.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
+  <SelectItem value="all">All websites</SelectItem>  {/* Changed from "" to "all" */}
+  {websites?.map((website) => (
+    <SelectItem key={website.id} value={website.id}>
+      {website.name}
+    </SelectItem>
+  ))}
+</SelectContent>
           </Select>
         </div>
 

@@ -63,20 +63,22 @@ export default function ActivityLogs() {
   });
 
   const getWebsiteName = (websiteId: string | null) => {
-    if (!websiteId) return "System";
-    const website = websites?.find(w => w.id === websiteId);
-    return website?.name || "Unknown Website";
-  };
+  if (!websiteId) return "System";
+  if (!Array.isArray(websites)) return "Unknown Website";
+  const website = websites.find(w => w.id === websiteId);
+  return website?.name || "Unknown Website";
+};
 
-  const filteredActivities = activities?.filter(activity => {
-    if (searchQuery && !activity.description.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
-    }
-    if (activityFilter && activity.type !== activityFilter) {
-      return false;
-    }
-    return true;
-  }) || [];
+  // Updated logic
+const filteredActivities = activities?.filter(activity => {
+  if (searchQuery && !activity.description.toLowerCase().includes(searchQuery.toLowerCase())) {
+    return false;
+  }
+  if (activityFilter && activityFilter !== "all" && activity.type !== activityFilter) {
+    return false;
+  }
+  return true;
+}) || [];
 
   const activityStats = {
     total: activities?.length || 0,
@@ -173,14 +175,14 @@ export default function ActivityLogs() {
             <SelectTrigger className="w-64">
               <SelectValue placeholder="All websites" />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">All websites</SelectItem>
-              {websites?.map((website) => (
-                <SelectItem key={website.id} value={website.id}>
-                  {website.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
+          <SelectContent>
+  <SelectItem value="all">All websites</SelectItem>
+  {Array.isArray(websites) && websites.map((website) => (
+    <SelectItem key={website.id} value={website.id}>
+      {website.name}
+    </SelectItem>
+  ))}
+</SelectContent>
           </Select>
 
           <Select value={activityFilter} onValueChange={setActivityFilter}>
@@ -188,7 +190,7 @@ export default function ActivityLogs() {
               <SelectValue placeholder="All activities" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All activities</SelectItem>
+              <SelectItem value="all">All activities</SelectItem>
               {Object.entries(activityTypeLabels).map(([type, label]) => (
                 <SelectItem key={type} value={type}>
                   {label}

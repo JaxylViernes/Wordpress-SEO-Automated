@@ -98,11 +98,12 @@ export default function Reports() {
   // Mock data for reports
   const allReports = getClientReports();
   
-  const filteredReports = allReports.filter(report => {
-    if (selectedWebsite && report.websiteId !== selectedWebsite) return false;
-    if (reportType !== "all" && report.reportType !== reportType) return false;
-    return true;
-  });
+// Updated logic
+const filteredReports = allReports.filter(report => {
+  if (selectedWebsite && selectedWebsite !== "all" && report.websiteId !== selectedWebsite) return false;
+  if (reportType !== "all" && report.reportType !== reportType) return false;
+  return true;
+});
 
   const getWebsiteName = (websiteId: string) => {
     const website = websites?.find(w => w.id === websiteId);
@@ -137,13 +138,13 @@ export default function Reports() {
               <SelectValue placeholder="All websites" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All websites</SelectItem>
-              {websites?.map((website) => (
-                <SelectItem key={website.id} value={website.id}>
-                  {website.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
+  <SelectItem value="all">All websites</SelectItem>  {/* Changed from "" to "all" */}
+  {websites?.map((website) => (
+    <SelectItem key={website.id} value={website.id}>
+      {website.name}
+    </SelectItem>
+  ))}
+</SelectContent>
           </Select>
 
           <Select value={reportType} onValueChange={setReportType}>

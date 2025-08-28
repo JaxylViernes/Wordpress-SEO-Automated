@@ -1,0 +1,840 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordPress AI SEO Manager - Professional Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'inter': ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: {
+                            50: '#E3F2FD',
+                            100: '#BBDEFB',
+                            500: '#1976D2',
+                            600: '#1565C0',
+                            700: '#0D47A1',
+                        },
+                        secondary: {
+                            100: '#F5F5F5',
+                            400: '#BDBDBD',
+                            500: '#9E9E9E',
+                            700: '#424242',
+                            800: '#212121',
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+</head>
+<body class="bg-gray-50 font-inter">
+    <!-- @COMPONENT: AppLayout -->
+    <div class="flex h-screen overflow-hidden">
+        <!-- @COMPONENT: Sidebar -->
+        <div class="hidden md:flex md:flex-shrink-0">
+            <div class="flex flex-col w-64">
+                <div class="flex flex-col flex-grow pt-5 pb-4 overflow-y-auto bg-white border-r border-gray-200">
+                    <!-- Logo -->
+                    <div class="flex items-center flex-shrink-0 px-4">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
+                                <i class="fas fa-rocket text-white text-sm"></i>
+                            </div>
+                            <h1 class="text-xl font-bold text-gray-900">WP AI Manager</h1>
+                        </div>
+                    </div>
+                    
+                    <!-- Navigation -->
+                    <nav class="mt-8 flex-1 px-2 space-y-1">
+                        <a href="#" class="bg-primary-50 border-r-4 border-primary-500 text-primary-700 group flex items-center px-2 py-2 text-sm font-medium rounded-md">
+                            <i class="fas fa-tachometer-alt text-primary-500 mr-3 text-sm"></i>
+                            Dashboard
+                        </a>
+                        <a href="#" class="text-gray-600 hover:bg-gray-50 hover:text-gray-900 group flex items-center px-2 py-2 text-sm font-medium rounded-md">
+                            <i class="fas fa-globe text-gray-400 mr-3 text-sm group-hover:text-gray-500"></i>
+                            Websites
+                        </a>
+                        <a href="#" class="text-gray-600 hover:bg-gray-50 hover:text-gray-900 group flex items-center px-2 py-2 text-sm font-medium rounded-md">
+                            <i class="fas fa-robot text-gray-400 mr-3 text-sm group-hover:text-gray-500"></i>
+                            AI Content
+                        </a>
+                        <a href="#" class="text-gray-600 hover:bg-gray-50 hover:text-gray-900 group flex items-center px-2 py-2 text-sm font-medium rounded-md">
+                            <i class="fas fa-search text-gray-400 mr-3 text-sm group-hover:text-gray-500"></i>
+                            SEO Analysis
+                        </a>
+                        <a href="#" class="text-gray-600 hover:bg-gray-50 hover:text-gray-900 group flex items-center px-2 py-2 text-sm font-medium rounded-md">
+                            <i class="fas fa-calendar-alt text-gray-400 mr-3 text-sm group-hover:text-gray-500"></i>
+                            Content Schedule
+                        </a>
+                        <a href="#" class="text-gray-600 hover:bg-gray-50 hover:text-gray-900 group flex items-center px-2 py-2 text-sm font-medium rounded-md">
+                            <i class="fas fa-chart-line text-gray-400 mr-3 text-sm group-hover:text-gray-500"></i>
+                            Reports
+                        </a>
+                        <a href="#" class="text-gray-600 hover:bg-gray-50 hover:text-gray-900 group flex items-center px-2 py-2 text-sm font-medium rounded-md">
+                            <i class="fas fa-history text-gray-400 mr-3 text-sm group-hover:text-gray-500"></i>
+                            Activity Logs
+                        </a>
+                        <a href="#" class="text-gray-600 hover:bg-gray-50 hover:text-gray-900 group flex items-center px-2 py-2 text-sm font-medium rounded-md">
+                            <i class="fas fa-cog text-gray-400 mr-3 text-sm group-hover:text-gray-500"></i>
+                            Settings
+                        </a>
+                    </nav>
+                    
+                    <!-- User Profile -->
+                    <div class="flex-shrink-0 flex border-t border-gray-200 p-4">
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center">
+                                <span class="text-white text-sm font-medium" data-mock="true">JD</span>
+                            </div>
+                            <div class="ml-3">
+                                <p class="text-sm font-medium text-gray-700" data-mock="true">John Doe</p>
+                                <p class="text-xs text-gray-500" data-mock="true">Pro Plan</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- @END_COMPONENT: Sidebar -->
+
+        <!-- @COMPONENT: MainContent -->
+        <div class="flex flex-col w-0 flex-1 overflow-hidden">
+            <!-- @COMPONENT: TopHeader -->
+            <div class="relative z-10 flex-shrink-0 flex h-16 bg-white shadow-sm border-b border-gray-200">
+                <button class="px-4 border-r border-gray-200 text-gray-500 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500 md:hidden">
+                    <i class="fas fa-bars"></i>
+                </button>
+                
+                <div class="flex-1 px-4 flex justify-between items-center">
+                    <div class="flex-1 flex">
+                        <div class="w-full flex md:ml-0">
+                            <label for="search-field" class="sr-only">Search</label>
+                            <div class="relative w-full text-gray-400 focus-within:text-gray-600">
+                                <div class="absolute inset-y-0 left-0 flex items-center pointer-events-none">
+                                    <i class="fas fa-search"></i>
+                                </div>
+                                <input data-mock="true" id="search-field" class="block w-full h-full pl-8 pr-3 py-2 border-transparent text-gray-900 placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-0 focus:border-transparent" placeholder="Search websites, content, or reports..." type="search">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="ml-4 flex items-center md:ml-6 space-x-4">
+                        <button class="bg-white p-1 rounded-full text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                            <i class="fas fa-bell"></i>
+                            <span class="absolute -top-1 -right-1 h-4 w-4 bg-red-500 rounded-full text-xs text-white flex items-center justify-center" data-mock="true">3</span>
+                        </button>
+                        
+                        <button class="bg-primary-500 hover:bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                            <i class="fas fa-plus text-xs"></i>
+                            <span>Add Website</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <!-- @END_COMPONENT: TopHeader -->
+
+            <!-- @COMPONENT: DashboardContent -->
+            <main class="flex-1 relative overflow-y-auto focus:outline-none bg-gray-50">
+                <div class="py-6">
+                    <div class="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
+                        <!-- Page Header -->
+                        <div class="md:flex md:items-center md:justify-between mb-8">
+                            <div class="flex-1 min-w-0">
+                                <h2 class="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
+                                    Dashboard Overview
+                                </h2>
+                                <p class="mt-1 text-sm text-gray-500">
+                                    Monitor your WordPress sites and AI-powered SEO optimization
+                                </p>
+                            </div>
+                            <div class="mt-4 flex md:mt-0 md:ml-4">
+                                <button class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                                    <i class="fas fa-download mr-2"></i>
+                                    Export Report
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Stats Overview -->
+                        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+                            <!-- Active Websites -->
+                            <div class="bg-white overflow-hidden shadow-sm rounded-lg">
+                                <div class="p-5">
+                                    <div class="flex items-center">
+                                        <div class="flex-shrink-0">
+                                            <div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
+                                                <i class="fas fa-globe text-white text-sm"></i>
+                                            </div>
+                                        </div>
+                                        <div class="ml-5 w-0 flex-1">
+                                            <dl>
+                                                <dt class="text-sm font-medium text-gray-500 truncate">Active Websites</dt>
+                                                <dd class="text-lg font-medium text-gray-900" data-mock="true">12</dd>
+                                            </dl>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Content Generated -->
+                            <div class="bg-white overflow-hidden shadow-sm rounded-lg">
+                                <div class="p-5">
+                                    <div class="flex items-center">
+                                        <div class="flex-shrink-0">
+                                            <div class="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
+                                                <i class="fas fa-robot text-white text-sm"></i>
+                                            </div>
+                                        </div>
+                                        <div class="ml-5 w-0 flex-1">
+                                            <dl>
+                                                <dt class="text-sm font-medium text-gray-500 truncate">Content Generated</dt>
+                                                <dd class="text-lg font-medium text-gray-900" data-mock="true">342</dd>
+                                            </dl>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- SEO Score Average -->
+                            <div class="bg-white overflow-hidden shadow-sm rounded-lg">
+                                <div class="p-5">
+                                    <div class="flex items-center">
+                                        <div class="flex-shrink-0">
+                                            <div class="w-8 h-8 bg-yellow-500 rounded-lg flex items-center justify-center">
+                                                <i class="fas fa-search text-white text-sm"></i>
+                                            </div>
+                                        </div>
+                                        <div class="ml-5 w-0 flex-1">
+                                            <dl>
+                                                <dt class="text-sm font-medium text-gray-500 truncate">Avg SEO Score</dt>
+                                                <dd class="text-lg font-medium text-gray-900 flex items-center" data-mock="true">
+                                                    87
+                                                    <span class="ml-2 text-sm text-green-600 flex items-center">
+                                                        <i class="fas fa-arrow-up text-xs mr-1"></i>
+                                                        +5%
+                                                    </span>
+                                                </dd>
+                                            </dl>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Scheduled Posts -->
+                            <div class="bg-white overflow-hidden shadow-sm rounded-lg">
+                                <div class="p-5">
+                                    <div class="flex items-center">
+                                        <div class="flex-shrink-0">
+                                            <div class="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center">
+                                                <i class="fas fa-calendar-alt text-white text-sm"></i>
+                                            </div>
+                                        </div>
+                                        <div class="ml-5 w-0 flex-1">
+                                            <dl>
+                                                <dt class="text-sm font-medium text-gray-500 truncate">Scheduled Posts</dt>
+                                                <dd class="text-lg font-medium text-gray-900" data-mock="true">28</dd>
+                                            </dl>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Main Dashboard Grid -->
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                            <!-- Website Performance Chart -->
+                            <div class="lg:col-span-2 bg-white shadow-sm rounded-lg">
+                                <div class="px-6 py-5 border-b border-gray-200">
+                                    <h3 class="text-lg font-medium text-gray-900">SEO Performance Trend</h3>
+                                    <p class="text-sm text-gray-500">Last 30 days performance across all websites</p>
+                                </div>
+                                <div class="p-6">
+                                    <canvas id="performanceChart" width="400" height="200"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Recent Activity -->
+                            <div class="bg-white shadow-sm rounded-lg">
+                                <div class="px-6 py-5 border-b border-gray-200">
+                                    <h3 class="text-lg font-medium text-gray-900">Recent Activity</h3>
+                                </div>
+                                <div class="divide-y divide-gray-200">
+                                    <!-- @MAP: activities.map(activity => ( -->
+                                    <div class="px-6 py-4">
+                                        <div class="flex items-center space-x-3">
+                                            <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm text-gray-900" data-mock="true">
+                                                    Content published: "10 SEO Tips for 2024"
+                                                </p>
+                                                <p class="text-xs text-gray-500" data-mock="true">TechBlog.com • 2 hours ago</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="px-6 py-4">
+                                        <div class="flex items-center space-x-3">
+                                            <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm text-gray-900" data-mock="true">
+                                                    SEO analysis completed
+                                                </p>
+                                                <p class="text-xs text-gray-500" data-mock="true">E-Commerce.store • 4 hours ago</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="px-6 py-4">
+                                        <div class="flex items-center space-x-3">
+                                            <div class="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm text-gray-900" data-mock="true">
+                                                    Content scheduled for tomorrow
+                                                </p>
+                                                <p class="text-xs text-gray-500" data-mock="true">LocalBusiness.net • 6 hours ago</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="px-6 py-4">
+                                        <div class="flex items-center space-x-3">
+                                            <div class="w-2 h-2 bg-red-500 rounded-full"></div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm text-gray-900" data-mock="true">
+                                                    SEO issue detected
+                                                </p>
+                                                <p class="text-xs text-gray-500" data-mock="true">RestaurantSite.com • 8 hours ago</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- @END_MAP )) -->
+                                </div>
+                                <div class="px-6 py-3 bg-gray-50">
+                                    <a href="#" class="text-sm font-medium text-primary-600 hover:text-primary-500">
+                                        View all activity
+                                        <i class="fas fa-arrow-right ml-1 text-xs"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Websites Table -->
+                        <div class="bg-white shadow-sm rounded-lg mb-8">
+                            <div class="px-6 py-5 border-b border-gray-200">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-lg font-medium text-gray-900">Managed Websites</h3>
+                                    <div class="flex items-center space-x-2">
+                                        <select class="text-sm border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500">
+                                            <option data-mock="true">All Status</option>
+                                            <option data-mock="true">Active</option>
+                                            <option data-mock="true">Issues</option>
+                                        </select>
+                                        <button class="bg-primary-500 hover:bg-primary-600 text-white px-3 py-1.5 rounded-md text-sm font-medium">
+                                            <i class="fas fa-plus mr-1"></i>
+                                            Add Website
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Website</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SEO Score</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Content</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Updated</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">
+                                        <!-- @MAP: websites.map(website => ( -->
+                                        <tr>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <div class="flex items-center">
+                                                    <div class="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center">
+                                                        <i class="fas fa-globe text-gray-500"></i>
+                                                    </div>
+                                                    <div class="ml-4">
+                                                        <div class="text-sm font-medium text-gray-900" data-mock="true">TechBlog.com</div>
+                                                        <div class="text-sm text-gray-500" data-mock="true">Technology Blog</div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                    <div class="w-1.5 h-1.5 bg-green-400 rounded-full mr-1.5"></div>
+                                                    Active
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <div class="flex items-center">
+                                                    <div class="text-sm font-medium text-gray-900" data-mock="true">92</div>
+                                                    <div class="ml-2 w-16 bg-gray-200 rounded-full h-2">
+                                                        <div class="bg-green-500 h-2 rounded-full" style="width: 92%"></div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-mock="true">24 posts</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-mock="true">2 hours ago</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                <button class="text-primary-600 hover:text-primary-500 mr-3">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                                <button class="text-gray-600 hover:text-gray-500 mr-3">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                                <button class="text-red-600 hover:text-red-500">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <div class="flex items-center">
+                                                    <div class="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center">
+                                                        <i class="fas fa-shopping-cart text-gray-500"></i>
+                                                    </div>
+                                                    <div class="ml-4">
+                                                        <div class="text-sm font-medium text-gray-900" data-mock="true">E-Commerce.store</div>
+                                                        <div class="text-sm text-gray-500" data-mock="true">Online Store</div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                    <div class="w-1.5 h-1.5 bg-yellow-400 rounded-full mr-1.5"></div>
+                                                    Processing
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <div class="flex items-center">
+                                                    <div class="text-sm font-medium text-gray-900" data-mock="true">78</div>
+                                                    <div class="ml-2 w-16 bg-gray-200 rounded-full h-2">
+                                                        <div class="bg-yellow-500 h-2 rounded-full" style="width: 78%"></div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-mock="true">18 posts</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-mock="true">4 hours ago</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                <button class="text-primary-600 hover:text-primary-500 mr-3">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                                <button class="text-gray-600 hover:text-gray-500 mr-3">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                                <button class="text-red-600 hover:text-red-500">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <div class="flex items-center">
+                                                    <div class="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center">
+                                                        <i class="fas fa-utensils text-gray-500"></i>
+                                                    </div>
+                                                    <div class="ml-4">
+                                                        <div class="text-sm font-medium text-gray-900" data-mock="true">RestaurantSite.com</div>
+                                                        <div class="text-sm text-gray-500" data-mock="true">Restaurant</div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                    <div class="w-1.5 h-1.5 bg-red-400 rounded-full mr-1.5"></div>
+                                                    Issues
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <div class="flex items-center">
+                                                    <div class="text-sm font-medium text-gray-900" data-mock="true">65</div>
+                                                    <div class="ml-2 w-16 bg-gray-200 rounded-full h-2">
+                                                        <div class="bg-red-500 h-2 rounded-full" style="width: 65%"></div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-mock="true">12 posts</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-mock="true">1 day ago</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                <button class="text-primary-600 hover:text-primary-500 mr-3">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                                <button class="text-gray-600 hover:text-gray-500 mr-3">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                                <button class="text-red-600 hover:text-red-500">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        <!-- @END_MAP )) -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- AI Content Generation Section -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                            <!-- Content Generation Queue -->
+                            <div class="bg-white shadow-sm rounded-lg">
+                                <div class="px-6 py-5 border-b border-gray-200">
+                                    <h3 class="text-lg font-medium text-gray-900">Content Generation Queue</h3>
+                                    <p class="text-sm text-gray-500">AI-powered content creation in progress</p>
+                                </div>
+                                <div class="p-6">
+                                    <div class="space-y-4">
+                                        <!-- Queue Item -->
+                                        <div class="flex items-center space-x-4 p-4 bg-blue-50 rounded-lg">
+                                            <div class="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                                                <i class="fas fa-robot text-white"></i>
+                                            </div>
+                                            <div class="flex-1">
+                                                <p class="text-sm font-medium text-gray-900" data-mock="true">
+                                                    "Latest WordPress Security Tips"
+                                                </p>
+                                                <p class="text-xs text-gray-500" data-mock="true">TechBlog.com • GPT-4 • In Progress</p>
+                                                <div class="mt-2 w-full bg-gray-200 rounded-full h-2">
+                                                    <div class="bg-blue-500 h-2 rounded-full" style="width: 65%"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="flex items-center space-x-4 p-4 bg-yellow-50 rounded-lg">
+                                            <div class="w-10 h-10 bg-yellow-500 rounded-lg flex items-center justify-center">
+                                                <i class="fas fa-clock text-white"></i>
+                                            </div>
+                                            <div class="flex-1">
+                                                <p class="text-sm font-medium text-gray-900" data-mock="true">
+                                                    "Product Review: Smart Home Devices"
+                                                </p>
+                                                <p class="text-xs text-gray-500" data-mock="true">E-Commerce.store • Claude-3 • Queued</p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="flex items-center space-x-4 p-4 bg-green-50 rounded-lg">
+                                            <div class="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center">
+                                                <i class="fas fa-check text-white"></i>
+                                            </div>
+                                            <div class="flex-1">
+                                                <p class="text-sm font-medium text-gray-900" data-mock="true">
+                                                    "Local SEO for Restaurants 2024"
+                                                </p>
+                                                <p class="text-xs text-gray-500" data-mock="true">RestaurantSite.com • GPT-4 • Completed</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- SEO Issues Dashboard -->
+                            <div class="bg-white shadow-sm rounded-lg">
+                                <div class="px-6 py-5 border-b border-gray-200">
+                                    <h3 class="text-lg font-medium text-gray-900">SEO Issues & Fixes</h3>
+                                    <p class="text-sm text-gray-500">Automated SEO analysis and recommendations</p>
+                                </div>
+                                <div class="p-6">
+                                    <div class="space-y-4">
+                                        <!-- Critical Issue -->
+                                        <div class="flex items-start space-x-4 p-4 bg-red-50 rounded-lg border-l-4 border-red-400">
+                                            <div class="w-6 h-6 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0">
+                                                <i class="fas fa-exclamation text-white text-xs"></i>
+                                            </div>
+                                            <div class="flex-1">
+                                                <p class="text-sm font-medium text-red-800" data-mock="true">Missing Meta Descriptions</p>
+                                                <p class="text-xs text-red-600" data-mock="true">RestaurantSite.com • 8 pages affected</p>
+                                                <button class="mt-2 text-xs bg-red-100 hover:bg-red-200 text-red-800 px-2 py-1 rounded">
+                                                    Auto-Fix Available
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Warning -->
+                                        <div class="flex items-start space-x-4 p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-400">
+                                            <div class="w-6 h-6 bg-yellow-500 rounded-full flex items-center justify-center flex-shrink-0">
+                                                <i class="fas fa-exclamation-triangle text-white text-xs"></i>
+                                            </div>
+                                            <div class="flex-1">
+                                                <p class="text-sm font-medium text-yellow-800" data-mock="true">Slow Page Load Speed</p>
+                                                <p class="text-xs text-yellow-600" data-mock="true">E-Commerce.store • 3.2s average</p>
+                                                <button class="mt-2 text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-800 px-2 py-1 rounded">
+                                                    Optimize Images
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Success -->
+                                        <div class="flex items-start space-x-4 p-4 bg-green-50 rounded-lg border-l-4 border-green-400">
+                                            <div class="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                                                <i class="fas fa-check text-white text-xs"></i>
+                                            </div>
+                                            <div class="flex-1">
+                                                <p class="text-sm font-medium text-green-800" data-mock="true">Schema Markup Added</p>
+                                                <p class="text-xs text-green-600" data-mock="true">TechBlog.com • All pages optimized</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Client Reports Section -->
+                        <div class="bg-white shadow-sm rounded-lg">
+                            <div class="px-6 py-5 border-b border-gray-200">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <h3 class="text-lg font-medium text-gray-900">Client Reports</h3>
+                                        <p class="text-sm text-gray-500">Automated weekly and monthly client reports</p>
+                                    </div>
+                                    <button class="bg-primary-500 hover:bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                                        Generate Report
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="p-6">
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    <!-- Report Card -->
+                                    <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                                        <div class="flex items-center justify-between mb-3">
+                                            <h4 class="text-sm font-medium text-gray-900" data-mock="true">TechBlog Monthly Report</h4>
+                                            <span class="text-xs text-gray-500" data-mock="true">Nov 2024</span>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-500">SEO Score</span>
+                                                <span class="font-medium text-green-600" data-mock="true">+8%</span>
+                                            </div>
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-500">Content Published</span>
+                                                <span class="font-medium" data-mock="true">12 posts</span>
+                                            </div>
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-500">Traffic Increase</span>
+                                                <span class="font-medium text-green-600" data-mock="true">+24%</span>
+                                            </div>
+                                        </div>
+                                        <button class="w-full mt-4 text-sm text-primary-600 hover:text-primary-500 font-medium">
+                                            <i class="fas fa-download mr-1"></i>
+                                            Download PDF
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                                        <div class="flex items-center justify-between mb-3">
+                                            <h4 class="text-sm font-medium text-gray-900" data-mock="true">E-Commerce Weekly</h4>
+                                            <span class="text-xs text-gray-500" data-mock="true">Week 46</span>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-500">SEO Score</span>
+                                                <span class="font-medium text-yellow-600" data-mock="true">+2%</span>
+                                            </div>
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-500">Content Published</span>
+                                                <span class="font-medium" data-mock="true">3 posts</span>
+                                            </div>
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-500">Conversions</span>
+                                                <span class="font-medium text-green-600" data-mock="true">+15%</span>
+                                            </div>
+                                        </div>
+                                        <button class="w-full mt-4 text-sm text-primary-600 hover:text-primary-500 font-medium">
+                                            <i class="fas fa-download mr-1"></i>
+                                            Download PDF
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                                        <div class="flex items-center justify-between mb-3">
+                                            <h4 class="text-sm font-medium text-gray-900" data-mock="true">Restaurant Report</h4>
+                                            <span class="text-xs text-gray-500" data-mock="true">Nov 2024</span>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-500">SEO Score</span>
+                                                <span class="font-medium text-red-600" data-mock="true">-3%</span>
+                                            </div>
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-500">Content Published</span>
+                                                <span class="font-medium" data-mock="true">6 posts</span>
+                                            </div>
+                                            <div class="flex justify-between text-sm">
+                                                <span class="text-gray-500">Local Rankings</span>
+                                                <span class="font-medium text-yellow-600" data-mock="true">Stable</span>
+                                            </div>
+                                        </div>
+                                        <button class="w-full mt-4 text-sm text-primary-600 hover:text-primary-500 font-medium">
+                                            <i class="fas fa-download mr-1"></i>
+                                            Download PDF
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+            <!-- @END_COMPONENT: DashboardContent -->
+        </div>
+        <!-- @END_COMPONENT: MainContent -->
+    </div>
+    <!-- @END_COMPONENT: AppLayout -->
+
+    <!-- Add Website Modal -->
+    <!-- @COMPONENT: AddWebsiteModal -->
+    <div id="addWebsiteModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div class="mt-3">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900">Add New Website</h3>
+                    <button class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <form class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Website URL</label>
+                        <input type="url" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500" placeholder="https://example.com" data-mock="true">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">WordPress Username</label>
+                        <input type="text" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500" placeholder="admin" data-mock="true">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">WordPress Password</label>
+                        <input type="password" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500" placeholder="••••••••" data-mock="true">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">AI Model Preference</label>
+                        <select class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                            <option data-mock="true">GPT-4</option>
+                            <option data-mock="true">Claude-3</option>
+                            <option data-mock="true">Auto-Select</option>
+                        </select>
+                    </div>
+                    
+                    <div class="flex items-center">
+                        <input type="checkbox" class="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded" checked>
+                        <label class="ml-2 block text-sm text-gray-700">
+                            Enable automatic content posting (2x per week)
+                        </label>
+                    </div>
+                    
+                    <div class="flex space-x-3 pt-4">
+                        <button type="button" class="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500">
+                            Cancel
+                        </button>
+                        <button type="submit" class="flex-1 bg-primary-500 text-white py-2 px-4 rounded-md hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500">
+                            Connect Website
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <!-- @END_COMPONENT: AddWebsiteModal -->
+
+    <script>
+        // TODO: Implement business logic, API calls, and state management
+        
+        (function() {
+            // Initialize Chart.js for SEO Performance Trend
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            const performanceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['Nov 1', 'Nov 5', 'Nov 10', 'Nov 15', 'Nov 20', 'Nov 25', 'Nov 30'],
+                    datasets: [{
+                        label: 'Average SEO Score',
+                        data: [75, 78, 82, 85, 87, 89, 87],
+                        borderColor: '#1976D2',
+                        backgroundColor: 'rgba(25, 118, 210, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            min: 70,
+                            max: 100,
+                            grid: {
+                                color: '#f3f4f6'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Mock interactive elements
+            const addWebsiteButtons = document.querySelectorAll('button:contains("Add Website")');
+            const modal = document.getElementById('addWebsiteModal');
+            
+            // Simple modal toggle functionality
+            document.addEventListener('click', function(e) {
+                if (e.target.textContent?.includes('Add Website')) {
+                    modal?.classList.remove('hidden');
+                }
+                if (e.target.classList.contains('fa-times') || e.target.textContent === 'Cancel') {
+                    modal?.classList.add('hidden');
+                }
+            });
+
+            // Mock form submission
+            const forms = document.querySelectorAll('form');
+            forms.forEach(form => {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    // TODO: Implement WordPress API connection logic
+                    alert('Website connection would be processed here');
+                    modal?.classList.add('hidden');
+                });
+            });
+
+            // Mock notifications
+            let notificationCount = 3;
+            const notificationBell = document.querySelector('.fa-bell');
+            const notificationBadge = notificationBell?.nextElementSibling;
+            
+            // Simulate real-time updates
+            setInterval(() => {
+                // TODO: Implement real-time updates from WordPress sites
+                if (Math.random() > 0.95) {
+                    notificationCount++;
+                    if (notificationBadge) {
+                        notificationBadge.textContent = notificationCount;
+                    }
+                }
+            }, 5000);
+
+        })();
+    </script>
+</body>
+</html>
