@@ -1,9 +1,11 @@
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { storage } from "../storage";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { imageService, ImageService } from "./image-service";
 
 // AI Provider Configuration
-export type AIProvider = "openai" | "anthropic";
+export type AIProvider = "openai" | "anthropic" | "gemini";
 
 // Initialize with environment variables directly
 const openai = new OpenAI({
@@ -13,6 +15,9 @@ const openai = new OpenAI({
 const anthropic = new Anthropic({ 
   apiKey: process.env.ANTHROPIC_API_KEY! 
 });
+
+const gemini = process.env.GOOGLE_GEMINI_API_KEY ? 
+  new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY) : null;
 
 // Model configurations
 const AI_MODELS = {
@@ -29,6 +34,13 @@ const AI_MODELS = {
       input: 0.003,  // $0.003 per 1K input tokens
       output: 0.015  // $0.015 per 1K output tokens
     }
+  },
+   gemini: {
+    model: "gemini-1.5-flash", // Make sure this matches what's in your code
+    pricing: {
+      input: 0.0025,
+      output: 0.0075
+    }
   }
 } as const;
 
@@ -44,6 +56,10 @@ export interface ContentGenerationRequest {
   eatCompliance?: boolean;
   aiProvider: AIProvider;
   userId: string; // Required for tracking
+
+  includeImages?: boolean;
+  imageCount?: number; // 1-3 images
+  imageStyle?: 'natural' | 'digital_art' | 'photographic' | 'cinematic';
 }
 
 export interface ContentAnalysisRequest {
@@ -78,6 +94,15 @@ export interface ContentGenerationResult {
     factualAccuracy: "verified" | "needs_review" | "questionable";
     brandAlignment: "excellent" | "good" | "needs_improvement";
   };
+
+   images?: Array<{
+    url: string;
+    filename: string;
+    altText: string;
+    prompt: string;
+    cost: number;
+  }>;
+  totalImageCost?: number;
 }
 
 export interface ContentAnalysisResult {
@@ -226,6 +251,49 @@ export class ContentFormatter {
 
 export class AIService {
 
+  async analyzeExistingContent(request: {
+  title: string;
+  content: string;
+  keywords: string[];
+  tone: string;
+  brandVoice?: string;
+  targetAudience?: string;
+  eatCompliance?: boolean;
+  websiteId: string;
+  aiProvider: AIProvider;
+  userId: string;
+}): Promise<ContentAnalysisResult> {
+  try {
+    console.log(`Re-analyzing existing content with ${request.aiProvider.toUpperCase()}`);
+    
+    // Use the existing performContentAnalysis method
+    const analysisResult = await this.performContentAnalysis({
+      title: request.title,
+      content: request.content,
+      keywords: request.keywords,
+      tone: request.tone,
+      brandVoice: request.brandVoice,
+      targetAudience: request.targetAudience,
+      eatCompliance: request.eatCompliance || false,
+      websiteId: request.websiteId,
+      aiProvider: request.aiProvider,
+      userId: request.userId
+    });
+
+    console.log(`✅ Existing content re-analyzed - SEO: ${analysisResult.seoScore}%, Readability: ${analysisResult.readabilityScore}%, Brand Voice: ${analysisResult.brandVoiceScore}%`);
+
+    return analysisResult;
+  } catch (error: any) {
+    console.error('Failed to analyze existing content:', error);
+    
+    if (error instanceof AIProviderError || error instanceof AnalysisError) {
+      throw error;
+    }
+    
+    throw new AnalysisError('Content Re-analysis', error.message || 'Unknown error during content analysis');
+  }
+}
+
   public async callOpenAI(messages: any[], responseFormat?: any, temperature = 0.7): Promise<{content: string, tokens: number}> {
     if (!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
       throw new AIProviderError('openai', 'API key not configured in environment variables');
@@ -263,6 +331,176 @@ export class AIService {
       throw new AIProviderError('openai', error.message || 'Unknown API error');
     }
   }
+
+
+   private embedImagesInContent(content: string, images: Array<{
+    url: string;
+    filename: string;
+    altText: string;
+    prompt: string;
+    cost: number;
+  }>): string {
+    if (!images || images.length === 0) {
+      return content;
+    }
+
+    let modifiedContent = content;
+
+    images.forEach((image, index) => {
+      // Create WordPress-friendly image HTML
+      const imageHtml = `
+<figure class="wp-block-image size-large">
+  <img src="${image.url}" alt="${image.altText}" class="wp-image" style="max-width: 100%; height: auto;" />
+  <figcaption>${image.altText}</figcaption>
+</figure>
+`;
+
+      if (index === 0) {
+        // Place first image after the introduction (after first </p>)
+        const firstParagraphEnd = modifiedContent.indexOf('</p>');
+        if (firstParagraphEnd !== -1) {
+          modifiedContent = modifiedContent.slice(0, firstParagraphEnd + 4) + 
+                           '\n\n' + imageHtml + '\n\n' + 
+                           modifiedContent.slice(firstParagraphEnd + 4);
+          console.log(`📍 Placed hero image after introduction`);
+        } else {
+          // Fallback: place at the beginning
+          modifiedContent = imageHtml + '\n\n' + modifiedContent;
+          console.log(`📍 Placed hero image at beginning (fallback)`);
+        }
+      } else {
+        // Place subsequent images before H2 headings
+        const h2Regex = /<h2>/g;
+        const h2Matches = Array.from(modifiedContent.matchAll(h2Regex));
+        
+        if (h2Matches.length > index - 1) {
+          const insertPoint = h2Matches[index - 1].index;
+          modifiedContent = modifiedContent.slice(0, insertPoint) + 
+                           imageHtml + '\n\n' + 
+                           modifiedContent.slice(insertPoint);
+          console.log(`📍 Placed image ${index + 1} before H2 section`);
+        } else {
+          // Fallback: place before conclusion
+          const conclusionHeadings = ['<h2>Conclusion', '<h2>Summary', '<h2>Final'];
+          let insertPoint = -1;
+          
+          for (const heading of conclusionHeadings) {
+            insertPoint = modifiedContent.lastIndexOf(heading);
+            if (insertPoint !== -1) break;
+          }
+          
+          if (insertPoint !== -1) {
+            modifiedContent = modifiedContent.slice(0, insertPoint) + 
+                             imageHtml + '\n\n' + 
+                             modifiedContent.slice(insertPoint);
+            console.log(`📍 Placed image ${index + 1} before conclusion`);
+          } else {
+            // Final fallback: place at the end
+            modifiedContent = modifiedContent + '\n\n' + imageHtml;
+            console.log(`📍 Placed image ${index + 1} at end (fallback)`);
+          }
+        }
+      }
+    });
+
+    return modifiedContent;
+  }
+
+  // Add this debug version of callGemini method in your ai-service.ts
+
+// Update your callGemini method in ai-service.ts with better error handling
+
+private async callGemini(messages: any[], temperature = 0.7): Promise<{content: string, tokens: number}> {
+  if (!process.env.GOOGLE_GEMINI_API_KEY || !gemini) {
+    throw new AIProviderError('gemini', 'API key not configured in environment variables');
+  }
+
+  try {
+    const model = gemini.getGenerativeModel({ model: AI_MODELS.gemini.model });
+
+    // Convert OpenAI message format to Gemini format
+    const systemMessage = messages.find(m => m.role === 'system');
+    const userMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant');
+
+    // Build the conversation history for Gemini
+    const history = userMessages.slice(0, -1).map(m => ({
+      role: m.role === 'user' ? 'user' : 'model',
+      parts: [{ text: m.content }]
+    }));
+
+    // Get the latest user message
+    const lastMessage = userMessages[userMessages.length - 1];
+    if (!lastMessage || lastMessage.role !== 'user') {
+      throw new AIProviderError('gemini', 'Invalid message format - last message must be from user');
+    }
+
+    // Create chat session with history
+    const chat = model.startChat({
+      history,
+      generationConfig: {
+        temperature,
+        maxOutputTokens: 4000,
+      },
+    });
+
+    // Add system instructions to the user prompt if present
+    let prompt = lastMessage.content;
+    if (systemMessage?.content) {
+      prompt = `${systemMessage.content}\n\n${prompt}`;
+      
+      // Enhance for JSON response if needed
+      if (systemMessage.content.includes('JSON') || systemMessage.content.includes('json')) {
+        prompt += '\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object. Start your response with { and end with }.';
+      }
+    }
+
+    const result = await chat.sendMessage(prompt);
+    const response = await result.response;
+    const responseText = response.text();
+
+    if (!responseText) {
+      throw new AIProviderError('gemini', 'No content returned from API');
+    }
+
+    let cleanedText = responseText.trim();
+    
+    // Try to extract JSON if it's wrapped in other text
+    if (!cleanedText.startsWith('{') && cleanedText.includes('{')) {
+      const jsonStart = cleanedText.indexOf('{');
+      const jsonEnd = cleanedText.lastIndexOf('}') + 1;
+      if (jsonStart !== -1 && jsonEnd > jsonStart) {
+        cleanedText = cleanedText.substring(jsonStart, jsonEnd);
+      }
+    }
+
+    // Estimate token usage (Gemini doesn't provide exact token counts in all cases)
+    const estimatedTokens = Math.ceil((prompt.length + cleanedText.length) / 4);
+
+    return {
+      content: cleanedText,
+      tokens: estimatedTokens
+    };
+  } catch (error: any) {
+    if (error instanceof AIProviderError) throw error;
+    
+    // Handle specific Gemini errors with better messages
+    if (error.status === 429 || error.message?.includes('Too Many Requests')) {
+      throw new AIProviderError('gemini', 
+        'Rate limit exceeded. Google Gemini free tier allows only 15 requests/minute and 1,500/day. ' +
+        'Please wait a few minutes or consider upgrading to a paid plan. ' +
+        'Alternatively, use OpenAI or Anthropic for now.'
+      );
+    } else if (error.message?.includes('API_KEY_INVALID')) {
+      throw new AIProviderError('gemini', 'Invalid API key. Please check your Google Gemini API key configuration.');
+    } else if (error.message?.includes('RATE_LIMIT_EXCEEDED')) {
+      throw new AIProviderError('gemini', 'Rate limit exceeded. Please try again later.');
+    } else if (error.message?.includes('PERMISSION_DENIED')) {
+      throw new AIProviderError('gemini', 'Insufficient permissions. Please check your Google Gemini API key permissions.');
+    }
+    
+    throw new AIProviderError('gemini', error.message || 'Unknown API error');
+  }
+}
 
   private async callAnthropic(messages: any[], temperature = 0.7): Promise<{content: string, tokens: number}> {
     if (!process.env.ANTHROPIC_API_KEY) {
@@ -333,6 +571,8 @@ export class AIService {
         return this.callOpenAI(messages, responseFormat, temperature);
       case 'anthropic':
         return this.callAnthropic(messages, temperature);
+       case 'gemini':
+      return this.callGemini(messages, temperature);
       default:
         throw new Error(`Unsupported AI provider: ${provider}`);
     }
@@ -340,6 +580,8 @@ export class AIService {
 
 
 // Now, here's your updated generateContent method with the integration:
+
+// Replace the generateContent method in your ai-service.ts
 
 async generateContent(request: ContentGenerationRequest): Promise<ContentGenerationResult> {
   try {
@@ -424,10 +666,9 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON containing: title, conten
       throw new AIProviderError(request.aiProvider, 'AI response missing required fields (title, content)');
     }
 
-    // 🚀 ADD THE HEADER CONVERSION HERE - RIGHT AFTER PARSING contentResult:
+    // Convert markdown headers to HTML if they exist
     console.log('🔄 Converting markdown headers to HTML...');
     
-    // Convert markdown headers to HTML if they exist
     if (contentResult.content && contentResult.content.includes('#')) {
       console.log('📝 Markdown headers detected, converting to HTML...');
       contentResult.content = ContentFormatter.convertMarkdownToHtml(contentResult.content);
@@ -437,7 +678,73 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON containing: title, conten
     contentResult.content = ContentFormatter.formatForWordPress(contentResult.content);
     console.log('✅ Content formatted for WordPress');
 
-    // Step 2: Analyze the generated content - FIXED ANALYSIS
+    // Step 2: Generate images if requested
+    let images: Array<{
+      url: string;
+      filename: string;
+      altText: string;
+      prompt: string;
+      cost: number;
+    }> = [];
+    let totalImageCost = 0;
+
+    if (request.includeImages && request.imageCount && request.imageCount > 0) {
+      // Only OpenAI supports image generation currently
+      if (request.aiProvider !== 'openai') {
+        console.warn('⚠️ Image generation requires OpenAI provider, skipping images');
+      } else {
+        try {
+          console.log(`🎨 Generating ${request.imageCount} images with DALL-E 3...`);
+          
+          // Import and use the image service
+          const { imageService } = await import('./image-service');
+          
+          const imageGenerationRequest = {
+            topic: request.topic,
+            count: request.imageCount,
+            style: request.imageStyle || 'natural',
+            contentContext: contentResult.content.substring(0, 500),
+            keywords: request.keywords
+          };
+
+          // Validate the request first
+          const validation = imageService.validateImageRequest(imageGenerationRequest);
+          if (!validation.valid) {
+            throw new Error(`Image generation validation failed: ${validation.errors.join(', ')}`);
+          }
+
+          const imageResult = await imageService.generateImages(imageGenerationRequest);
+          images = imageResult.images;
+          totalImageCost = imageResult.totalCost;
+          
+          console.log(`✅ Generated ${images.length} images (Total cost: $${totalImageCost.toFixed(4)})`);
+          
+          if (images.length > 0) {
+            console.log('🖼️ Embedding images into content...');
+            contentResult.content = this.embedImagesInContent(contentResult.content, images);
+            console.log(`✅ Embedded ${images.length} images into content`);
+          }
+
+        } catch (imageError: any) {
+          console.error('❌ Image generation failed:', imageError.message);
+          
+          // Don't fail the entire content generation for image errors
+          if (imageError.message.includes('Rate limit')) {
+            console.warn('⚠️ DALL-E rate limit reached, continuing without images');
+          } else if (imageError.message.includes('credits') || imageError.message.includes('quota')) {
+            console.warn('⚠️ Insufficient OpenAI credits for images, continuing without images');
+          } else {
+            console.warn(`⚠️ Image generation error: ${imageError.message}`);
+          }
+          
+          // Continue with content generation even if images fail
+          images = [];
+          totalImageCost = 0;
+        }
+      }
+    }
+
+    // Step 3: Analyze the generated content
     const analysisResult = await this.performContentAnalysis({
       title: contentResult.title,
       content: contentResult.content,
@@ -451,50 +758,67 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON containing: title, conten
       userId: request.userId
     });
 
-    // FIXED: Calculate total token usage and cost properly
+    // Step 4: Calculate total costs
     const totalTokens = Math.max(1, contentResponse.tokens + analysisResult.tokensUsed);
     const pricing = AI_MODELS[request.aiProvider].pricing;
     
-    // Use average of input/output pricing for simplicity, or track separately if needed
+    // Use average of input/output pricing for simplicity
     const avgTokenCost = (pricing.input + pricing.output) / 2;
-    const totalCostUsd = (totalTokens * avgTokenCost) / 1000;
+    const textCostUsd = (totalTokens * avgTokenCost) / 1000;
+    const totalCostUsd = textCostUsd + totalImageCost;
 
-    console.log(`💰 Cost calculation: ${totalTokens} tokens × $${avgTokenCost}/1K = $${totalCostUsd.toFixed(6)}`);
+    console.log(`💰 Cost breakdown: Text: $${textCostUsd.toFixed(6)} (${totalTokens} tokens), Images: $${totalImageCost.toFixed(6)}, Total: $${totalCostUsd.toFixed(6)}`);
 
-    // Track AI usage
+    // Step 5: Track AI usage
     try {
       await storage.trackAiUsage({
         websiteId: request.websiteId,
         userId: request.userId,
-        model: AI_MODELS[request.aiProvider].model,
+        model: `${AI_MODELS[request.aiProvider].model}${images.length > 0 ? '+dall-e-3' : ''}`,
         tokensUsed: totalTokens,
-        costUsd: Math.round(totalCostUsd * 100), // Store as cents
+        costUsd: Math.max(1, Math.round(totalCostUsd * 100)), // Store as cents
         operation: 'content_generation'
       });
-    } catch (trackingError) {
+    } catch (trackingError: any) {
       console.warn('AI usage tracking failed:', trackingError.message);
     }
 
-    // Generate enhanced quality checks
+    // Step 6: Generate enhanced quality checks
     const qualityChecks = this.generateQualityChecks(contentResult.content, request);
 
-    return {
+    // Step 7: Return complete result
+    const result: ContentGenerationResult = {
       title: contentResult.title,
-      content: contentResult.content, // This now contains HTML headers!
+      content: contentResult.content,
       excerpt: contentResult.excerpt || this.generateExcerpt(contentResult.content),
       metaDescription: contentResult.metaDescription || this.generateMetaDescription(contentResult.title, contentResult.content),
       metaTitle: contentResult.metaTitle || contentResult.title,
       keywords: contentResult.keywords || request.keywords,
-      seoScore: Math.max(1, Math.min(100, analysisResult.seoScore)), // Ensure valid range
+      seoScore: Math.max(1, Math.min(100, analysisResult.seoScore)),
       readabilityScore: Math.max(1, Math.min(100, analysisResult.readabilityScore)),
       brandVoiceScore: Math.max(1, Math.min(100, analysisResult.brandVoiceScore)),
       eatCompliance: request.eatCompliance || false,
       tokensUsed: totalTokens,
       costUsd: Number(totalCostUsd.toFixed(6)),
       aiProvider: request.aiProvider,
-      qualityChecks,
+      qualityChecks
     };
-  } catch (error) {
+
+    // Add image information if images were generated
+    if (images.length > 0) {
+      result.images = images.map(img => ({
+        url: img.url,
+        filename: img.filename,
+        altText: img.altText,
+        prompt: img.prompt,
+        cost: img.cost
+      }));
+      result.totalImageCost = totalImageCost;
+    }
+
+    return result;
+
+  } catch (error: any) {
     if (error instanceof AIProviderError || error instanceof AnalysisError) {
       throw error;
     }
@@ -755,7 +1079,7 @@ BRAND REQUIREMENTS:
           userId: request.userId,
           model: AI_MODELS[request.aiProvider].model,
           tokensUsed: totalTokens,
-          costUsd: Math.round(analysisCostUsd * 100), // Store as cents
+          costUsd: Math.max(1, Math.round(analysisCostUsd * 100)), // Store as cents
           operation: 'content_analysis'
         });
       } catch (trackingError) {

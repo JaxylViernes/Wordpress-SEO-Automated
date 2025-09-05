@@ -351,6 +351,53 @@ export const insertBackupSchema = createInsertSchema(backups).pick({
   // userId will be added automatically in the backend
 });
 
+
+export const contentImages = pgTable("content_images", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  contentId: varchar("content_id").notNull().references(() => content.id, { onDelete: "cascade" }),
+  websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
+  
+  // DALL-E generated image info
+  originalUrl: text("original_url").notNull(), // DALL-E temporary URL
+  filename: text("filename").notNull(),
+  altText: text("alt_text").notNull(),
+  generationPrompt: text("generation_prompt").notNull(),
+  costCents: integer("cost_cents").notNull(), // Cost in cents
+  imageStyle: text("image_style").notNull(), // natural, digital_art, etc.
+  size: text("size").notNull().default("1024x1024"),
+  
+  // WordPress upload info
+  wordpressMediaId: integer("wordpress_media_id"),
+  wordpressUrl: text("wordpress_url"),
+  status: text("status").notNull().default("generated"), // generated, uploaded, failed
+  uploadError: text("upload_error"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => [
+  index("idx_content_images_content_id").on(table.contentId),
+  index("idx_content_images_user_id").on(table.userId),
+]);
+
+// Add insert schema
+export const insertContentImageSchema = createInsertSchema(contentImages).pick({
+  contentId: true,
+  websiteId: true,
+  originalUrl: true,
+  filename: true,
+  altText: true,
+  generationPrompt: true,
+  costCents: true,
+  imageStyle: true,
+  size: true,
+  wordpressMediaId: true,
+  wordpressUrl: true,
+  status: true,
+  uploadError: true,
+});
+
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -391,3 +438,7 @@ export type Backup = typeof backups.$inferSelect;
 
 // User session type for Replit Auth compatibility
 export type UpsertUser = typeof users.$inferInsert;
+
+
+export type InsertContentImage = z.infer<typeof insertContentImageSchema>;
+export type ContentImage = typeof contentImages.$inferSelect;

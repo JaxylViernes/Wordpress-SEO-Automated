@@ -508,34 +508,34 @@ export const api = {
       return res.json();
     }),
   
-  generateContent: (data: {
-    websiteId: string;
-    topic: string;
-    keywords?: string[];
-    tone?: string;
-    wordCount?: number;
-    brandVoice?: string;
-    targetAudience?: string;
-    eatCompliance?: boolean;
-    aiProvider?: 'openai' | 'anthropic';
-  }) => {
-    console.log("🤖 Generating content with data:", data);
-    return apiRequest("POST", "/api/user/content/generate", data);
-  },
+generateContent: (data: {
+  websiteId: string;
+  topic: string;
+  keywords?: string[];
+  tone?: string;
+  wordCount?: number;
+  brandVoice?: string;
+  targetAudience?: string;
+  eatCompliance?: boolean;
+  aiProvider?: 'openai' | 'anthropic' | 'gemini'; // Updated to include gemini
+}) => {
+  console.log("🤖 Generating content with data:", data);
+  return apiRequest("POST", "/api/user/content/generate", data);
+},
   
-  updateContent: (id: string, data: {
-    title?: string;
-    body?: string;
-    excerpt?: string;
-    metaDescription?: string;
-    metaTitle?: string;
-    websiteId?: string;
-    tone?: string;
-    brandVoice?: string;
-    targetAudience?: string;
-    eatCompliance?: boolean;
-    aiProvider?: 'openai' | 'anthropic';
-  }) => apiRequest("PUT", `/api/user/content/${id}`, data),
+updateContent: (id: string, data: {
+  title?: string;
+  body?: string;
+  excerpt?: string;
+  metaDescription?: string;
+  metaTitle?: string;
+  websiteId?: string;
+  tone?: string;
+  brandVoice?: string;
+  targetAudience?: string;
+  eatCompliance?: boolean;
+  aiProvider?: 'openai' | 'anthropic' | 'gemini'; // Updated to include gemini
+}) => apiRequest("PUT", `/api/user/content/${id}`, data),
   
   publishContent: (id: string) => apiRequest("POST", `/api/user/content/${id}/publish`),
 

@@ -40,6 +40,7 @@ import {
 import { db } from "./db";
 import { eq, desc, and, or, isNull, inArray } from "drizzle-orm";
 import { wordPressAuthService } from "./services/wordpress-auth";
+import { contentImages, insertContentImageSchema, type InsertContentImage, type ContentImage } from "@shared/schema";
 
 export interface IStorage {
   // Users (Required for Replit Auth)
@@ -532,6 +533,94 @@ export class DatabaseStorage implements IStorage {
       recentActivity: recentLogs.length
     };
   }
+
+  async createContentImage(data: InsertContentImage & { userId: string }): Promise<ContentImage> {
+  const validatedData = insertContentImageSchema.parse(data);
+  const imageWithUserId = { ...validatedData, userId: data.userId };
+  
+  const [image] = await db.insert(contentImages).values(imageWithUserId).returning();
+  return image;
+}
+
+// Get images for a specific content piece
+async getContentImages(contentId: string): Promise<ContentImage[]> {
+  return db
+    .select()
+    .from(contentImages)
+    .where(eq(contentImages.contentId, contentId))
+    .orderBy(contentImages.createdAt);
+}
+
+// Update content image (for WordPress upload info)
+async updateContentImage(imageId: string, updates: Partial<{
+  wordpressMediaId: number;
+  wordpressUrl: string;
+  status: string;
+  uploadError: string;
+}>): Promise<ContentImage | null> {
+  const [updated] = await db
+    .update(contentImages)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(eq(contentImages.id, imageId))
+    .returning();
+  
+  return updated || null;
+}
+
+// Get images by user (for dashboard/analytics)
+async getUserContentImages(userId: string, limit: number = 50): Promise<ContentImage[]> {
+  return db
+    .select()
+    .from(contentImages)
+    .where(eq(contentImages.userId, userId))
+    .orderBy(desc(contentImages.createdAt))
+    .limit(limit);
+}
+
+// Delete content images (cascade when content is deleted)
+async deleteContentImages(contentId: string): Promise<void> {
+  await this.db.delete(contentImages).where(eq(contentImages.contentId, contentId));
+}
+
+// Get image usage statistics for a user
+async getUserImageStats(userId: string): Promise<{
+  totalImages: number;
+  totalCostCents: number;
+  imagesThisMonth: number;
+  costThisMonthCents: number;
+}> {
+  const thisMonth = new Date();
+  thisMonth.setDate(1);
+  thisMonth.setHours(0, 0, 0, 0);
+
+  const [allTimeStats] = await this.db
+    .select({
+      totalImages: count(),
+      totalCostCents: sum(contentImages.costCents)
+    })
+    .from(contentImages)
+    .where(eq(contentImages.userId, userId));
+
+  const [monthlyStats] = await this.db
+    .select({
+      imagesThisMonth: count(),
+      costThisMonthCents: sum(contentImages.costCents)
+    })
+    .from(contentImages)
+    .where(
+      and(
+        eq(contentImages.userId, userId),
+        gte(contentImages.createdAt, thisMonth)
+      )
+    );
+
+  return {
+    totalImages: Number(allTimeStats.totalImages) || 0,
+    totalCostCents: Number(allTimeStats.totalCostCents) || 0,
+    imagesThisMonth: Number(monthlyStats.imagesThisMonth) || 0,
+    costThisMonthCents: Number(monthlyStats.costThisMonthCents) || 0
+  };
+}
 }
 
 export const storage = new DatabaseStorage();

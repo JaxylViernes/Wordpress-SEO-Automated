@@ -403,10 +403,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
- app.post("/api/user/content/generate", requireAuth, async (req: Request, res: Response): Promise<void> => {
+app.post("/api/user/content/generate", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
     const { websiteId, ...contentData } = req.body;
+
+     console.log('🔍 DEBUG: Raw request body:', {
+      websiteId,
+      contentData: {
+        includeImages: contentData.includeImages,
+        imageCount: contentData.imageCount,
+        imageStyle: contentData.imageStyle,
+        aiProvider: contentData.aiProvider,
+        topic: contentData.topic
+      }
+    });
     
     // Verify website ownership
     const website = await storage.getUserWebsite(websiteId, userId);
@@ -423,7 +434,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       brandVoice, 
       targetAudience, 
       eatCompliance,
-      aiProvider = 'openai'
+      aiProvider = 'openai',
+      includeImages = false,
+      imageCount = 0,
+      imageStyle = 'natural'
     } = contentData;
     
     if (!topic) {
@@ -431,8 +445,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return;
     }
 
-    if (aiProvider && !['openai', 'anthropic'].includes(aiProvider)) {
-      res.status(400).json({ message: "AI provider must be either 'openai' or 'anthropic'" });
+    if (includeImages && aiProvider !== 'openai') {
+      res.status(400).json({ 
+        message: "Image generation requires OpenAI provider (DALL-E 3)" 
+      });
+      return;
+    }
+
+    // Validate image count
+    if (includeImages && (imageCount < 1 || imageCount > 3)) {
+      res.status(400).json({ 
+        message: "Image count must be between 1 and 3" 
+      });
+      return;
+    }
+
+    // Updated validation to include Gemini
+    if (aiProvider && !['openai', 'anthropic', 'gemini'].includes(aiProvider)) {
+      res.status(400).json({ 
+        message: "AI provider must be 'openai', 'anthropic', or 'gemini'" 
+      });
       return;
     }
 
@@ -448,8 +480,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       brandVoice: brandVoice || "professional",
       targetAudience,
       eatCompliance: eatCompliance || false,
-      aiProvider: aiProvider as 'openai' | 'anthropic',
-      userId: req.user!.id
+      aiProvider: aiProvider as 'openai' | 'anthropic' | 'gemini', // Updated type
+      userId: req.user!.id,
+
+      includeImages,
+      imageCount,
+      imageStyle
     });
 
     // FIXED: Ensure we're saving proper numeric values, never 0 unless intended
@@ -468,11 +504,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       costUsd: Math.max(1, Math.round((result.costUsd || 0.001) * 100)), // Convert to cents, min 1 cent
       eatCompliance: result.eatCompliance,
       seoKeywords: result.keywords,
-      aiModel: aiProvider === 'openai' ? 'gpt-4o' : 'claude-3-5-sonnet-20250106'
+      aiModel: aiProvider === 'openai' ? 'gpt-4o' : aiProvider === 'anthropic' ? 'claude-3-5-sonnet-20250106' : 'gemini-1.5-pro',
+   
+      hasImages: includeImages && result.images?.length > 0,
+      imageCount: result.images?.length || 0,
+      imageCostCents: Math.round((result.totalImageCost || 0) * 100)
     });
 
     console.log(`✅ Content saved with scores - SEO: ${content.seoScore}, Readability: ${content.readabilityScore}, Brand: ${content.brandVoiceScore}, Tokens: ${content.tokensUsed}, Cost: ${content.costUsd} cents`);
 
+    if (result.images && result.images.length > 0) {
+      for (const image of result.images) {
+        await storage.createContentImage({
+          contentId: content.id,
+          userId,
+          websiteId,
+          originalUrl: image.url,
+          filename: image.filename,
+          altText: image.altText,
+          generationPrompt: image.prompt,
+          costCents: Math.round(image.cost * 100),
+          imageStyle,
+          size: '1024x1024',
+          status: 'generated'
+        });
+      }
+    }
     // Log the activity
     await storage.createActivityLog({
       userId,
@@ -483,7 +540,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         contentId: content.id,
         aiProvider: result.aiProvider,
         tokensUsed: content.tokensUsed,
-        costCents: content.costUsd
+        costCents: content.costUsd,
+        
+
+        hasImages: !!result.images?.length,
+        imageCount: result.images?.length || 0,
+        imageCostCents: Math.round((result.totalImageCost || 0) * 100)
       }
     });
 
@@ -494,12 +556,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     let statusCode = 500;
     let errorMessage = error instanceof Error ? error.message : "Failed to generate content";
     
-    if (error instanceof Error) {
+if (error instanceof Error) {
       if (error.name === 'AIProviderError') {
         statusCode = 400;
       } else if (error.name === 'AnalysisError') {
         statusCode = 422;
         errorMessage = `Content generated successfully, but analysis failed: ${error.message}`;
+      } else if (error.message.includes('Image generation failed')) {
+        statusCode = 422;
+        errorMessage = `Content generated successfully, but image generation failed: ${error.message}`;
       }
     }
     
@@ -510,7 +575,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 });
 
-// Remove the duplicate route and use this single, fixed version
+
+
+app.post("/api/user/content/:id/upload-images", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const contentId = req.params.id;
+    
+    // Get the content and verify ownership
+    const content = await storage.getContent(contentId);
+    if (!content || content.userId !== userId) {
+      res.status(404).json({ message: "Content not found or access denied" });
+      return;
+    }
+
+    // Get the website for WordPress credentials
+    const website = await storage.getUserWebsite(content.websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found" });
+      return;
+    }
+
+    // Get images for this content
+    const images = await storage.getContentImages(contentId);
+    if (images.length === 0) {
+      res.status(400).json({ message: "No images to upload" });
+      return;
+    }
+
+    const wpCredentials = {
+      url: website.url,
+      username: website.wpUsername || 'your_username',
+      applicationPassword: website.wpApplicationPassword || 'your_app_password'
+    };
+
+    const uploadResults = [];
+    let successCount = 0;
+
+    for (const image of images) {
+      if (image.status === 'uploaded') {
+        uploadResults.push({ imageId: image.id, status: 'already_uploaded', wpUrl: image.wordpressUrl });
+        successCount++;
+        continue;
+      }
+
+      try {
+        const uploadResult = await imageService.uploadImageToWordPress(
+          image.originalUrl,
+          image.filename,
+          image.altText,
+          wpCredentials
+        );
+
+        // Update image record with WordPress info
+        await storage.updateContentImage(image.id, {
+          wordpressMediaId: uploadResult.id,
+          wordpressUrl: uploadResult.url,
+          status: 'uploaded'
+        });
+
+        uploadResults.push({
+          imageId: image.id,
+          status: 'uploaded',
+          wpMediaId: uploadResult.id,
+          wpUrl: uploadResult.url
+        });
+
+        successCount++;
+      } catch (uploadError) {
+        console.error(`Failed to upload image ${image.id}:`, uploadError);
+        
+        await storage.updateContentImage(image.id, {
+          status: 'failed',
+          uploadError: uploadError.message
+        });
+
+        uploadResults.push({
+          imageId: image.id,
+          status: 'failed',
+          error: uploadError.message
+        });
+      }
+    }
+
+    res.json({
+      success: successCount > 0,
+      message: `${successCount}/${images.length} images uploaded successfully`,
+      results: uploadResults,
+      successCount,
+      totalCount: images.length
+    });
+
+  } catch (error) {
+    console.error("Image upload error:", error);
+    res.status(500).json({ 
+      message: "Failed to upload images",
+      error: error.message 
+    });
+  }
+});
+
 app.put("/api/user/content/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
@@ -526,62 +690,72 @@ app.put("/api/user/content/:id", requireAuth, async (req: Request, res: Response
       }
     }
     
-    // If aiProvider is specified, re-analyze the content
-    let analysis = null;
+    // If aiProvider is specified, REGENERATE the content completely
+    let regenerationResult = null;
     if (aiProvider && updateData.title && updateData.body) {
       try {
-        console.log(`🤖 Re-analyzing content with ${aiProvider.toUpperCase()}`);
+        console.log(`🤖 Regenerating content with ${aiProvider.toUpperCase()}`);
         
         const keywords = Array.isArray(updateData.seoKeywords) ? 
           updateData.seoKeywords : 
           (typeof updateData.seoKeywords === 'string' ? 
             updateData.seoKeywords.split(',').map(k => k.trim()) : []);
 
-        analysis = await aiService.analyzeExistingContent({
-          title: updateData.title,
-          content: updateData.body,
+        // Use generateContent to create completely new content
+        regenerationResult = await aiService.generateContent({
+          websiteId: websiteId || contentId,
+          topic: updateData.title, // Use the title as the topic
           keywords: keywords,
           tone: updateData.tone || 'professional',
+          wordCount: updateData.body ? updateData.body.split(' ').length : 800, // Match current length
+          seoOptimized: true,
           brandVoice: updateData.brandVoice,
           targetAudience: updateData.targetAudience,
           eatCompliance: updateData.eatCompliance || false,
-          websiteId: websiteId || contentId,
-          aiProvider: aiProvider as 'openai' | 'anthropic',
-          userId: userId
+          aiProvider: aiProvider as 'openai' | 'anthropic' | 'gemini',
+          userId: userId,
+          includeImages: false, // Don't regenerate images for existing content
+          imageCount: 0
         });
 
-        // FIXED: Properly validate and set analysis results
-        if (analysis) {
-          console.log('Raw analysis results:', {
-            seoScore: analysis.seoScore,
-            readabilityScore: analysis.readabilityScore,
-            brandVoiceScore: analysis.brandVoiceScore,
-            tokensUsed: analysis.tokensUsed,
-            costUsd: analysis.costUsd
+        if (regenerationResult) {
+          console.log('Regeneration results:', {
+            seoScore: regenerationResult.seoScore,
+            readabilityScore: regenerationResult.readabilityScore,
+            brandVoiceScore: regenerationResult.brandVoiceScore,
+            tokensUsed: regenerationResult.tokensUsed,
+            costUsd: regenerationResult.costUsd
           });
 
-          // Ensure scores are valid numbers between 1-100, with fallbacks
-          updateData.seoScore = Math.max(1, Math.min(100, Math.round(Number(analysis.seoScore) || 50)));
-          updateData.readabilityScore = Math.max(1, Math.min(100, Math.round(Number(analysis.readabilityScore) || 50)));
-          updateData.brandVoiceScore = Math.max(1, Math.min(100, Math.round(Number(analysis.brandVoiceScore) || 50)));
-          
-          // Ensure tokens used is a positive number
-          updateData.tokensUsed = Math.max(1, Math.round(Number(analysis.tokensUsed) || 100));
-          
-          // Convert cost to cents, ensure it's at least 1 cent
-          const costInDollars = Number(analysis.costUsd) || 0.01;
-          updateData.costUsd = Math.max(1, Math.round(costInDollars * 100));
+          // Replace the content with newly generated content
+          updateData.title = regenerationResult.title;
+          updateData.body = regenerationResult.content;
+          updateData.excerpt = regenerationResult.excerpt;
+          updateData.metaDescription = regenerationResult.metaDescription;
+          updateData.metaTitle = regenerationResult.metaTitle;
+          updateData.seoKeywords = regenerationResult.keywords;
 
-          // Update AI model based on provider
-          updateData.aiModel = aiProvider === 'openai' ? 'gpt-4o' : 'claude-3-5-sonnet-20250106';
+          // Update scores with new analysis
+          updateData.seoScore = Math.max(1, Math.min(100, Math.round(regenerationResult.seoScore)));
+          updateData.readabilityScore = Math.max(1, Math.min(100, Math.round(regenerationResult.readabilityScore)));
+          updateData.brandVoiceScore = Math.max(1, Math.min(100, Math.round(regenerationResult.brandVoiceScore)));
+          
+          // Update tokens and cost
+          updateData.tokensUsed = Math.max(1, Math.round(regenerationResult.tokensUsed));
+          updateData.costUsd = Math.max(1, Math.round((regenerationResult.costUsd || 0.001) * 100));
 
-          console.log(`✅ Content re-analyzed - SEO: ${updateData.seoScore}%, Readability: ${updateData.readabilityScore}%, Brand Voice: ${updateData.brandVoiceScore}%, Tokens: ${updateData.tokensUsed}, Cost: ${updateData.costUsd} cents`);
+          // Update AI model
+          updateData.aiModel = aiProvider === 'openai' ? 'gpt-4o' : 
+                                aiProvider === 'anthropic' ? 'claude-3-5-sonnet-20250106' : 
+                                'gemini-1.5-pro';
+
+          console.log(`✅ Content regenerated - SEO: ${updateData.seoScore}%, Readability: ${updateData.readabilityScore}%, Brand Voice: ${updateData.brandVoiceScore}%, Tokens: ${updateData.tokensUsed}, Cost: ${updateData.costUsd} cents`);
         } else {
-          console.warn("⚠️ Analysis returned null/undefined result");
+          console.warn("⚠️ Regeneration returned null/undefined result");
         }
-      } catch (analysisError) {
-        console.warn(`⚠️ Content analysis failed: ${analysisError instanceof Error ? analysisError.message : 'Unknown error'}`);
-        // Continue with update even if analysis fails, but don't update scores
+      } catch (regenerationError) {
+        console.warn(`⚠️ Content regeneration failed: ${regenerationError instanceof Error ? regenerationError.message : 'Unknown error'}`);
+        // Continue with update even if regeneration fails, but don't update content
       }
     }
     
@@ -592,20 +766,20 @@ app.put("/api/user/content/:id", requireAuth, async (req: Request, res: Response
       return;
     }
 
-    // Log the activity if analysis was performed
-    if (analysis && websiteId) {
+    // Log the activity if regeneration was performed
+    if (regenerationResult && websiteId) {
       try {
         await storage.createActivityLog({
           userId,
           websiteId,
-          type: "content_updated",
-          description: `Content updated and re-analyzed: "${updatedContent.title}" (${aiProvider?.toUpperCase()})`,
+          type: "content_regenerated",
+          description: `Content regenerated with AI: "${updatedContent.title}" (${aiProvider?.toUpperCase()})`,
           metadata: { 
             contentId: updatedContent.id,
             aiProvider: aiProvider,
             tokensUsed: updateData.tokensUsed,
             costCents: updateData.costUsd,
-            scoresUpdated: !!analysis
+            regenerated: !!regenerationResult
           }
         });
       } catch (logError) {
@@ -616,7 +790,15 @@ app.put("/api/user/content/:id", requireAuth, async (req: Request, res: Response
 
     res.json({ 
       content: updatedContent,
-      analysis: analysis // Include analysis results in response
+      regeneration: regenerationResult ? {
+        success: true,
+        aiProvider: regenerationResult.aiProvider,
+        tokensUsed: regenerationResult.tokensUsed,
+        costUsd: regenerationResult.costUsd,
+        seoScore: regenerationResult.seoScore,
+        readabilityScore: regenerationResult.readabilityScore,
+        brandVoiceScore: regenerationResult.brandVoiceScore
+      } : null
     });
   } catch (error) {
     console.error("Content update error:", error);
@@ -628,6 +810,9 @@ app.put("/api/user/content/:id", requireAuth, async (req: Request, res: Response
       errorMessage = error.message;
       if (error.name === 'ValidationError') {
         statusCode = 400;
+      } else if (error.name === 'AIProviderError') {
+        statusCode = 400;
+        errorMessage = `Content regeneration failed: ${error.message}`;
       }
     }
     
@@ -636,7 +821,7 @@ app.put("/api/user/content/:id", requireAuth, async (req: Request, res: Response
       error: error instanceof Error ? error.name : 'UnknownError'
     });
   }
-}); // Adjust path as needed
+});
 
 app.post("/api/user/content/:id/publish", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
@@ -1164,89 +1349,101 @@ function generateIterativeFixRecommendations(result: any): string[] {
   // =============================================================================
   
   app.get("/api/ai-providers/status", async (req: Request, res: Response): Promise<void> => {
-    try {
-      const status = {
-        openai: {
-          available: !!(process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR),
-          model: 'gpt-4o',
-          pricing: { input: 0.005, output: 0.015 }
-        },
-        anthropic: {
-          available: !!process.env.ANTHROPIC_API_KEY,
-          model: 'claude-3-5-sonnet-20241022',
-          pricing: { input: 0.003, output: 0.015 }
-        },
-        pagespeed: {
-          available: !!process.env.GOOGLE_PAGESPEED_API_KEY
-        }
-      };
+  try {
+    const status = {
+      openai: {
+        available: !!(process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR),
+        model: 'gpt-4o',
+        pricing: { input: 0.005, output: 0.015 }
+      },
+      anthropic: {
+        available: !!process.env.ANTHROPIC_API_KEY,
+        model: 'claude-3-5-sonnet-20241022',
+        pricing: { input: 0.003, output: 0.015 }
+      },
+      gemini: {
+        available: !!process.env.GOOGLE_GEMINI_API_KEY,
+        model: 'gemini-1.5-pro',
+        pricing: { input: 0.0025, output: 0.0075 }
+      },
+      pagespeed: {
+        available: !!process.env.GOOGLE_PAGESPEED_API_KEY
+      }
+    };
 
-      res.json({
-        success: true,
-        providers: status
-      });
-    } catch (error) {
-      console.error('Provider status check error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json({
-        success: false,
-        error: 'Failed to check provider status',
-        message: errorMessage
-      });
-    }
-  });
+    res.json({
+      success: true,
+      providers: status
+    });
+  } catch (error) {
+    console.error('Provider status check error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({
+      success: false,
+      error: 'Failed to check provider status',
+      message: errorMessage
+    });
+  }
+});
 
-  app.get("/api/seo/health", async (req: Request, res: Response): Promise<void> => {
-    try {
-      const hasGoogleApiKey = !!process.env.GOOGLE_PAGESPEED_API_KEY;
-      const hasOpenAI = !!process.env.OPENAI_API_KEY;
-      const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
-      
-      res.json({
-        status: "healthy",
-        services: {
-          pageSpeedInsights: {
-            configured: hasGoogleApiKey,
-            message: hasGoogleApiKey 
-              ? "Google PageSpeed Insights API is configured" 
-              : "Using fallback speed estimation (configure GOOGLE_PAGESPEED_API_KEY for better results)"
-          },
-          technicalAnalysis: {
-            configured: true,
-            message: "Technical SEO analysis is fully operational"
-          },
-          aiContentAnalysis: {
-            configured: hasOpenAI || hasAnthropic,
-            providers: {
-              openai: hasOpenAI,
-              anthropic: hasAnthropic
-            },
-            message: hasOpenAI || hasAnthropic 
-              ? `AI content analysis available via ${hasAnthropic ? 'Anthropic Claude' : 'OpenAI GPT-4'}` 
-              : "Configure OPENAI_API_KEY or ANTHROPIC_API_KEY for AI-powered content analysis"
-          }
+ app.get("/api/seo/health", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const hasGoogleApiKey = !!process.env.GOOGLE_PAGESPEED_API_KEY;
+    const hasOpenAI = !!process.env.OPENAI_API_KEY;
+    const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+    const hasGemini = !!process.env.GOOGLE_GEMINI_API_KEY;
+    
+    const availableProviders = [];
+    if (hasOpenAI) availableProviders.push('OpenAI GPT-4');
+    if (hasAnthropic) availableProviders.push('Anthropic Claude');
+    if (hasGemini) availableProviders.push('Google Gemini');
+    
+    res.json({
+      status: "healthy",
+      services: {
+        pageSpeedInsights: {
+          configured: hasGoogleApiKey,
+          message: hasGoogleApiKey 
+            ? "Google PageSpeed Insights API is configured" 
+            : "Using fallback speed estimation (configure GOOGLE_PAGESPEED_API_KEY for better results)"
         },
-        capabilities: {
-          basicSEO: true,
-          technicalSEO: true,
-          pageSpeed: hasGoogleApiKey,
-          contentQuality: hasOpenAI || hasAnthropic,
-          keywordOptimization: hasOpenAI || hasAnthropic,
-          eatScoring: hasOpenAI || hasAnthropic,
-          contentGapAnalysis: hasOpenAI || hasAnthropic,
-          semanticAnalysis: hasOpenAI || hasAnthropic,
-          userIntentAlignment: hasOpenAI || hasAnthropic
+        technicalAnalysis: {
+          configured: true,
+          message: "Technical SEO analysis is fully operational"
+        },
+        aiContentAnalysis: {
+          configured: hasOpenAI || hasAnthropic || hasGemini,
+          providers: {
+            openai: hasOpenAI,
+            anthropic: hasAnthropic,
+            gemini: hasGemini
+          },
+          message: availableProviders.length > 0
+            ? `AI content analysis available via ${availableProviders.join(', ')}` 
+            : "Configure OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_GEMINI_API_KEY for AI-powered content analysis"
         }
-      });
-    } catch (error) {
-      console.error("SEO health check failed:", error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json({ 
-        status: "unhealthy", 
-        error: errorMessage 
-      });
-    }
-  });
+      },
+      capabilities: {
+        basicSEO: true,
+        technicalSEO: true,
+        pageSpeed: hasGoogleApiKey,
+        contentQuality: hasOpenAI || hasAnthropic || hasGemini,
+        keywordOptimization: hasOpenAI || hasAnthropic || hasGemini,
+        eatScoring: hasOpenAI || hasAnthropic || hasGemini,
+        contentGapAnalysis: hasOpenAI || hasAnthropic || hasGemini,
+        semanticAnalysis: hasOpenAI || hasAnthropic || hasGemini,
+        userIntentAlignment: hasOpenAI || hasAnthropic || hasGemini
+      }
+    });
+  } catch (error) {
+    console.error("SEO health check failed:", error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ 
+      status: "unhealthy", 
+      error: errorMessage 
+    });
+  }
+});
 
   // URL validation endpoint
   app.post("/api/validate-url", async (req: Request, res: Response): Promise<void> => {
