@@ -441,6 +441,8 @@ export class DatabaseStorage implements IStorage {
     return approvalRecord;
   }
 
+  
+
   async createSecurityAudit(audit: InsertSecurityAudit & { userId?: string }): Promise<SecurityAudit> {
     const [auditRecord] = await db
       .insert(securityAudits)

@@ -1,71 +1,14 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Download, TrendingUp, TrendingDown, Calendar, FileText, BarChart3, Minus } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Download, TrendingUp, TrendingDown, Calendar, FileText, BarChart3, Minus, RefreshCw, Plus, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { api } from "@/lib/api";
-import { format, subMonths, subWeeks } from "date-fns";
-
-// Mock report data
-const getClientReports = () => [
-  {
-    id: "1",
-    websiteId: "1",
-    websiteName: "TechBlog.com",
-    reportType: "monthly",
-    period: "November 2024",
-    generatedAt: subMonths(new Date(), 0),
-    data: {
-      seoScoreChange: 8,
-      contentPublished: 12,
-      trafficChange: 24,
-      keywordRankings: 45,
-      backlinks: 23,
-      pageViews: 15420,
-      organicTraffic: 8960,
-      conversionRate: 3.2,
-    },
-  },
-  {
-    id: "2",
-    websiteId: "2",
-    websiteName: "E-Commerce.store",
-    reportType: "weekly",
-    period: "Week 46, 2024",
-    generatedAt: subWeeks(new Date(), 1),
-    data: {
-      seoScoreChange: 2,
-      contentPublished: 3,
-      trafficChange: 15,
-      keywordRankings: 32,
-      backlinks: 8,
-      pageViews: 8750,
-      organicTraffic: 5200,
-      conversionRate: 4.8,
-    },
-  },
-  {
-    id: "3",
-    websiteId: "3",
-    websiteName: "RestaurantSite.com",
-    reportType: "monthly",
-    period: "November 2024",
-    generatedAt: subMonths(new Date(), 0),
-    data: {
-      seoScoreChange: -3,
-      contentPublished: 6,
-      trafficChange: 0,
-      keywordRankings: 18,
-      backlinks: 12,
-      pageViews: 3420,
-      organicTraffic: 2100,
-      conversionRate: 2.1,
-    },
-  },
-];
+import { format } from "date-fns";
 
 const getTrendIcon = (change: number) => {
   if (change > 0) return <TrendingUp className="w-3 h-3" />;
@@ -86,29 +29,170 @@ const formatNumber = (num: number) => {
   return num.toString();
 };
 
-export default function Reports() {
-  const [selectedWebsite, setSelectedWebsite] = useState<string>("");
-  const [reportType, setReportType] = useState<string>("all");
+// Helper function to check if a report already exists for this period
+const checkForExistingReport = (
+  reports: any[], 
+  websiteId: string, 
+  reportType: string, 
+  targetPeriod: string
+): boolean => {
+  return reports.some(report => 
+    report.websiteId === websiteId && 
+    report.reportType === reportType && 
+    report.period === targetPeriod
+  );
+};
 
+// Helper function to generate period string
+const generatePeriodString = (reportType: string): string => {
+  const now = new Date();
+  
+  if (reportType === 'weekly') {
+    const weekNumber = Math.ceil(now.getDate() / 7);
+    return `Week ${weekNumber}, ${now.getFullYear()}`;
+  } else if (reportType === 'monthly') {
+    return `${now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`;
+  } else { // quarterly
+    const quarter = Math.floor(now.getMonth() / 3) + 1;
+    return `Q${quarter} ${now.getFullYear()}`;
+  }
+};
+
+export default function Reports() {
+  const [selectedWebsite, setSelectedWebsite] = useState<string>("all");
+  const [reportType, setReportType] = useState<string>("all");
+  const [message, setMessage] = useState<string>("");
+  const [duplicateWarnings, setDuplicateWarnings] = useState<string[]>([]);
+  const queryClient = useQueryClient();
+
+  // Fetch websites
   const { data: websites } = useQuery({
-    queryKey: ["/api/websites"],
+    queryKey: ["/api/user/websites"],
     queryFn: api.getWebsites,
   });
 
-  // Mock data for reports
-  const allReports = getClientReports();
-  
-// Updated logic
-const filteredReports = allReports.filter(report => {
-  if (selectedWebsite && selectedWebsite !== "all" && report.websiteId !== selectedWebsite) return false;
-  if (reportType !== "all" && report.reportType !== reportType) return false;
-  return true;
-});
+  // Fetch all reports
+  const { data: allReports = [], isLoading, refetch } = useQuery({
+    queryKey: ["/api/user/reports"],
+    queryFn: () => api.getClientReports(),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
 
-  const getWebsiteName = (websiteId: string) => {
-    const website = websites?.find(w => w.id === websiteId);
-    return website?.name || "Unknown Website";
+  // Generate report mutation
+  const generateReportMutation = useMutation({
+    mutationFn: ({ websiteId, reportType }: { websiteId: string; reportType: 'weekly' | 'monthly' | 'quarterly' }) =>
+      api.generateClientReport(websiteId, { reportType }),
+    onSuccess: (data) => {
+      console.log(`Report generated for ${data.websiteName}`);
+      setMessage(`Successfully generated ${data.reportType} report for ${data.websiteName}`);
+      queryClient.invalidateQueries({ queryKey: ["/api/user/reports"] });
+      setDuplicateWarnings([]); // Clear warnings on success
+      // Clear message after 5 seconds
+      setTimeout(() => setMessage(""), 5000);
+    },
+    onError: (error: Error) => {
+      console.error(`Failed to generate report: ${error.message}`);
+      setMessage(`Error: Failed to generate report - ${error.message}`);
+      // Clear message after 5 seconds
+      setTimeout(() => setMessage(""), 5000);
+    },
+  });
+
+  // Filter reports based on selections
+  const filteredReports = allReports.filter(report => {
+    if (selectedWebsite !== "all" && report.websiteId !== selectedWebsite) return false;
+    if (reportType !== "all" && report.reportType !== reportType) return false;
+    return true;
+  });
+
+  // Calculate overview stats
+  const monthlyReports = filteredReports.filter(r => r.reportType === "monthly").length;
+  const weeklyReports = filteredReports.filter(r => r.reportType === "weekly").length;
+  const avgPerformance = filteredReports.length > 0 ? 
+    Math.round(filteredReports.reduce((sum, r) => sum + (r.data?.seoScoreChange || 0), 0) / filteredReports.length) : 0;
+
+  const handleGenerateReport = (websiteId: string, type: 'weekly' | 'monthly' | 'quarterly') => {
+    console.log(`Generating ${type} report for website: ${websiteId}`);
+    
+    // Check for existing reports
+    const targetPeriod = generatePeriodString(type);
+    const existingReport = checkForExistingReport(allReports, websiteId, type, targetPeriod);
+    
+    if (existingReport) {
+      const website = websites?.find(w => w.id === websiteId);
+      setMessage(`Warning: A ${type} report for ${targetPeriod} already exists for ${website?.name || 'this website'}. Generating new report will replace the existing one.`);
+    } else {
+      setMessage(`Generating ${type} report...`);
+    }
+    
+    generateReportMutation.mutate({ websiteId, reportType: type });
   };
+
+  const handleBulkGenerate = async () => {
+    console.log("Bulk generate button clicked");
+    
+    if (!websites || websites.length === 0) {
+      setMessage("No websites available for report generation");
+      return;
+    }
+
+    if (reportType === "all") {
+      setMessage("Please select a specific report type before generating reports");
+      return;
+    }
+
+    const websiteIds = selectedWebsite === "all" ? 
+      websites.map(w => w.id) : 
+      [selectedWebsite];
+
+    // Check for duplicates before generating
+    const targetPeriod = generatePeriodString(reportType as 'weekly' | 'monthly' | 'quarterly');
+    const duplicates: string[] = [];
+    
+    websiteIds.forEach(websiteId => {
+      const website = websites.find(w => w.id === websiteId);
+      if (checkForExistingReport(allReports, websiteId, reportType, targetPeriod)) {
+        duplicates.push(website?.name || 'Unknown website');
+      }
+    });
+
+    if (duplicates.length > 0) {
+      setDuplicateWarnings(duplicates);
+      setMessage(`Warning: ${duplicates.length} website(s) already have ${reportType} reports for ${targetPeriod}. Continue to replace existing reports.`);
+    } else {
+      setDuplicateWarnings([]);
+    }
+
+    setMessage(`Generating ${reportType} reports for ${websiteIds.length} website(s)...`);
+
+    try {
+      const results = await api.generateBulkReports(websiteIds, reportType as 'weekly' | 'monthly' | 'quarterly');
+      const successful = results.filter(r => r.success).length;
+      const failed = results.filter(r => !r.success).length;
+      
+      if (successful > 0) {
+        console.log(`Generated ${successful} reports successfully`);
+        setMessage(`Successfully generated ${successful} ${reportType} reports${failed > 0 ? `, ${failed} failed` : ''}`);
+        queryClient.invalidateQueries({ queryKey: ["/api/user/reports"] });
+        setDuplicateWarnings([]);
+      } else {
+        setMessage("Failed to generate any reports");
+      }
+    } catch (error) {
+      console.error("Bulk report generation failed:", error);
+      setMessage("Bulk report generation failed");
+    }
+    
+    // Clear message after 5 seconds
+    setTimeout(() => setMessage(""), 5000);
+  };
+
+  // Check if generate button should be disabled
+  const isAnyGenerationInProgress = generateReportMutation.isPending;
+  const isGenerateDisabled = isAnyGenerationInProgress || 
+                           !websites?.length || 
+                           reportType === "all" || 
+                           reportType === "";
 
   return (
     <div className="py-6">
@@ -120,16 +204,58 @@ const filteredReports = allReports.filter(report => {
               Client Reports
             </h2>
             <p className="mt-1 text-sm text-gray-500">
-              Comprehensive SEO and content performance reports for your clients
+              Comprehensive SEO and content performance reports for your websites
             </p>
           </div>
-          <div className="mt-4 flex md:mt-0 md:ml-4">
-            <Button className="bg-primary-500 hover:bg-primary-600 text-white">
-              <Download className="w-4 h-4 mr-2" />
-              Generate Report
+          <div className="mt-4 flex gap-2 md:mt-0 md:ml-4">
+            <Button 
+              variant="outline" 
+              onClick={() => refetch()}
+              disabled={isLoading}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button 
+              onClick={handleBulkGenerate}
+              disabled={isGenerateDisabled}
+              className="bg-primary-500 hover:bg-primary-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              title={reportType === "all" ? "Please select a report type first" : "Generate reports"}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              {reportType === "all" ? "Select Report Type" : "Generate Reports"}
             </Button>
           </div>
         </div>
+
+        {/* Status Message */}
+        {message && (
+          <div className={`mb-4 p-3 rounded-md ${
+            message.includes('Error') || message.includes('Failed') 
+              ? 'bg-red-50 text-red-800 border border-red-200' 
+              : message.includes('Warning')
+              ? 'bg-yellow-50 text-yellow-800 border border-yellow-200'
+              : 'bg-green-50 text-green-800 border border-green-200'
+          }`}>
+            {message}
+          </div>
+        )}
+
+        {/* Duplicate Warnings */}
+        {duplicateWarnings.length > 0 && (
+          <Alert className="mb-4 border-yellow-200 bg-yellow-50">
+            <AlertTriangle className="h-4 w-4 text-yellow-600" />
+            <AlertDescription className="text-yellow-800">
+              <strong>Duplicate Reports Warning:</strong> The following websites already have {reportType} reports for this period:
+              <ul className="mt-2 list-disc list-inside">
+                {duplicateWarnings.map((website, index) => (
+                  <li key={index}>{website}</li>
+                ))}
+              </ul>
+              Generating new reports will replace the existing ones.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-8">
@@ -138,23 +264,24 @@ const filteredReports = allReports.filter(report => {
               <SelectValue placeholder="All websites" />
             </SelectTrigger>
             <SelectContent>
-  <SelectItem value="all">All websites</SelectItem>  {/* Changed from "" to "all" */}
-  {websites?.map((website) => (
-    <SelectItem key={website.id} value={website.id}>
-      {website.name}
-    </SelectItem>
-  ))}
-</SelectContent>
+              <SelectItem value="all">All websites</SelectItem>
+              {websites?.map((website) => (
+                <SelectItem key={website.id} value={website.id}>
+                  {website.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
 
           <Select value={reportType} onValueChange={setReportType}>
             <SelectTrigger className="w-48">
-              <SelectValue />
+              <SelectValue placeholder="Select report type" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All report types</SelectItem>
               <SelectItem value="weekly">Weekly reports</SelectItem>
               <SelectItem value="monthly">Monthly reports</SelectItem>
+              <SelectItem value="quarterly">Quarterly reports</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -176,9 +303,7 @@ const filteredReports = allReports.filter(report => {
               <CardTitle className="text-sm font-medium text-gray-600">Monthly Reports</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-600">
-                {filteredReports.filter(r => r.reportType === "monthly").length}
-              </div>
+              <div className="text-2xl font-bold text-blue-600">{monthlyReports}</div>
               <p className="text-xs text-gray-500 mt-1">Comprehensive analysis</p>
             </CardContent>
           </Card>
@@ -188,9 +313,7 @@ const filteredReports = allReports.filter(report => {
               <CardTitle className="text-sm font-medium text-gray-600">Weekly Reports</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {filteredReports.filter(r => r.reportType === "weekly").length}
-              </div>
+              <div className="text-2xl font-bold text-green-600">{weeklyReports}</div>
               <p className="text-xs text-gray-500 mt-1">Quick updates</p>
             </CardContent>
           </Card>
@@ -200,157 +323,219 @@ const filteredReports = allReports.filter(report => {
               <CardTitle className="text-sm font-medium text-gray-600">Avg Performance</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-purple-600">
-                {Math.round(
-                  filteredReports.reduce((sum, r) => sum + r.data.seoScoreChange, 0) / 
-                  Math.max(filteredReports.length, 1)
-                )}%
+              <div className={`text-2xl font-bold ${getTrendColor(avgPerformance)}`}>
+                {avgPerformance > 0 ? '+' : ''}{avgPerformance}%
               </div>
               <p className="text-xs text-gray-500 mt-1">SEO improvement</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Reports List */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-          {filteredReports.map((report) => (
-            <Card key={report.id} className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">{report.websiteName}</CardTitle>
-                  <Badge variant={report.reportType === "monthly" ? "default" : "secondary"}>
-                    {report.reportType}
-                  </Badge>
-                </div>
-                <CardDescription>{report.period}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Tabs defaultValue="overview" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="overview">Overview</TabsTrigger>
-                    <TabsTrigger value="details">Details</TabsTrigger>
-                  </TabsList>
-                  
-                  <TabsContent value="overview" className="space-y-3 mt-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">SEO Score</span>
-                      <span className={`font-medium flex items-center ${getTrendColor(report.data.seoScoreChange)}`}>
-                        {getTrendIcon(report.data.seoScoreChange)}
-                        <span className="ml-1">
-                          {report.data.seoScoreChange > 0 ? '+' : ''}{report.data.seoScoreChange}%
-                        </span>
-                      </span>
-                    </div>
-                    
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Content Published</span>
-                      <span className="font-medium">{report.data.contentPublished} posts</span>
-                    </div>
-                    
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Traffic Change</span>
-                      <span className={`font-medium flex items-center ${getTrendColor(report.data.trafficChange)}`}>
-                        {report.data.trafficChange !== 0 && getTrendIcon(report.data.trafficChange)}
-                        <span className="ml-1">
-                          {report.data.trafficChange > 0 ? '+' : ''}
-                          {report.data.trafficChange === 0 ? 'Stable' : `${report.data.trafficChange}%`}
-                        </span>
-                      </span>
-                    </div>
-                  </TabsContent>
-                  
-                  <TabsContent value="details" className="space-y-3 mt-4">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Page Views</span>
-                      <span className="font-medium">{formatNumber(report.data.pageViews)}</span>
-                    </div>
-                    
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Organic Traffic</span>
-                      <span className="font-medium">{formatNumber(report.data.organicTraffic)}</span>
-                    </div>
-                    
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Keywords Ranking</span>
-                      <span className="font-medium">{report.data.keywordRankings}</span>
-                    </div>
-                    
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">New Backlinks</span>
-                      <span className="font-medium">{report.data.backlinks}</span>
-                    </div>
-                    
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Conversion Rate</span>
-                      <span className="font-medium">{report.data.conversionRate}%</span>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-                
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <span className="text-xs text-gray-500">
-                    Generated {format(report.generatedAt, "MMM dd, yyyy")}
-                  </span>
-                  <Button size="sm" variant="outline" className="text-primary-600">
-                    <Download className="w-3 h-3 mr-1" />
-                    PDF
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {/* Loading State */}
+        {isLoading && (
+          <div className="text-center py-12">
+            <RefreshCw className="mx-auto h-8 w-8 text-gray-400 animate-spin" />
+            <p className="mt-2 text-sm text-gray-500">Loading reports...</p>
+          </div>
+        )}
 
-        {filteredReports.length === 0 && (
+        {/* Reports List */}
+        {!isLoading && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            {filteredReports.map((report) => (
+              <Card key={report.id} className="hover:shadow-md transition-shadow">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">{report.websiteName || 'Unknown Website'}</CardTitle>
+                    <Badge variant={report.reportType === "monthly" ? "default" : "secondary"}>
+                      {report.reportType}
+                    </Badge>
+                  </div>
+                  <CardDescription>{report.period}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Tabs defaultValue="overview" className="w-full">
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="overview">Overview</TabsTrigger>
+                      <TabsTrigger value="details">Details</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="overview" className="space-y-3 mt-4">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">SEO Score Change</span>
+                        <span className={`font-medium flex items-center ${getTrendColor(report.data?.seoScoreChange || 0)}`}>
+                          {getTrendIcon(report.data?.seoScoreChange || 0)}
+                          <span className="ml-1">
+                            {(report.data?.seoScoreChange || 0) > 0 ? '+' : ''}
+                            {report.data?.seoScoreChange || 0}%
+                          </span>
+                        </span>
+                      </div>
+                      
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Content Published</span>
+                        <span className="font-medium">{report.data?.contentPublished || 0} posts</span>
+                      </div>
+                      
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Avg SEO Score</span>
+                        <span className="font-medium">{report.data?.avgSeoScore || 0}%</span>
+                      </div>
+
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">AI Cost</span>
+                        <span className="font-medium">${(report.data?.totalCostUsd || 0).toFixed(2)}</span>
+                      </div>
+                    </TabsContent>
+                    
+                    <TabsContent value="details" className="space-y-3 mt-4">
+                      {/* Note: These metrics should be replaced with real data */}
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Analytics Data</span>
+                        <span className="font-medium text-gray-400">Connect Analytics</span>
+                      </div>
+                      
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Active Days</span>
+                        <span className="font-medium">{report.data?.activeDays || 0}</span>
+                      </div>
+                      
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Readability Score</span>
+                        <span className="font-medium">{report.data?.avgReadabilityScore || 0}%</span>
+                      </div>
+                      
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Brand Voice Score</span>
+                        <span className="font-medium">{report.data?.avgBrandVoiceScore || 0}%</span>
+                      </div>
+
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Tokens Used</span>
+                        <span className="font-medium">{(report.data?.totalTokens || 0).toLocaleString()}</span>
+                      </div>
+
+                      <div className="text-xs text-gray-400 italic mt-2">
+                        * Traffic data requires analytics integration
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                  
+                  {/* Insights */}
+                  {report.insights && report.insights.length > 0 && (
+                    <div className="mt-4 pt-4 border-t">
+                      <h4 className="text-sm font-medium text-gray-900 mb-2">Key Insights</h4>
+                      <div className="space-y-1">
+                        {report.insights.slice(0, 2).map((insight, index) => (
+                          <p key={index} className="text-xs text-gray-600">{insight}</p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                    <span className="text-xs text-gray-500">
+                      Generated {format(new Date(report.generatedAt), "MMM dd, yyyy")}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => handleGenerateReport(report.websiteId, report.reportType as any)}
+                        disabled={generateReportMutation.isPending}
+                      >
+                        <RefreshCw className="w-3 h-3 mr-1" />
+                        Regenerate
+                      </Button>
+                      <Button size="sm" variant="outline" className="text-primary-600">
+                        <Download className="w-3 h-3 mr-1" />
+                        PDF
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!isLoading && filteredReports.length === 0 && (
           <Card>
             <CardContent className="text-center py-12">
               <FileText className="mx-auto h-12 w-12 text-gray-400" />
               <h3 className="mt-2 text-sm font-medium text-gray-900">No reports found</h3>
               <p className="mt-1 text-sm text-gray-500">
-                {selectedWebsite || reportType !== "all"
+                {selectedWebsite !== "all" || reportType !== "all"
                   ? "No reports match your current filters."
                   : "Reports will appear here once they are generated."
                 }
               </p>
               <div className="mt-6">
-                <Button className="bg-primary-500 hover:bg-primary-600">
+                <Button 
+                  onClick={handleBulkGenerate}
+                  disabled={isGenerateDisabled}
+                  className="bg-primary-500 hover:bg-primary-600 disabled:opacity-50"
+                >
                   <BarChart3 className="w-4 h-4 mr-2" />
-                  Generate Report
+                  {reportType === "all" ? "Select Report Type First" : "Generate Your First Report"}
                 </Button>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Report Generation Settings */}
-        <Card className="mt-8">
-          <CardHeader>
-            <CardTitle>Automated Report Settings</CardTitle>
-            <CardDescription>
-              Configure automatic report generation schedules
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {websites?.map((website) => (
-                <div key={website.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <h4 className="font-medium text-gray-900">{website.name}</h4>
-                    <p className="text-sm text-gray-500">
-                      Weekly reports on Mondays, Monthly reports on 1st of each month
-                    </p>
+        {/* Quick Actions */}
+        {websites && websites.length > 0 && (
+          <Card className="mt-8">
+            <CardHeader>
+              <CardTitle>Quick Report Generation</CardTitle>
+              <CardDescription>
+                Generate reports for individual websites
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {websites.map((website) => (
+                  <div key={website.id} className="flex items-center justify-between p-4 border rounded-lg">
+                    <div>
+                      <h4 className="font-medium text-gray-900">{website.name}</h4>
+                      <p className="text-sm text-gray-500">{website.url}</p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleGenerateReport(website.id, 'weekly')}
+                        disabled={isAnyGenerationInProgress}
+                        title={isAnyGenerationInProgress ? "Generation in progress..." : "Generate weekly report"}
+                      >
+                        {isAnyGenerationInProgress ? (
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                        ) : (
+                          "Weekly"
+                        )}
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleGenerateReport(website.id, 'monthly')}
+                        disabled={isAnyGenerationInProgress}
+                        title={isAnyGenerationInProgress ? "Generation in progress..." : "Generate monthly report"}
+                      >
+                        {isAnyGenerationInProgress ? (
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                        ) : (
+                          "Monthly"
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Badge className="bg-green-100 text-green-800">Active</Badge>
-                    <Button size="sm" variant="outline">
-                      Configure
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

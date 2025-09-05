@@ -206,7 +206,7 @@ export default function AIContent() {
     imageStyle: "natural"
   });
 
-  // Edit form state with AI provider
+  // ENHANCED: Edit form state with image regeneration options
   const [editFormData, setEditFormData] = useState({
     title: "",
     body: "",
@@ -216,7 +216,12 @@ export default function AIContent() {
     brandVoice: "",
     targetAudience: "",
     eatCompliance: false,
-    aiProvider: "openai"
+    aiProvider: "openai",
+    // NEW: Image regeneration options
+    regenerateImages: false,
+    includeImages: false,
+    imageCount: 1,
+    imageStyle: "natural"
   });
 
   const [formErrors, setFormErrors] = useState({});
@@ -277,6 +282,7 @@ export default function AIContent() {
     setTimeout(() => setToast(null), 6000);
   };
 
+  // UPDATED: Remove OpenAI requirement for images
   const validateForm = () => {
     const errors = {};
     
@@ -290,10 +296,6 @@ export default function AIContent() {
     }
 
     if (formData.includeImages) {
-      if (formData.aiProvider !== 'openai') {
-        errors.aiProvider = "Image generation requires OpenAI provider (DALL-E 3)";
-      }
-      
       if (formData.imageCount < 1 || formData.imageCount > 3) {
         errors.imageCount = "Image count must be between 1 and 3";
       }
@@ -308,6 +310,7 @@ export default function AIContent() {
     return Object.keys(errors).length === 0;
   };
 
+  // ENHANCED: Edit form validation with image options
   const validateEditForm = () => {
     const errors = {};
     if (!editFormData.title.trim()) errors.title = "Title is required";
@@ -315,6 +318,13 @@ export default function AIContent() {
     if (editFormData.body.trim().length < 50) {
       errors.body = "Content body must be at least 50 characters long";
     }
+
+    // NEW: Image regeneration validation (no OpenAI requirement)
+    if ((editFormData.regenerateImages || editFormData.includeImages) && 
+        (editFormData.imageCount < 1 || editFormData.imageCount > 3)) {
+      errors.imageCount = "Image count must be between 1 and 3";
+    }
+
     setEditFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -427,7 +437,7 @@ export default function AIContent() {
     }
   };
 
-  // Open edit dialog with populated data
+  // ENHANCED: Open edit dialog with image data initialization
   const openEditDialog = (contentItem) => {
     setEditingContent(contentItem);
     setEditFormData({
@@ -439,7 +449,12 @@ export default function AIContent() {
       brandVoice: contentItem.brandVoice || "",
       targetAudience: contentItem.targetAudience || "",
       eatCompliance: contentItem.eatCompliance || false,
-      aiProvider: contentItem.aiProvider || "openai"
+      aiProvider: contentItem.aiProvider || "openai",
+      // NEW: Initialize image settings based on existing content
+      regenerateImages: false,
+      includeImages: contentItem.hasImages || false,
+      imageCount: contentItem.imageCount || 1,
+      imageStyle: "natural"
     });
     setEditFormErrors({});
     setIsEditDialogOpen(true);
@@ -458,12 +473,16 @@ export default function AIContent() {
       brandVoice: "",
       targetAudience: "",
       eatCompliance: false,
-      aiProvider: "openai"
+      aiProvider: "openai",
+      regenerateImages: false,
+      includeImages: false,
+      imageCount: 1,
+      imageStyle: "natural"
     });
     setEditFormErrors({});
   };
 
-  // NEW: Save content without re-analysis
+  // Save content without re-analysis
   const saveContent = async () => {
     if (!validateEditForm() || !editingContent) return;
 
@@ -504,76 +523,96 @@ export default function AIContent() {
     }
   };
 
+  // ENHANCED: Regenerate content with image options
   const regenerateContent = async () => {
-  if (!validateEditForm() || !editingContent) return;
+    if (!validateEditForm() || !editingContent) return;
 
-  // Validate AI provider for regeneration
-  if (!editFormData.aiProvider || !['openai', 'anthropic', 'gemini'].includes(editFormData.aiProvider)) {
-    setEditFormErrors({ aiProvider: "Please select a valid AI provider for content regeneration" });
-    return;
-  }
-
-  setIsRegenerating(true);
-  
-  try {
-    const keywords = editFormData.keywords.split(",").map(k => k.trim()).filter(k => k);
-    
-    // Regenerate with AI - this will create completely new content
-    const result = await api.updateContent(editingContent.id, {
-      title: editFormData.title,
-      body: editFormData.body,
-      excerpt: editFormData.excerpt,
-      seoKeywords: keywords,
-      tone: editFormData.tone,
-      brandVoice: editFormData.brandVoice || undefined,
-      targetAudience: editFormData.targetAudience || undefined,
-      eatCompliance: editFormData.eatCompliance,
-      aiProvider: editFormData.aiProvider, // Include aiProvider to trigger regeneration
-      websiteId: selectedWebsite
-    });
-
-    await loadContent();
-    closeEditDialog();
-
-    if (result.regeneration && result.regeneration.success) {
-      const regen = result.regeneration;
-      showToast(
-        "Content Regenerated Successfully",
-        `${getProviderName(regen.aiProvider)} created new content - SEO: ${regen.seoScore}%, Readability: ${regen.readabilityScore}%, Brand Voice: ${regen.brandVoiceScore}%. Cost: $${(regen.costUsd).toFixed(4)}`
-      );
-    } else {
-      showToast(
-        "Content Saved Successfully",
-        "Your content has been updated and saved."
-      );
-    }
-  } catch (error) {
-    const errorType = getErrorType(error);
-    const severity = getErrorSeverity(error);
-    
-    let errorTitle = "Regeneration Failed";
-    let errorDescription = error.message;
-
-    switch (errorType) {
-      case 'openai':
-        errorTitle = "OpenAI API Error";
-        errorDescription += " Please check your OpenAI API key configuration.";
-        break;
-      case 'anthropic':
-        errorTitle = "Anthropic API Error";
-        errorDescription += " Please check your Anthropic API key configuration.";
-        break;
-      case 'gemini':
-        errorTitle = "Gemini API Error";
-        errorDescription += " Please check your Google Gemini API key configuration.";
-        break;
+    // Validate AI provider for regeneration
+    if (!editFormData.aiProvider || !['openai', 'anthropic', 'gemini'].includes(editFormData.aiProvider)) {
+      setEditFormErrors({ aiProvider: "Please select a valid AI provider for content regeneration" });
+      return;
     }
 
-    showToast(errorTitle, errorDescription, severity === 'error' ? "destructive" : "warning", errorType);
-  } finally {
-    setIsRegenerating(false);
-  }
-};
+    // Validate image regeneration settings
+    if ((editFormData.regenerateImages || editFormData.includeImages) && 
+        (editFormData.imageCount < 1 || editFormData.imageCount > 3)) {
+      setEditFormErrors({ imageCount: "Image count must be between 1 and 3" });
+      return;
+    }
+
+    setIsRegenerating(true);
+    
+    try {
+      const keywords = editFormData.keywords.split(",").map(k => k.trim()).filter(k => k);
+      
+      // Regenerate with AI - this will create completely new content
+      const result = await api.updateContent(editingContent.id, {
+        title: editFormData.title,
+        body: editFormData.body,
+        excerpt: editFormData.excerpt,
+        seoKeywords: keywords,
+        tone: editFormData.tone,
+        brandVoice: editFormData.brandVoice || undefined,
+        targetAudience: editFormData.targetAudience || undefined,
+        eatCompliance: editFormData.eatCompliance,
+        aiProvider: editFormData.aiProvider,
+        websiteId: selectedWebsite,
+        // NEW: Image regeneration parameters
+        regenerateImages: editFormData.regenerateImages,
+        includeImages: editFormData.includeImages,
+        imageCount: editFormData.imageCount,
+        imageStyle: editFormData.imageStyle
+      });
+
+      await loadContent();
+      closeEditDialog();
+
+      if (result.regeneration && result.regeneration.success) {
+        const regen = result.regeneration;
+        let successMessage = `${getProviderName(regen.contentAiProvider)} created new content - SEO: ${regen.seoScore}%, Readability: ${regen.readabilityScore}%, Brand Voice: ${regen.brandVoiceScore}%. Text cost: $${(regen.costUsd).toFixed(4)}`;
+        
+        if (regen.imagesRegenerated && regen.newImageCount > 0) {
+          successMessage += `. Generated ${regen.newImageCount} new image${regen.newImageCount > 1 ? 's' : ''} with DALL-E for $${(regen.imageCostUsd).toFixed(4)}`;
+        } else if (editingContent.hasImages && !regen.imagesRegenerated) {
+          successMessage += `. Kept existing images`;
+        }
+        
+        showToast("Content Regenerated Successfully", successMessage);
+      } else {
+        showToast("Content Saved Successfully", "Your content has been updated and saved.");
+      }
+    } catch (error) {
+      const errorType = getErrorType(error);
+      const severity = getErrorSeverity(error);
+      
+      let errorTitle = "Regeneration Failed";
+      let errorDescription = error.message;
+
+      if (error.message.includes('Image generation failed')) {
+        errorTitle = "Image Regeneration Failed";
+        errorDescription = "Content regenerated successfully, but image generation failed. " + error.message;
+      }
+
+      switch (errorType) {
+        case 'openai':
+          errorTitle = "OpenAI API Error";
+          errorDescription += " Please check your OpenAI API key configuration.";
+          break;
+        case 'anthropic':
+          errorTitle = "Anthropic API Error";
+          errorDescription += " Please check your Anthropic API key configuration.";
+          break;
+        case 'gemini':
+          errorTitle = "Gemini API Error";
+          errorDescription += " Please check your Google Gemini API key configuration.";
+          break;
+      }
+
+      showToast(errorTitle, errorDescription, severity === 'error' ? "destructive" : "warning", errorType);
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
 
   const publishContent = async (contentId) => {
     setIsPublishing(true);
@@ -697,7 +736,10 @@ export default function AIContent() {
                   <div className="space-y-4 max-h-96 overflow-y-auto">
                     {/* AI Provider Selection */}
                     <div className="border border-blue-200 bg-blue-50 rounded-lg p-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">AI Provider *</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">AI Provider for Content *</label>
+                      <p className="text-xs text-gray-600 mb-3">
+                        Select AI provider for content generation. Images will always use DALL-E 3 when enabled.
+                      </p>
                       <div className="grid grid-cols-3 gap-3">
                         <button
                           type="button"
@@ -731,6 +773,7 @@ export default function AIContent() {
                           </div>
                           <p className="text-xs text-gray-600">Thoughtful AI with strong analytical capabilities</p>
                           <p className="text-xs text-purple-600 mt-1">$0.003/$0.015 per 1K tokens</p>
+                          <p className="text-xs text-orange-600 mt-1">Can generate images via DALL-E 3</p>
                         </button>
 
                         <button
@@ -748,6 +791,7 @@ export default function AIContent() {
                           </div>
                           <p className="text-xs text-gray-600">Google's multimodal AI with strong reasoning</p>
                           <p className="text-xs text-blue-600 mt-1">$0.0025/$0.0075 per 1K tokens</p>
+                          <p className="text-xs text-orange-600 mt-1">Can generate images via DALL-E 3</p>
                         </button>
                       </div>
                       {formErrors.aiProvider && (
@@ -898,6 +942,7 @@ export default function AIContent() {
                             </label>
                           </div>
 
+                          {/* UPDATED: Image generation section */}
                           <div className="border-t pt-4">
                             <div className="flex items-center justify-between mb-3">
                               <label className="flex items-center">
@@ -905,11 +950,9 @@ export default function AIContent() {
                                   type="checkbox"
                                   checked={formData.includeImages}
                                   onChange={(e) => {
-                                    const isChecked = e.target.checked;
                                     setFormData(prev => ({
                                       ...prev, 
-                                      includeImages: isChecked,
-                                      aiProvider: isChecked ? "openai" : prev.aiProvider
+                                      includeImages: e.target.checked
                                     }));
                                   }}
                                   className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
@@ -918,6 +961,10 @@ export default function AIContent() {
                               </label>
                               <span className="text-xs text-orange-600">$0.04-$0.12 per image</span>
                             </div>
+                            
+                            <p className="text-xs text-gray-600 mb-3">
+                              Images are generated using OpenAI's DALL-E 3 regardless of your content AI provider choice.
+                            </p>
                             
                             {formData.includeImages && (
                               <div className="space-y-3 pl-6 border-l-2 border-orange-100 bg-orange-50 p-3 rounded">
@@ -951,11 +998,20 @@ export default function AIContent() {
                                 </div>
                                 
                                 <div className="text-xs text-gray-600 bg-white p-2 rounded border">
-                                  <strong>Cost Estimate:</strong> ${(formData.imageCount * 0.04).toFixed(2)} - ${(formData.imageCount * 0.12).toFixed(2)} per article
+                                  <strong>Content AI:</strong> {getProviderName(formData.aiProvider)} (Est: $0.001-$0.005)
                                   <br />
-                                  <strong>Note:</strong> Images are uploaded to WordPress media library and embedded in content
+                                  <strong>Image AI:</strong> DALL-E 3 (${(formData.imageCount * 0.04).toFixed(2)} - ${(formData.imageCount * 0.12).toFixed(2)})
+                                  <br />
+                                  <strong>Total Estimated Cost:</strong> ${(0.001 + formData.imageCount * 0.04).toFixed(3)} - ${(0.005 + formData.imageCount * 0.12).toFixed(3)}
                                 </div>
                               </div>
+                            )}
+                            
+                            {formErrors.imageCount && (
+                              <p className="text-sm text-red-600 mt-1">{formErrors.imageCount}</p>
+                            )}
+                            {formErrors.imageStyle && (
+                              <p className="text-sm text-red-600 mt-1">{formErrors.imageStyle}</p>
                             )}
                           </div>
                         </div>
@@ -1001,7 +1057,7 @@ export default function AIContent() {
           </div>
         )}
 
-        {/* Enhanced Edit Content Dialog with SEPARATE Save and Re-analyze buttons */}
+        {/* ENHANCED: Edit Content Dialog with Image Regeneration Options */}
         {isEditDialogOpen && editingContent && (
           <div className="fixed inset-0 z-50 overflow-y-auto">
             <div className="flex items-start justify-center min-h-screen pt-4 px-4 pb-20">
@@ -1012,7 +1068,7 @@ export default function AIContent() {
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-lg leading-6 font-medium text-gray-900">Edit Content</h3>
-                      <p className="mt-1 text-sm text-gray-500">Edit content with live preview - Save changes or re-analyze with AI</p>
+                      <p className="mt-1 text-sm text-gray-500">Edit content with live preview - Save changes or regenerate with AI</p>
                     </div>
                     <button
                       onClick={closeEditDialog}
@@ -1097,13 +1153,14 @@ export default function AIContent() {
                     </div>
                   </div>
 
-                  {/* Right Side - Edit Form */}
+                  {/* Right Side - Edit Form with Image Regeneration Options */}
                   <div className="w-96 p-6 bg-white overflow-y-auto">
                     <div className="space-y-6">
-                      {/* AI Provider Selection for Re-analysis */}
+                      {/* Enhanced AI Provider Selection for Re-analysis */}
                       <div className="border border-purple-200 bg-purple-50 rounded-lg p-4">
-                       <label className="block text-sm font-medium text-gray-700 mb-3">AI Provider for Regeneration</label>
-  <p className="text-xs text-gray-600 mb-3">Select an AI provider to completely regenerate this content with new AI-generated text</p>
+                        <label className="block text-sm font-medium text-gray-700 mb-3">AI Provider for Regeneration</label>
+                        <p className="text-xs text-gray-600 mb-3">Select an AI provider to completely regenerate this content with new AI-generated text</p>
+                        
                         <div className="space-y-2">
                           <button
                             type="button"
@@ -1114,9 +1171,11 @@ export default function AIContent() {
                                 : "border-gray-200 bg-white hover:border-gray-300"
                             }`}
                           >
-                            <div className="flex items-center">
-                              <Cpu className="w-4 h-4 text-green-600 mr-2" />
-                              <span className="font-medium">OpenAI GPT-4O</span>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center">
+                                <Cpu className="w-4 h-4 text-green-600 mr-2" />
+                                <span className="font-medium">OpenAI GPT-4O</span>
+                              </div>
                             </div>
                           </button>
                           
@@ -1150,9 +1209,172 @@ export default function AIContent() {
                             </div>
                           </button>
                         </div>
+                        
                         {editFormErrors.aiProvider && (
                           <p className="text-sm text-red-600 mt-2">{editFormErrors.aiProvider}</p>
                         )}
+                      </div>
+
+                      {/* Current Image Information */}
+                      {editingContent && (editingContent.hasImages || editingContent.imageCount > 0) && (
+                        <div className="border border-blue-200 bg-blue-50 rounded-lg p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-sm font-medium text-gray-700">Current Images</h4>
+                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                              {editingContent.imageCount || 0} image{(editingContent.imageCount || 0) !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600 mb-3">
+                            This content currently has {editingContent.imageCount || 0} AI-generated image{(editingContent.imageCount || 0) !== 1 ? 's' : ''}
+                            {editingContent.imageCostCents && ` (Cost: $${(editingContent.imageCostCents / 100).toFixed(4)})`}
+                          </p>
+                          
+                          <div className="flex items-center space-x-2 text-xs">
+                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded">
+                              Images Available
+                            </span>
+                            {editingContent.imageCostCents > 0 && (
+                              <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded">
+                                Previous Cost: ${(editingContent.imageCostCents / 100).toFixed(4)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* UPDATED: Image Regeneration Options - Available for all providers */}
+                      <div className="border border-orange-200 bg-orange-50 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-medium text-gray-700">Image Options</h4>
+                          <span className="text-xs text-orange-600">DALL-E 3 Only</span>
+                        </div>
+                        
+                        <p className="text-xs text-gray-600 mb-3">
+                          Images are always generated with DALL-E 3, regardless of your content AI provider choice.
+                        </p>
+                        
+                        {/* Option 1: Keep existing images */}
+                        <div className="space-y-3">
+                          <label className="flex items-start">
+                            <input
+                              type="radio"
+                              name="imageRegenOption"
+                              checked={!editFormData.regenerateImages && !editFormData.includeImages}
+                              onChange={() => setEditFormData(prev => ({
+                                ...prev, 
+                                regenerateImages: false,
+                                includeImages: false
+                              }))}
+                              className="mt-1 rounded border-gray-300 text-orange-600 shadow-sm focus:border-orange-300 focus:ring focus:ring-orange-200 focus:ring-opacity-50"
+                            />
+                            <div className="ml-3">
+                              <span className="text-sm font-medium text-gray-700">Keep Current Setup</span>
+                              <p className="text-xs text-gray-600">
+                                {editingContent && editingContent.hasImages 
+                                  ? `Keep existing ${editingContent.imageCount || 0} images` 
+                                  : 'No images (text content only)'}
+                              </p>
+                              <span className="inline-block mt-1 text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                                No additional cost
+                              </span>
+                            </div>
+                          </label>
+                          
+                          {/* Option 2: Regenerate images */}
+                          {editingContent && editingContent.hasImages && (
+                            <label className="flex items-start">
+                              <input
+                                type="radio"
+                                name="imageRegenOption"
+                                checked={editFormData.regenerateImages}
+                                onChange={() => setEditFormData(prev => ({
+                                  ...prev, 
+                                  regenerateImages: true,
+                                  includeImages: true
+                                }))}
+                                className="mt-1 rounded border-gray-300 text-orange-600 shadow-sm focus:border-orange-300 focus:ring focus:ring-orange-200 focus:ring-opacity-50"
+                              />
+                              <div className="ml-3">
+                                <span className="text-sm font-medium text-gray-700">Regenerate Images</span>
+                                <p className="text-xs text-gray-600">Create completely new AI-generated images for this content</p>
+                                <span className="inline-block mt-1 text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">
+                                  $0.04 per image
+                                </span>
+                              </div>
+                            </label>
+                          )}
+                          
+                          {/* Option 3: Add images if none exist */}
+                          {(!editingContent || !editingContent.hasImages) && (
+                            <label className="flex items-start">
+                              <input
+                                type="radio"
+                                name="imageRegenOption"
+                                checked={!editFormData.regenerateImages && editFormData.includeImages}
+                                onChange={() => setEditFormData(prev => ({
+                                  ...prev, 
+                                  regenerateImages: false,
+                                  includeImages: true
+                                }))}
+                                className="mt-1 rounded border-gray-300 text-orange-600 shadow-sm focus:border-orange-300 focus:ring focus:ring-orange-200 focus:ring-opacity-50"
+                              />
+                              <div className="ml-3">
+                                <span className="text-sm font-medium text-gray-700">Add New Images</span>
+                                <p className="text-xs text-gray-600">Generate images for content that doesn't currently have any</p>
+                                <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                  $0.04 per image
+                                </span>
+                              </div>
+                            </label>
+                          )}
+                          
+                          {/* Image settings when regenerating or adding */}
+                          {(editFormData.regenerateImages || editFormData.includeImages) && (
+                            <div className="ml-6 pl-4 border-l-2 border-orange-200 space-y-3 bg-white p-3 rounded">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Number of Images</label>
+                                  <select
+                                    value={editFormData.imageCount}
+                                    onChange={(e) => setEditFormData(prev => ({...prev, imageCount: parseInt(e.target.value)}))}
+                                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
+                                  >
+                                    <option value={1}>1 Image (Hero)</option>
+                                    <option value={2}>2 Images (Hero + Support)</option>
+                                    <option value={3}>3 Images (Full Set)</option>
+                                  </select>
+                                  {editFormErrors.imageCount && (
+                                    <p className="text-xs text-red-600 mt-1">{editFormErrors.imageCount}</p>
+                                  )}
+                                </div>
+                                
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Image Style</label>
+                                  <select
+                                    value={editFormData.imageStyle}
+                                    onChange={(e) => setEditFormData(prev => ({...prev, imageStyle: e.target.value}))}
+                                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
+                                  >
+                                    <option value="natural">Natural/Photorealistic</option>
+                                    <option value="digital_art">Digital Art</option>
+                                    <option value="photographic">Professional Photography</option>
+                                    <option value="cinematic">Cinematic</option>
+                                  </select>
+                                </div>
+                              </div>
+                              
+                              <div className="text-xs bg-orange-100 border border-orange-200 rounded p-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-medium text-orange-800">Cost Estimate:</span>
+                                  <span className="text-orange-700">${(editFormData.imageCount * 0.04).toFixed(2)}</span>
+                                </div>
+                                <p className="text-orange-700 mt-1">
+                                  {editFormData.imageCount} new image{editFormData.imageCount > 1 ? 's' : ''} will be generated and embedded in your content
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Title */}
@@ -1170,7 +1392,7 @@ export default function AIContent() {
                         )}
                       </div>
 
-                      {/* Content Body - Made larger for better editing */}
+                      {/* Content Body */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Content Body *</label>
                         <textarea
@@ -1273,23 +1495,22 @@ export default function AIContent() {
                   </div>
                 </div>
 
-                {/* Footer with SEPARATE buttons */}
+                {/* Enhanced Footer with better button descriptions */}
                 <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-  <div className="flex items-center text-sm text-gray-500">
-    <Edit className="w-4 h-4 mr-2" />
-    <span>Choose: Save your edits OR regenerate completely with AI</span>
-  </div>
-  <div className="flex items-center space-x-3">
-    <button
-      type="button"
-      onClick={closeEditDialog}
-      className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-    >
-      Cancel
-    </button>
-    
+                  <div className="flex items-center text-sm text-gray-500">
+                    <Edit className="w-4 h-4 mr-2" />
+                    <span>Choose: Save your edits OR regenerate completely with AI</span>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <button
+                      type="button"
+                      onClick={closeEditDialog}
+                      className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    >
+                      Cancel
+                    </button>
                     
-                    {/* NEW: Separate Save button */}
+                    {/* Save button - for manual edits */}
                     <button
                       type="button"
                       onClick={saveContent}
@@ -1309,25 +1530,30 @@ export default function AIContent() {
                       )}
                     </button>
                     
-                    {/* NEW: Separate Re-analyze button */}
+                    {/* Regenerate button - with cost info */}
                     <button
-      type="button"
-      onClick={regenerateContent}
-      disabled={isRegenerating}
-      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      {isRegenerating ? (
-        <>
-          <Brain className="w-4 h-4 mr-2 animate-spin" />
-          Regenerating with {getProviderName(editFormData.aiProvider)}...
-        </>
-      ) : (
-        <>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Regenerate with {getProviderName(editFormData.aiProvider)}
-        </>
-      )}
-    </button>
+                      type="button"
+                      onClick={regenerateContent}
+                      disabled={isRegenerating}
+                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isRegenerating ? (
+                        <>
+                          <Brain className="w-4 h-4 mr-2 animate-spin" />
+                          Regenerating{(editFormData.regenerateImages || editFormData.includeImages) ? ' + Images' : ''}...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Regenerate with {getProviderName(editFormData.aiProvider)}
+                          {(editFormData.regenerateImages || editFormData.includeImages) && (
+                            <span className="ml-1 text-xs bg-orange-500 px-1 rounded">
+                              +${(editFormData.imageCount * 0.04).toFixed(2)}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1453,7 +1679,7 @@ export default function AIContent() {
           </div>
         )}
 
-        {/* Enhanced Content List */}
+        {/* ENHANCED: Content List with Image Information */}
         {selectedWebsite ? (
           <div className="bg-white shadow overflow-hidden sm:rounded-md">
             <div className="px-4 py-5 sm:p-6">
@@ -1502,6 +1728,12 @@ export default function AIContent() {
                                 <span className="ml-1">{getProviderName(item.aiProvider)}</span>
                               </span>
                             )}
+                            {/* Image indicator */}
+                            {item.hasImages && item.imageCount > 0 && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
+                                🖼️ {item.imageCount} image{item.imageCount > 1 ? 's' : ''}
+                              </span>
+                            )}
                           </div>
                           <p className="text-sm text-gray-600 mb-3 leading-relaxed">
                             {item.excerpt || (item.body && item.body.substring(0, 200) + "...")}
@@ -1532,8 +1764,8 @@ export default function AIContent() {
                         </div>
                       </div>
 
-                      {/* Enhanced Metrics */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                      {/* Enhanced Metrics to include image cost */}
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                         <div className="text-center">
                           <div className={`text-lg font-bold ${
                             typeof item.seoScore === 'number' && item.seoScore > 0 
@@ -1579,13 +1811,26 @@ export default function AIContent() {
                           </div>
                           <div className="text-xs text-gray-500">WP Post ID</div>
                         </div>
+                        {/* Image cost column */}
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-orange-600">
+                            {item.hasImages && item.imageCostCents 
+                              ? `$${(item.imageCostCents / 100).toFixed(3)}` 
+                              : "-"
+                            }
+                          </div>
+                          <div className="text-xs text-gray-500">Image Cost</div>
+                        </div>
                       </div>
 
-                      {/* Cost and Token Information */}
+                      {/* Enhanced Cost and Token Information */}
                       <div className="flex items-center justify-between text-xs text-gray-500 border-t pt-3">
                         <div className="flex items-center space-x-4">
                           <span>Tokens: {item.tokensUsed || 'N/A'}</span>
-                          <span>Cost: ${typeof item.costUsd === 'number' ? (item.costUsd / 100).toFixed(4) : 'N/A'}</span>
+                          <span>Text Cost: ${typeof item.costUsd === 'number' ? (item.costUsd / 100).toFixed(4) : 'N/A'}</span>
+                          {item.hasImages && item.imageCostCents && (
+                            <span>Image Cost: ${(item.imageCostCents / 100).toFixed(4)}</span>
+                          )}
                           {item.seoKeywords && item.seoKeywords.length > 0 && (
                             <span>Keywords: {item.seoKeywords.join(", ")}</span>
                           )}

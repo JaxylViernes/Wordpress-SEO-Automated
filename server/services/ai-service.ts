@@ -332,79 +332,89 @@ export class AIService {
     }
   }
 
+  public embedImagesInContent(content: string, images: Array<{
+  url: string;
+  filename: string;
+  altText: string;
+  prompt: string;
+  cost: number;
+}>): string {
+  return this.embedImagesInContent(content, images);
+}
 
-   private embedImagesInContent(content: string, images: Array<{
-    url: string;
-    filename: string;
-    altText: string;
-    prompt: string;
-    cost: number;
-  }>): string {
-    if (!images || images.length === 0) {
-      return content;
-    }
 
-    let modifiedContent = content;
+   private embedImagesInContentPrivate(content: string, images: Array<{
+  url: string;
+  filename: string;
+  altText: string;
+  prompt: string;
+  cost: number;
+}>): string {
+  if (!images || images.length === 0) {
+    return content;
+  }
 
-    images.forEach((image, index) => {
-      // Create WordPress-friendly image HTML
-      const imageHtml = `
+  let modifiedContent = content;
+
+  images.forEach((image, index) => {
+    // Create WordPress-friendly image HTML with better formatting
+    const imageHtml = `
 <figure class="wp-block-image size-large">
   <img src="${image.url}" alt="${image.altText}" class="wp-image" style="max-width: 100%; height: auto;" />
   <figcaption>${image.altText}</figcaption>
 </figure>
 `;
 
-      if (index === 0) {
-        // Place first image after the introduction (after first </p>)
-        const firstParagraphEnd = modifiedContent.indexOf('</p>');
-        if (firstParagraphEnd !== -1) {
-          modifiedContent = modifiedContent.slice(0, firstParagraphEnd + 4) + 
-                           '\n\n' + imageHtml + '\n\n' + 
-                           modifiedContent.slice(firstParagraphEnd + 4);
-          console.log(`📍 Placed hero image after introduction`);
-        } else {
-          // Fallback: place at the beginning
-          modifiedContent = imageHtml + '\n\n' + modifiedContent;
-          console.log(`📍 Placed hero image at beginning (fallback)`);
-        }
+    if (index === 0) {
+      // Place first image after the introduction (after first </p>)
+      const firstParagraphEnd = modifiedContent.indexOf('</p>');
+      if (firstParagraphEnd !== -1) {
+        modifiedContent = modifiedContent.slice(0, firstParagraphEnd + 4) + 
+                         '\n\n' + imageHtml + '\n\n' + 
+                         modifiedContent.slice(firstParagraphEnd + 4);
+        console.log(`🖼️ Placed hero image after introduction`);
       } else {
-        // Place subsequent images before H2 headings
-        const h2Regex = /<h2>/g;
-        const h2Matches = Array.from(modifiedContent.matchAll(h2Regex));
+        // Fallback: place at the beginning
+        modifiedContent = imageHtml + '\n\n' + modifiedContent;
+        console.log(`🖼️ Placed hero image at beginning (fallback)`);
+      }
+    } else {
+      // Place subsequent images before H2 headings
+      const h2Regex = /<h2>/g;
+      const h2Matches = Array.from(modifiedContent.matchAll(h2Regex));
+      
+      if (h2Matches.length > index - 1) {
+        const insertPoint = h2Matches[index - 1].index;
+        modifiedContent = modifiedContent.slice(0, insertPoint) + 
+                         imageHtml + '\n\n' + 
+                         modifiedContent.slice(insertPoint);
+        console.log(`🖼️ Placed image ${index + 1} before H2 section`);
+      } else {
+        // Fallback: place before conclusion
+        const conclusionHeadings = ['<h2>Conclusion', '<h2>Summary', '<h2>Final'];
+        let insertPoint = -1;
         
-        if (h2Matches.length > index - 1) {
-          const insertPoint = h2Matches[index - 1].index;
+        for (const heading of conclusionHeadings) {
+          insertPoint = modifiedContent.lastIndexOf(heading);
+          if (insertPoint !== -1) break;
+        }
+        
+        if (insertPoint !== -1) {
           modifiedContent = modifiedContent.slice(0, insertPoint) + 
                            imageHtml + '\n\n' + 
                            modifiedContent.slice(insertPoint);
-          console.log(`📍 Placed image ${index + 1} before H2 section`);
+          console.log(`🖼️ Placed image ${index + 1} before conclusion`);
         } else {
-          // Fallback: place before conclusion
-          const conclusionHeadings = ['<h2>Conclusion', '<h2>Summary', '<h2>Final'];
-          let insertPoint = -1;
-          
-          for (const heading of conclusionHeadings) {
-            insertPoint = modifiedContent.lastIndexOf(heading);
-            if (insertPoint !== -1) break;
-          }
-          
-          if (insertPoint !== -1) {
-            modifiedContent = modifiedContent.slice(0, insertPoint) + 
-                             imageHtml + '\n\n' + 
-                             modifiedContent.slice(insertPoint);
-            console.log(`📍 Placed image ${index + 1} before conclusion`);
-          } else {
-            // Final fallback: place at the end
-            modifiedContent = modifiedContent + '\n\n' + imageHtml;
-            console.log(`📍 Placed image ${index + 1} at end (fallback)`);
-          }
+          // Final fallback: place at the end
+          modifiedContent = modifiedContent + '\n\n' + imageHtml;
+          console.log(`🖼️ Placed image ${index + 1} at end (fallback)`);
         }
       }
-    });
+    }
+  });
 
-    return modifiedContent;
-  }
+  return modifiedContent;
+}
 
   // Add this debug version of callGemini method in your ai-service.ts
 
@@ -586,8 +596,16 @@ private async callGemini(messages: any[], temperature = 0.7): Promise<{content: 
 async generateContent(request: ContentGenerationRequest): Promise<ContentGenerationResult> {
   try {
     console.log(`Generating content for user ${request.userId} with ${request.aiProvider.toUpperCase()}`);
+    
+    // Step 1: Check if image generation is requested and validate OpenAI availability
+    if (request.includeImages && request.imageCount && request.imageCount > 0) {
+      if (!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
+        throw new Error('Image generation requires OpenAI API key for DALL-E 3');
+      }
+      console.log(`🎨 Will generate ${request.imageCount} images with DALL-E 3 (regardless of content AI provider: ${request.aiProvider})`);
+    }
 
-    // Step 1: Generate the actual content
+    // Step 2: Generate the actual content using selected AI provider
     const contentPrompt = this.buildContentPrompt(request);
 
     const systemPrompt = `You are an expert content writer and SEO specialist with 10+ years of experience in digital marketing.
@@ -636,7 +654,7 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON containing: title, conten
       let cleanedContent = contentResponse.content.trim();
       cleanedContent = cleanedContent.replace(/^\uFEFF/, '');
       contentResult = JSON.parse(cleanedContent);
-      console.log('✅ Successfully parsed JSON response on first attempt');
+      console.log('✅ Successfully parsed JSON response from', request.aiProvider.toUpperCase());
     } catch (parseError) {
       console.error('❌ Initial JSON parse failed, attempting extraction...', parseError.message);
       
@@ -649,7 +667,7 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON containing: title, conten
         
         try {
           contentResult = JSON.parse(extractedJson);
-          console.log('✅ Successfully parsed extracted JSON');
+          console.log('✅ Successfully parsed extracted JSON from', request.aiProvider.toUpperCase());
         } catch (secondParseError) {
           throw new AIProviderError(request.aiProvider, 
             `Failed to parse JSON response after multiple attempts. Original error: ${parseError.message}`
@@ -667,10 +685,10 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON containing: title, conten
     }
 
     // Convert markdown headers to HTML if they exist
-    console.log('🔄 Converting markdown headers to HTML...');
+    console.log('📄 Converting markdown headers to HTML...');
     
     if (contentResult.content && contentResult.content.includes('#')) {
-      console.log('📝 Markdown headers detected, converting to HTML...');
+      console.log('🔍 Markdown headers detected, converting to HTML...');
       contentResult.content = ContentFormatter.convertMarkdownToHtml(contentResult.content);
     }
 
@@ -678,7 +696,7 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON containing: title, conten
     contentResult.content = ContentFormatter.formatForWordPress(contentResult.content);
     console.log('✅ Content formatted for WordPress');
 
-    // Step 2: Generate images if requested
+    // Step 3: Generate images if requested (ALWAYS using OpenAI DALL-E 3)
     let images: Array<{
       url: string;
       filename: string;
@@ -689,62 +707,59 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON containing: title, conten
     let totalImageCost = 0;
 
     if (request.includeImages && request.imageCount && request.imageCount > 0) {
-      // Only OpenAI supports image generation currently
-      if (request.aiProvider !== 'openai') {
-        console.warn('⚠️ Image generation requires OpenAI provider, skipping images');
-      } else {
-        try {
-          console.log(`🎨 Generating ${request.imageCount} images with DALL-E 3...`);
-          
-          // Import and use the image service
-          const { imageService } = await import('./image-service');
-          
-          const imageGenerationRequest = {
-            topic: request.topic,
-            count: request.imageCount,
-            style: request.imageStyle || 'natural',
-            contentContext: contentResult.content.substring(0, 500),
-            keywords: request.keywords
-          };
+      try {
+        console.log(`🎨 Generating ${request.imageCount} images with DALL-E 3 (content generated with ${request.aiProvider.toUpperCase()})...`);
+        
+        // Import and use the image service
+        const { imageService } = await import('./image-service');
+        
+        const imageGenerationRequest = {
+          topic: request.topic,
+          count: request.imageCount,
+          style: request.imageStyle || 'natural',
+          contentContext: contentResult.content.substring(0, 500),
+          keywords: request.keywords
+        };
 
-          // Validate the request first
-          const validation = imageService.validateImageRequest(imageGenerationRequest);
-          if (!validation.valid) {
-            throw new Error(`Image generation validation failed: ${validation.errors.join(', ')}`);
-          }
-
-          const imageResult = await imageService.generateImages(imageGenerationRequest);
-          images = imageResult.images;
-          totalImageCost = imageResult.totalCost;
-          
-          console.log(`✅ Generated ${images.length} images (Total cost: $${totalImageCost.toFixed(4)})`);
-          
-          if (images.length > 0) {
-            console.log('🖼️ Embedding images into content...');
-            contentResult.content = this.embedImagesInContent(contentResult.content, images);
-            console.log(`✅ Embedded ${images.length} images into content`);
-          }
-
-        } catch (imageError: any) {
-          console.error('❌ Image generation failed:', imageError.message);
-          
-          // Don't fail the entire content generation for image errors
-          if (imageError.message.includes('Rate limit')) {
-            console.warn('⚠️ DALL-E rate limit reached, continuing without images');
-          } else if (imageError.message.includes('credits') || imageError.message.includes('quota')) {
-            console.warn('⚠️ Insufficient OpenAI credits for images, continuing without images');
-          } else {
-            console.warn(`⚠️ Image generation error: ${imageError.message}`);
-          }
-          
-          // Continue with content generation even if images fail
-          images = [];
-          totalImageCost = 0;
+        // Validate the request first
+        const validation = imageService.validateImageRequest(imageGenerationRequest);
+        if (!validation.valid) {
+          throw new Error(`Image generation validation failed: ${validation.errors.join(', ')}`);
         }
+
+        const imageResult = await imageService.generateImages(imageGenerationRequest);
+        images = imageResult.images;
+        totalImageCost = imageResult.totalCost;
+        
+        console.log(`✅ Generated ${images.length} images with DALL-E 3 (Total cost: $${totalImageCost.toFixed(4)})`);
+        
+        if (images.length > 0) {
+          console.log('🖼️ Embedding images into content...');
+          contentResult.content = this.embedImagesInContentPrivate(contentResult.content, images);
+          console.log(`✅ Embedded ${images.length} images into content`);
+        }
+
+      } catch (imageError: any) {
+        console.error('❌ Image generation failed:', imageError.message);
+        
+        // Don't fail the entire content generation for image errors
+        if (imageError.message.includes('Rate limit')) {
+          console.warn('⚠️ DALL-E rate limit reached, continuing without images');
+        } else if (imageError.message.includes('credits') || imageError.message.includes('quota')) {
+          console.warn('⚠️ Insufficient OpenAI credits for images, continuing without images');
+        } else if (imageError.message.includes('API key')) {
+          console.warn('⚠️ OpenAI API key issue for image generation, continuing without images');
+        } else {
+          console.warn(`⚠️ Image generation error: ${imageError.message}`);
+        }
+        
+        // Continue with content generation even if images fail
+        images = [];
+        totalImageCost = 0;
       }
     }
 
-    // Step 3: Analyze the generated content
+    // Step 4: Analyze the generated content using the same AI provider as content generation
     const analysisResult = await this.performContentAnalysis({
       title: contentResult.title,
       content: contentResult.content,
@@ -754,39 +769,56 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON containing: title, conten
       targetAudience: request.targetAudience,
       eatCompliance: request.eatCompliance,
       websiteId: request.websiteId,
-      aiProvider: request.aiProvider,
+      aiProvider: request.aiProvider, // Use same provider for analysis
       userId: request.userId
     });
 
-    // Step 4: Calculate total costs
-    const totalTokens = Math.max(1, contentResponse.tokens + analysisResult.tokensUsed);
-    const pricing = AI_MODELS[request.aiProvider].pricing;
+    // Step 5: Calculate total costs (content AI + image AI costs separately)
+    const contentTokens = Math.max(1, contentResponse.tokens + analysisResult.tokensUsed);
+    const contentPricing = AI_MODELS[request.aiProvider].pricing;
     
-    // Use average of input/output pricing for simplicity
-    const avgTokenCost = (pricing.input + pricing.output) / 2;
-    const textCostUsd = (totalTokens * avgTokenCost) / 1000;
+    // Use average of input/output pricing for content generation
+    const avgTokenCost = (contentPricing.input + contentPricing.output) / 2;
+    const textCostUsd = (contentTokens * avgTokenCost) / 1000;
+    
+    // Total cost is content cost + image cost
     const totalCostUsd = textCostUsd + totalImageCost;
 
-    console.log(`💰 Cost breakdown: Text: $${textCostUsd.toFixed(6)} (${totalTokens} tokens), Images: $${totalImageCost.toFixed(6)}, Total: $${totalCostUsd.toFixed(6)}`);
+    console.log(`💰 Cost breakdown:`);
+    console.log(`   Content (${request.aiProvider.toUpperCase()}): $${textCostUsd.toFixed(6)} (${contentTokens} tokens)`);
+    console.log(`   Images (DALL-E 3): $${totalImageCost.toFixed(6)}`);
+    console.log(`   Total: $${totalCostUsd.toFixed(6)}`);
 
-    // Step 5: Track AI usage
+    // Step 6: Track AI usage (content and images separately)
     try {
       await storage.trackAiUsage({
         websiteId: request.websiteId,
         userId: request.userId,
-        model: `${AI_MODELS[request.aiProvider].model}${images.length > 0 ? '+dall-e-3' : ''}`,
-        tokensUsed: totalTokens,
-        costUsd: Math.max(1, Math.round(totalCostUsd * 100)), // Store as cents
+        model: AI_MODELS[request.aiProvider].model,
+        tokensUsed: contentTokens,
+        costUsd: Math.max(1, Math.round(textCostUsd * 100)), // Content cost only in cents
         operation: 'content_generation'
       });
+      
+      // Track image generation separately if images were generated
+      if (images.length > 0) {
+        await storage.trackAiUsage({
+          websiteId: request.websiteId,
+          userId: request.userId,
+          model: 'dall-e-3',
+          tokensUsed: 0, // Images don't use tokens
+          costUsd: Math.round(totalImageCost * 100), // Image cost in cents
+          operation: 'image_generation'
+        });
+      }
     } catch (trackingError: any) {
       console.warn('AI usage tracking failed:', trackingError.message);
     }
 
-    // Step 6: Generate enhanced quality checks
+    // Step 7: Generate enhanced quality checks
     const qualityChecks = this.generateQualityChecks(contentResult.content, request);
 
-    // Step 7: Return complete result
+    // Step 8: Return complete result
     const result: ContentGenerationResult = {
       title: contentResult.title,
       content: contentResult.content,
@@ -798,8 +830,8 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON containing: title, conten
       readabilityScore: Math.max(1, Math.min(100, analysisResult.readabilityScore)),
       brandVoiceScore: Math.max(1, Math.min(100, analysisResult.brandVoiceScore)),
       eatCompliance: request.eatCompliance || false,
-      tokensUsed: totalTokens,
-      costUsd: Number(totalCostUsd.toFixed(6)),
+      tokensUsed: contentTokens,
+      costUsd: Number(textCostUsd.toFixed(6)), // Content cost only
       aiProvider: request.aiProvider,
       qualityChecks
     };
@@ -815,6 +847,8 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON containing: title, conten
       }));
       result.totalImageCost = totalImageCost;
     }
+
+    console.log(`✅ Content generation completed successfully with ${request.aiProvider.toUpperCase()}${images.length > 0 ? ` + DALL-E (${images.length} images)` : ''}`);
 
     return result;
 

@@ -408,7 +408,7 @@ app.post("/api/user/content/generate", requireAuth, async (req: Request, res: Re
     const userId = req.user!.id;
     const { websiteId, ...contentData } = req.body;
 
-     console.log('🔍 DEBUG: Raw request body:', {
+    console.log('🔍 DEBUG: Raw request body:', {
       websiteId,
       contentData: {
         includeImages: contentData.includeImages,
@@ -445,9 +445,10 @@ app.post("/api/user/content/generate", requireAuth, async (req: Request, res: Re
       return;
     }
 
-    if (includeImages && aiProvider !== 'openai') {
+    // UPDATED: Remove OpenAI requirement for images - just check if OpenAI API key exists for DALL-E
+    if (includeImages && !process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
       res.status(400).json({ 
-        message: "Image generation requires OpenAI provider (DALL-E 3)" 
+        message: "Image generation requires OpenAI API key for DALL-E 3" 
       });
       return;
     }
@@ -469,6 +470,9 @@ app.post("/api/user/content/generate", requireAuth, async (req: Request, res: Re
     }
 
     console.log(`🤖 Generating content with ${aiProvider.toUpperCase()} for topic: ${topic}`);
+    if (includeImages) {
+      console.log(`🎨 Will also generate ${imageCount} images with DALL-E 3`);
+    }
 
     const result = await aiService.generateContent({
       websiteId,
@@ -480,15 +484,14 @@ app.post("/api/user/content/generate", requireAuth, async (req: Request, res: Re
       brandVoice: brandVoice || "professional",
       targetAudience,
       eatCompliance: eatCompliance || false,
-      aiProvider: aiProvider as 'openai' | 'anthropic' | 'gemini', // Updated type
+      aiProvider: aiProvider as 'openai' | 'anthropic' | 'gemini',
       userId: req.user!.id,
-
       includeImages,
       imageCount,
       imageStyle
     });
 
-    // FIXED: Ensure we're saving proper numeric values, never 0 unless intended
+    // Save content with proper cost tracking
     const content = await storage.createContent({
       userId,
       websiteId,
@@ -497,22 +500,22 @@ app.post("/api/user/content/generate", requireAuth, async (req: Request, res: Re
       excerpt: result.excerpt,
       metaDescription: result.metaDescription,
       metaTitle: result.metaTitle,
-      seoScore: Math.max(1, Math.min(100, Math.round(result.seoScore))), // Ensure 1-100 range
+      seoScore: Math.max(1, Math.min(100, Math.round(result.seoScore))),
       readabilityScore: Math.max(1, Math.min(100, Math.round(result.readabilityScore))), 
       brandVoiceScore: Math.max(1, Math.min(100, Math.round(result.brandVoiceScore))),
-      tokensUsed: Math.max(1, result.tokensUsed), // Ensure at least 1
-      costUsd: Math.max(1, Math.round((result.costUsd || 0.001) * 100)), // Convert to cents, min 1 cent
+      tokensUsed: Math.max(1, result.tokensUsed),
+      costUsd: Math.max(1, Math.round((result.costUsd || 0.001) * 100)), // Text cost only
       eatCompliance: result.eatCompliance,
       seoKeywords: result.keywords,
       aiModel: aiProvider === 'openai' ? 'gpt-4o' : aiProvider === 'anthropic' ? 'claude-3-5-sonnet-20250106' : 'gemini-1.5-pro',
-   
       hasImages: includeImages && result.images?.length > 0,
       imageCount: result.images?.length || 0,
       imageCostCents: Math.round((result.totalImageCost || 0) * 100)
     });
 
-    console.log(`✅ Content saved with scores - SEO: ${content.seoScore}, Readability: ${content.readabilityScore}, Brand: ${content.brandVoiceScore}, Tokens: ${content.tokensUsed}, Cost: ${content.costUsd} cents`);
+    console.log(`✅ Content saved with scores - SEO: ${content.seoScore}, Readability: ${content.readabilityScore}, Brand: ${content.brandVoiceScore}, Tokens: ${content.tokensUsed}, Text Cost: ${content.costUsd} cents, Image Cost: ${Math.round((result.totalImageCost || 0) * 100)} cents`);
 
+    // Save images to database if generated
     if (result.images && result.images.length > 0) {
       for (const image of result.images) {
         await storage.createContentImage({
@@ -530,19 +533,19 @@ app.post("/api/user/content/generate", requireAuth, async (req: Request, res: Re
         });
       }
     }
+
     // Log the activity
     await storage.createActivityLog({
       userId,
       websiteId,
       type: "content_generated",
-      description: `AI content generated: "${result.title}" (${result.aiProvider.toUpperCase()})`,
+      description: `AI content generated: "${result.title}" (${result.aiProvider.toUpperCase()}${result.images?.length ? ` + ${result.images.length} DALL-E images` : ''})`,
       metadata: { 
         contentId: content.id,
-        aiProvider: result.aiProvider,
+        contentAiProvider: result.aiProvider,
+        imageAiProvider: result.images?.length ? 'dall-e-3' : null,
         tokensUsed: content.tokensUsed,
-        costCents: content.costUsd,
-        
-
+        textCostCents: content.costUsd,
         hasImages: !!result.images?.length,
         imageCount: result.images?.length || 0,
         imageCostCents: Math.round((result.totalImageCost || 0) * 100)
@@ -556,7 +559,7 @@ app.post("/api/user/content/generate", requireAuth, async (req: Request, res: Re
     let statusCode = 500;
     let errorMessage = error instanceof Error ? error.message : "Failed to generate content";
     
-if (error instanceof Error) {
+    if (error instanceof Error) {
       if (error.name === 'AIProviderError') {
         statusCode = 400;
       } else if (error.name === 'AnalysisError') {
@@ -679,7 +682,23 @@ app.put("/api/user/content/:id", requireAuth, async (req: Request, res: Response
   try {
     const userId = req.user!.id;
     const contentId = req.params.id;
-    const { websiteId, aiProvider, ...updateData } = req.body;
+    const { 
+      websiteId, 
+      aiProvider, 
+      regenerateImages = false,
+      includeImages = false,
+      imageCount = 0,
+      imageStyle = 'natural',
+      ...updateData 
+    } = req.body;
+    
+    console.log('DEBUG: Content update parameters:', {
+      contentAI: aiProvider,
+      regenerateImages,
+      includeImages,
+      imageCount,
+      imageStyle
+    });
     
     // Verify website ownership if websiteId is provided
     if (websiteId) {
@@ -694,40 +713,84 @@ app.put("/api/user/content/:id", requireAuth, async (req: Request, res: Response
     let regenerationResult = null;
     if (aiProvider && updateData.title && updateData.body) {
       try {
-        console.log(`🤖 Regenerating content with ${aiProvider.toUpperCase()}`);
+        console.log(`Content AI: ${aiProvider.toUpperCase()}, Image AI: ${(regenerateImages || includeImages) ? 'DALL-E 3' : 'None'}`);
+        
+        // Get existing content to check for images
+        const existingContent = await storage.getContent(contentId);
+        const hasExistingImages = existingContent?.hasImages || false;
+        const existingImageCount = existingContent?.imageCount || 0;
+        
+        // UPDATED: Determine image settings (independent of content AI provider)
+        let shouldIncludeImages = false;
+        let finalImageCount = 0;
+        let finalImageStyle = imageStyle || 'natural';
+        
+        if (regenerateImages) {
+          // User wants to regenerate images - check if OpenAI API key is available
+          if (!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
+            throw new Error('Image regeneration requires OpenAI API key for DALL-E 3');
+          }
+          shouldIncludeImages = true;
+          finalImageCount = imageCount || existingImageCount || 1;
+          console.log('Will regenerate images with DALL-E:', { finalImageCount, finalImageStyle });
+        } else if (!regenerateImages && hasExistingImages) {
+          // User wants to keep existing images
+          shouldIncludeImages = false;
+          finalImageCount = 0;
+          console.log('Will keep existing images');
+        } else if (includeImages) {
+          // New image generation request - check if OpenAI API key is available
+          if (!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
+            throw new Error('Image generation requires OpenAI API key for DALL-E 3');
+          }
+          shouldIncludeImages = true;
+          finalImageCount = imageCount || 1;
+          console.log('Will add new images with DALL-E:', { finalImageCount, finalImageStyle });
+        }
         
         const keywords = Array.isArray(updateData.seoKeywords) ? 
           updateData.seoKeywords : 
           (typeof updateData.seoKeywords === 'string' ? 
             updateData.seoKeywords.split(',').map(k => k.trim()) : []);
 
-        // Use generateContent to create completely new content
+        // UPDATED: Generate content with selected AI provider, images with DALL-E when needed
+        console.log('Generation parameters:', {
+          contentProvider: aiProvider,
+          imageProvider: shouldIncludeImages ? 'dall-e-3' : 'none',
+          topic: updateData.title,
+          includeImages: shouldIncludeImages,
+          imageCount: finalImageCount
+        });
+
+        // Generate content with selected AI provider (images handled internally)
         regenerationResult = await aiService.generateContent({
           websiteId: websiteId || contentId,
-          topic: updateData.title, // Use the title as the topic
+          topic: updateData.title,
           keywords: keywords,
           tone: updateData.tone || 'professional',
-          wordCount: updateData.body ? updateData.body.split(' ').length : 800, // Match current length
+          wordCount: updateData.body ? updateData.body.split(' ').length : 800,
           seoOptimized: true,
           brandVoice: updateData.brandVoice,
           targetAudience: updateData.targetAudience,
           eatCompliance: updateData.eatCompliance || false,
           aiProvider: aiProvider as 'openai' | 'anthropic' | 'gemini',
           userId: userId,
-          includeImages: false, // Don't regenerate images for existing content
-          imageCount: 0
+          includeImages: shouldIncludeImages,
+          imageCount: finalImageCount,
+          imageStyle: finalImageStyle
         });
 
         if (regenerationResult) {
-          console.log('Regeneration results:', {
-            seoScore: regenerationResult.seoScore,
-            readabilityScore: regenerationResult.readabilityScore,
-            brandVoiceScore: regenerationResult.brandVoiceScore,
-            tokensUsed: regenerationResult.tokensUsed,
-            costUsd: regenerationResult.costUsd
+          console.log('Regeneration completed:', {
+            contentAI: aiProvider,
+            imageAI: shouldIncludeImages ? 'dall-e-3' : 'none',
+            hasImages: !!regenerationResult.images?.length,
+            imageCount: regenerationResult.images?.length || 0,
+            textCost: regenerationResult.costUsd,
+            imageCost: regenerationResult.totalImageCost || 0
           });
 
-          // Replace the content with newly generated content
+          // Update content data
           updateData.title = regenerationResult.title;
           updateData.body = regenerationResult.content;
           updateData.excerpt = regenerationResult.excerpt;
@@ -735,27 +798,58 @@ app.put("/api/user/content/:id", requireAuth, async (req: Request, res: Response
           updateData.metaTitle = regenerationResult.metaTitle;
           updateData.seoKeywords = regenerationResult.keywords;
 
-          // Update scores with new analysis
+          // Update scores
           updateData.seoScore = Math.max(1, Math.min(100, Math.round(regenerationResult.seoScore)));
           updateData.readabilityScore = Math.max(1, Math.min(100, Math.round(regenerationResult.readabilityScore)));
           updateData.brandVoiceScore = Math.max(1, Math.min(100, Math.round(regenerationResult.brandVoiceScore)));
           
-          // Update tokens and cost
+          // Update costs and tokens
           updateData.tokensUsed = Math.max(1, Math.round(regenerationResult.tokensUsed));
-          updateData.costUsd = Math.max(1, Math.round((regenerationResult.costUsd || 0.001) * 100));
+          updateData.costUsd = Math.max(1, Math.round(regenerationResult.costUsd * 100)); // Text cost only
+          
+          // Update image information
+          updateData.hasImages = !!regenerationResult.images?.length;
+          updateData.imageCount = regenerationResult.images?.length || 0;
+          updateData.imageCostCents = Math.round((regenerationResult.totalImageCost || 0) * 100);
 
-          // Update AI model
+          // Update AI model (content AI, not image AI)
           updateData.aiModel = aiProvider === 'openai' ? 'gpt-4o' : 
                                 aiProvider === 'anthropic' ? 'claude-3-5-sonnet-20250106' : 
                                 'gemini-1.5-pro';
 
-          console.log(`✅ Content regenerated - SEO: ${updateData.seoScore}%, Readability: ${updateData.readabilityScore}%, Brand Voice: ${updateData.brandVoiceScore}%, Tokens: ${updateData.tokensUsed}, Cost: ${updateData.costUsd} cents`);
-        } else {
-          console.warn("⚠️ Regeneration returned null/undefined result");
+          console.log(`Content regenerated with ${aiProvider.toUpperCase()}, images with DALL-E - SEO: ${updateData.seoScore}%, Images: ${updateData.imageCount}`);
+          
+          // Save images to database if generated
+          if (regenerationResult.images && regenerationResult.images.length > 0) {
+            console.log(`Saving ${regenerationResult.images.length} DALL-E images to database`);
+            
+            // Delete existing images if regenerating
+            if (regenerateImages) {
+              await storage.deleteContentImages(contentId);
+              console.log('Deleted existing images for regeneration');
+            }
+            
+            // Save new images
+            for (const image of regenerationResult.images) {
+              await storage.createContentImage({
+                contentId: contentId,
+                userId,
+                websiteId: websiteId || existingContent.websiteId,
+                originalUrl: image.url,
+                filename: image.filename,
+                altText: image.altText,
+                generationPrompt: image.prompt,
+                costCents: Math.round(image.cost * 100),
+                imageStyle: finalImageStyle,
+                size: '1024x1024',
+                status: 'generated'
+              });
+            }
+          }
         }
       } catch (regenerationError) {
-        console.warn(`⚠️ Content regeneration failed: ${regenerationError instanceof Error ? regenerationError.message : 'Unknown error'}`);
-        // Continue with update even if regeneration fails, but don't update content
+        console.error(`Content regeneration failed:`, regenerationError);
+        // Continue with update even if regeneration fails
       }
     }
     
@@ -766,25 +860,33 @@ app.put("/api/user/content/:id", requireAuth, async (req: Request, res: Response
       return;
     }
 
-    // Log the activity if regeneration was performed
+    // Log the activity
     if (regenerationResult && websiteId) {
       try {
+        const hasImages = regenerationResult.images?.length > 0;
+        const activityDescription = hasImages 
+          ? `Content regenerated with ${aiProvider?.toUpperCase()}, images with DALL-E: "${updatedContent.title}"`
+          : `Content regenerated with ${aiProvider?.toUpperCase()}: "${updatedContent.title}"`;
+          
         await storage.createActivityLog({
           userId,
           websiteId,
           type: "content_regenerated",
-          description: `Content regenerated with AI: "${updatedContent.title}" (${aiProvider?.toUpperCase()})`,
+          description: activityDescription,
           metadata: { 
             contentId: updatedContent.id,
-            aiProvider: aiProvider,
+            contentAiProvider: aiProvider,
+            imageAiProvider: hasImages ? 'dall-e-3' : null,
             tokensUsed: updateData.tokensUsed,
-            costCents: updateData.costUsd,
-            regenerated: !!regenerationResult
+            textCostCents: updateData.costUsd,
+            regenerated: !!regenerationResult,
+            imagesRegenerated: regenerateImages,
+            newImageCount: regenerationResult?.images?.length || 0,
+            imageCostCents: Math.round((regenerationResult?.totalImageCost || 0) * 100)
           }
         });
       } catch (logError) {
         console.warn("Failed to log activity:", logError);
-        // Don't fail the request if logging fails
       }
     }
 
@@ -792,12 +894,16 @@ app.put("/api/user/content/:id", requireAuth, async (req: Request, res: Response
       content: updatedContent,
       regeneration: regenerationResult ? {
         success: true,
-        aiProvider: regenerationResult.aiProvider,
+        contentAiProvider: aiProvider,
+        imageAiProvider: regenerationResult.images?.length > 0 ? 'dall-e-3' : null,
         tokensUsed: regenerationResult.tokensUsed,
         costUsd: regenerationResult.costUsd,
         seoScore: regenerationResult.seoScore,
         readabilityScore: regenerationResult.readabilityScore,
-        brandVoiceScore: regenerationResult.brandVoiceScore
+        brandVoiceScore: regenerationResult.brandVoiceScore,
+        imagesRegenerated: regenerateImages,
+        newImageCount: regenerationResult.images?.length || 0,
+        imageCostUsd: regenerationResult.totalImageCost || 0
       } : null
     });
   } catch (error) {
@@ -998,6 +1104,447 @@ app.post("/api/user/content/:id/publish", requireAuth, async (req: Request, res:
     });
   }
 });
+
+// =============================================================================
+  // USER-SCOPED CLIENT REPORTS ROUTES (ADD THIS SECTION)
+  // =============================================================================
+
+  app.get("/api/user/reports", requireAuth, async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      console.log(`📊 Fetching all reports for user: ${userId}`);
+      
+      // Get all reports for user's websites
+      const websites = await storage.getUserWebsites(userId);
+      const allReports = [];
+      
+      for (const website of websites) {
+        const reports = await storage.getClientReports(website.id);
+        // Add website info to each report
+        const reportsWithWebsite = reports.map(report => ({
+          ...report,
+          websiteName: website.name,
+          websiteUrl: website.url
+        }));
+        allReports.push(...reportsWithWebsite);
+      }
+      
+      // Sort by generated date, most recent first
+      allReports.sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime());
+      
+      console.log(`✅ Found ${allReports.length} reports for user ${userId}`);
+      res.json(allReports);
+    } catch (error) {
+      console.error("Failed to fetch user reports:", error);
+      res.status(500).json({ message: "Failed to fetch reports" });
+    }
+  });
+
+  app.get("/api/user/websites/:id/reports", requireAuth, async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const websiteId = req.params.id;
+      
+      // Verify website ownership
+      const website = await storage.getUserWebsite(websiteId, userId);
+      if (!website) {
+        res.status(404).json({ message: "Website not found or access denied" });
+        return;
+      }
+      
+      const reports = await storage.getClientReports(websiteId);
+      const reportsWithWebsite = reports.map(report => ({
+        ...report,
+        websiteName: website.name,
+        websiteUrl: website.url
+      }));
+      
+      res.json(reportsWithWebsite);
+    } catch (error) {
+      console.error("Failed to fetch client reports:", error);
+      res.status(500).json({ message: "Failed to fetch client reports" });
+    }
+  });
+
+  app.post("/api/user/websites/:id/reports/generate", requireAuth, async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const websiteId = req.params.id;
+      const { reportType = 'monthly' } = req.body;
+      
+      console.log(`🔄 Generating ${reportType} report for website: ${websiteId}, user: ${userId}`);
+      
+      // Verify website ownership
+      const website = await storage.getUserWebsite(websiteId, userId);
+      if (!website) {
+        res.status(404).json({ message: "Website not found or access denied" });
+        return;
+      }
+      
+      // Generate report data from existing data
+      const reportData = await generateReportData(websiteId, reportType, userId);
+      
+      // Create the report
+      const report = await storage.createClientReport({
+        userId,
+        websiteId,
+        reportType,
+        period: reportData.period,
+        data: reportData.data,
+        insights: reportData.insights,
+        roiData: reportData.roiData
+      });
+      
+      console.log(`✅ Report generated successfully: ${report.id}`);
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId,
+        websiteId,
+        type: "report_generated",
+        description: `${reportType} report generated for ${website.name}`,
+        metadata: { reportId: report.id, reportType, period: reportData.period }
+      });
+      
+      res.json({
+        ...report,
+        websiteName: website.name,
+        websiteUrl: website.url
+      });
+      
+    } catch (error) {
+      console.error("Report generation error:", error);
+      res.status(500).json({ 
+        message: "Failed to generate report",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+// Helper function to generate report data from existing data
+async function generateReportData(websiteId: string, reportType: string, userId: string) {
+  console.log(`📊 Generating report data for website: ${websiteId}, type: ${reportType}`);
+  
+  const now = new Date();
+  let startDate: Date;
+  let period: string;
+  
+  // Calculate date range based on report type
+  if (reportType === 'weekly') {
+    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    period = `Week ${Math.ceil(now.getDate() / 7)}, ${now.getFullYear()}`;
+  } else if (reportType === 'monthly') {
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    period = `${now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`;
+  } else { // quarterly
+    const quarter = Math.floor(now.getMonth() / 3) + 1;
+    startDate = new Date(now.getFullYear(), (quarter - 1) * 3, 1);
+    period = `Q${quarter} ${now.getFullYear()}`;
+  }
+  
+  console.log(`📅 Report period: ${period} (from ${startDate.toISOString()})`);
+  
+  try {
+    // Check for existing report to prevent duplicates
+    const existingReports = await storage.getClientReports(websiteId);
+    const duplicateReport = existingReports.find(report => 
+      report.reportType === reportType && report.period === period
+    );
+    
+    if (duplicateReport) {
+      console.log(`⚠️ Duplicate report found for ${period}, ${reportType}`);
+      // Return existing data instead of generating new mock data
+      return {
+        period: duplicateReport.period,
+        data: duplicateReport.data,
+        insights: duplicateReport.insights,
+        roiData: duplicateReport.roiData
+      };
+    }
+    
+    // Get ACTUAL data for the period
+    const [
+      content,
+      seoReports,
+      activityLogs
+    ] = await Promise.all([
+      storage.getContentByWebsite(websiteId),
+      storage.getSeoReportsByWebsite(websiteId),
+      storage.getActivityLogs(websiteId)
+    ]);
+    
+    console.log(`📊 Data fetched - Content: ${content.length}, SEO Reports: ${seoReports.length}, Activity: ${activityLogs.length}`);
+    
+    // Filter data by date range
+    const periodContent = content.filter(c => new Date(c.createdAt) >= startDate);
+    const periodSeoReports = seoReports.filter(r => new Date(r.createdAt) >= startDate);
+    const periodActivity = activityLogs.filter(a => new Date(a.createdAt) >= startDate);
+    
+    // Calculate FACTUAL metrics from actual data
+    const publishedContent = periodContent.filter(c => c.status === 'published');
+    const latestSeoReport = seoReports[0]; // Most recent SEO report
+    const previousSeoReport = seoReports[1]; // Previous SEO report for comparison
+    
+    // Calculate SEO score change (factual)
+    const seoScoreChange = latestSeoReport && previousSeoReport ? 
+      latestSeoReport.score - previousSeoReport.score : 0;
+    
+    // Calculate average scores from ACTUAL content (factual)
+    const avgSeoScore = periodContent.length > 0 ? 
+      Math.round(periodContent.reduce((sum, c) => sum + (c.seoScore || 0), 0) / periodContent.length) : 0;
+    
+    const avgReadabilityScore = periodContent.length > 0 ? 
+      Math.round(periodContent.reduce((sum, c) => sum + (c.readabilityScore || 0), 0) / periodContent.length) : 0;
+    
+    const avgBrandVoiceScore = periodContent.length > 0 ? 
+      Math.round(periodContent.reduce((sum, c) => sum + (c.brandVoiceScore || 0), 0) / periodContent.length) : 0;
+    
+    // Calculate ACTUAL costs and tokens (factual)
+    const totalCostCents = periodContent.reduce((sum, c) => sum + (c.costUsd || 0), 0);
+    const totalImageCostCents = periodContent.reduce((sum, c) => sum + (c.imageCostCents || 0), 0);
+    const totalTokens = periodContent.reduce((sum, c) => sum + (c.tokensUsed || 0), 0);
+    const totalCostUsd = (totalCostCents + totalImageCostCents) / 100;
+    
+    // Count active days (factual)
+    const activeDays = periodActivity.length > 0 ? 
+      new Set(periodActivity.map(a => a.createdAt.toDateString())).size : 0;
+    
+    // Count content with images (factual)
+    const contentWithImages = periodContent.filter(c => c.hasImages).length;
+    const totalImages = periodContent.reduce((sum, c) => sum + (c.imageCount || 0), 0);
+    
+    // Generate insights based on ACTUAL data (factual)
+    const insights = [];
+    
+    if (seoScoreChange > 5) {
+      insights.push(`SEO score improved significantly by ${seoScoreChange.toFixed(1)} points this ${reportType}.`);
+    } else if (seoScoreChange < -5) {
+      insights.push(`SEO score declined by ${Math.abs(seoScoreChange).toFixed(1)} points - recommend immediate attention.`);
+    } else if (Math.abs(seoScoreChange) <= 2) {
+      insights.push(`SEO score remained stable with minimal change (${seoScoreChange >= 0 ? '+' : ''}${seoScoreChange.toFixed(1)} points).`);
+    }
+    
+    if (publishedContent.length > 0) {
+      insights.push(`Published ${publishedContent.length} pieces of content with an average SEO score of ${avgSeoScore}%.`);
+      
+      if (contentWithImages > 0) {
+        insights.push(`${contentWithImages} content pieces included AI-generated images (${totalImages} total images).`);
+      }
+    } else {
+      insights.push(`No content was published during this ${reportType} period.`);
+    }
+    
+    if (avgBrandVoiceScore > 80) {
+      insights.push(`Excellent brand voice consistency with ${avgBrandVoiceScore}% average score.`);
+    } else if (avgBrandVoiceScore > 60) {
+      insights.push(`Good brand voice alignment with ${avgBrandVoiceScore}% average score.`);
+    } else if (avgBrandVoiceScore > 0) {
+      insights.push(`Brand voice needs improvement - current average: ${avgBrandVoiceScore}%.`);
+    }
+    
+    if (totalCostUsd > 0) {
+      const textCost = totalCostCents / 100;
+      const imageCost = totalImageCostCents / 100;
+      if (imageCost > 0) {
+        insights.push(`AI generation cost: $${totalCostUsd.toFixed(2)} total ($${textCost.toFixed(2)} content + $${imageCost.toFixed(2)} images) for ${totalTokens.toLocaleString()} tokens.`);
+      } else {
+        insights.push(`AI content generation cost: $${textCost.toFixed(2)} for ${totalTokens.toLocaleString()} tokens.`);
+      }
+    }
+    
+    if (activeDays > 0) {
+      const activityRate = (activeDays / ((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))) * 100;
+      insights.push(`Active on ${activeDays} days (${activityRate.toFixed(0)}% activity rate) during this period.`);
+    }
+    
+    // Build FACTUAL data object (no mock data)
+    const data = {
+      // SEO metrics (factual)
+      seoScoreChange: Math.round(seoScoreChange * 10) / 10,
+      currentSeoScore: latestSeoReport?.score || 0,
+      previousSeoScore: previousSeoReport?.score || 0,
+      
+      // Content metrics (factual)
+      contentPublished: publishedContent.length,
+      contentTotal: periodContent.length,
+      avgSeoScore,
+      avgReadabilityScore,
+      avgBrandVoiceScore,
+      
+      // Cost metrics (factual)
+      totalCostUsd,
+      textCostUsd: totalCostCents / 100,
+      imageCostUsd: totalImageCostCents / 100,
+      totalTokens,
+      
+      // Activity metrics (factual)
+      activeDays,
+      
+      // Image metrics (factual)
+      contentWithImages,
+      totalImages,
+      
+      // Analytics placeholders (clearly marked as unavailable)
+      pageViews: null, // Requires Google Analytics integration
+      organicTraffic: null, // Requires Google Analytics integration
+      conversionRate: null, // Requires conversion tracking
+      backlinks: null, // Requires SEO tool integration
+      keywordRankings: null, // Requires SEO tool integration
+      
+      // Data availability flags
+      hasAnalytics: false,
+      hasSeoTools: false,
+      dataNote: "Traffic and ranking data requires analytics integration"
+    };
+    
+    // Calculate ROI based on ACTUAL data
+    const roiData = {
+      contentROI: publishedContent.length > 0 && totalCostUsd > 0 ? 
+        Math.round((publishedContent.length * 50) / totalCostUsd) : 0, // Estimated $50 value per published post
+      timeInvested: publishedContent.length * 30, // 30 minutes per content piece (reasonable estimate)
+      costPerContent: publishedContent.length > 0 ? 
+        Math.round((totalCostUsd / publishedContent.length) * 100) / 100 : 0,
+      costEfficiency: totalTokens > 0 ? 
+        Math.round((totalTokens / (totalCostUsd * 100)) * 100) / 100 : 0 // tokens per cent
+    };
+    
+    console.log(`✅ FACTUAL report data generated:`, { 
+      period, 
+      contentCount: periodContent.length, 
+      publishedCount: publishedContent.length,
+      seoScoreChange: data.seoScoreChange,
+      totalCostUsd: data.totalCostUsd,
+      activeDays: data.activeDays,
+      hasImages: contentWithImages > 0
+    });
+    
+    return {
+      period,
+      data,
+      insights,
+      roiData
+    };
+    
+  } catch (error) {
+    console.error("Error generating FACTUAL report data:", error);
+    throw error;
+  }
+}
+
+// Also update the route handler to check for duplicates
+app.post("/api/user/websites/:id/reports/generate", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const websiteId = req.params.id;
+    const { reportType = 'monthly' } = req.body;
+    
+    console.log(`📄 Generating ${reportType} report for website: ${websiteId}, user: ${userId}`);
+    
+    // Verify website ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+    
+    // Check for existing report in the same period
+    const now = new Date();
+    let targetPeriod: string;
+    
+    if (reportType === 'weekly') {
+      const weekNumber = Math.ceil(now.getDate() / 7);
+      targetPeriod = `Week ${weekNumber}, ${now.getFullYear()}`;
+    } else if (reportType === 'monthly') {
+      targetPeriod = `${now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`;
+    } else { // quarterly
+      const quarter = Math.floor(now.getMonth() / 3) + 1;
+      targetPeriod = `Q${quarter} ${now.getFullYear()}`;
+    }
+    
+    // Check for existing report
+    const existingReports = await storage.getClientReports(websiteId);
+    const existingReport = existingReports.find(report => 
+      report.reportType === reportType && report.period === targetPeriod
+    );
+    
+    if (existingReport) {
+      console.log(`⚠️ Report already exists for ${targetPeriod}, ${reportType}. Updating existing report.`);
+      
+      // Update the existing report instead of creating a duplicate
+      const reportData = await generateReportData(websiteId, reportType, userId);
+      
+      const updatedReport = await storage.updateClientReport(existingReport.id, {
+        data: reportData.data,
+        insights: reportData.insights,
+        roiData: reportData.roiData,
+        generatedAt: new Date()
+      });
+      
+      console.log(`✅ Report updated successfully: ${updatedReport.id}`);
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId,
+        websiteId,
+        type: "report_updated",
+        description: `${reportType} report updated for ${website.name} (${targetPeriod})`,
+        metadata: { reportId: updatedReport.id, reportType, period: targetPeriod, action: 'update' }
+      });
+      
+      res.json({
+        ...updatedReport,
+        websiteName: website.name,
+        websiteUrl: website.url,
+        updated: true,
+        message: `Updated existing ${reportType} report for ${targetPeriod}`
+      });
+      return;
+    }
+    
+    // Generate new report data from FACTUAL data
+    const reportData = await generateReportData(websiteId, reportType, userId);
+    
+    // Create the report
+    const report = await storage.createClientReport({
+      userId,
+      websiteId,
+      reportType,
+      period: reportData.period,
+      data: reportData.data,
+      insights: reportData.insights,
+      roiData: reportData.roiData
+    });
+    
+    console.log(`✅ New report generated successfully: ${report.id}`);
+    
+    // Log activity
+    await storage.createActivityLog({
+      userId,
+      websiteId,
+      type: "report_generated",
+      description: `${reportType} report generated for ${website.name} (${reportData.period})`,
+      metadata: { reportId: report.id, reportType, period: reportData.period, action: 'create' }
+    });
+    
+    res.json({
+      ...report,
+      websiteName: website.name,
+      websiteUrl: website.url,
+      updated: false,
+      message: `Generated new ${reportType} report for ${reportData.period}`
+    });
+    
+  } catch (error) {
+    console.error("Report generation error:", error);
+    res.status(500).json({ 
+      message: "Failed to generate report",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+
+
   // =============================================================================
   // USER-SCOPED SEO ROUTES
   // =============================================================================
