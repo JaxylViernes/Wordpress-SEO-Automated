@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Globe, Bot, Search, Calendar, TrendingUp } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth"; // Import useAuth (NOT useAuthContext)
 import StatsCard from "@/components/dashboard/stats-card";
 import PerformanceChart from "@/components/dashboard/performance-chart";
 import RecentActivity from "@/components/dashboard/recent-activity";
@@ -12,15 +13,21 @@ import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 
 export default function Dashboard() {
+  const { isAuthenticated, isLoading } = useAuth();
+
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ["/api/dashboard/stats"],
+    queryKey: ["dashboard-stats"], // Simple key, no user ID needed
     queryFn: api.getDashboardStats,
+    enabled: isAuthenticated, // Only when logged in
   });
+
+  if (isLoading) return <div>Loading...</div>;
+  if (!isAuthenticated) return <div>Please log in</div>;
 
   return (
     <div className="py-4 sm:py-6">
+      {/* Rest of your existing dashboard code stays the same */}
       <div className="max-w-7xl mx-auto">
-        {/* Page Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8">
           <div className="flex-1 min-w-0">
             <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold leading-7 text-gray-900 truncate">
@@ -38,17 +45,16 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Stats Overview */}
         <div className="grid grid-cols-1 gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-6 sm:mb-8">
           <StatsCard
             title="Active Websites"
-            value={statsLoading ? "..." : stats?.activeWebsites || 0}
+            value={statsLoading ? "..." : stats?.websiteCount || 0}
             icon={Globe}
             iconColor="bg-blue-500"
           />
           <StatsCard
             title="Content Generated"
-            value={statsLoading ? "..." : stats?.contentGenerated || 0}
+            value={statsLoading ? "..." : stats?.contentCount || 0}
             icon={Bot}
             iconColor="bg-green-500"
           />
@@ -68,31 +74,24 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* Main Dashboard Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* Website Performance Chart */}
           <div className="lg:col-span-2">
             <PerformanceChart />
           </div>
-
-          {/* Recent Activity */}
           <div>
             <RecentActivity />
           </div>
         </div>
 
-        {/* Websites Table */}
         <div className="mb-8">
           <WebsitesTable />
         </div>
 
-        {/* AI Content Generation Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <ContentQueue />
           <SEOIssues />
         </div>
 
-        {/* Client Reports Section */}
         <ClientReports />
       </div>
     </div>

@@ -7,20 +7,27 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import WebsitesTable from "@/components/dashboard/websites-table";
 import AddWebsiteForm from "@/components/forms/add-website-form";
 import { api } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function Websites() {
+  // ADD THESE MISSING STATE DECLARATIONS
   const [isAddWebsiteOpen, setIsAddWebsiteOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  
+  const { isAuthenticated, isLoading } = useAuth();
 
-  const { data: websites, isLoading } = useQuery({
-    queryKey: ["/api/websites"],
+  const { data: websites, isLoading: websitesLoading } = useQuery({
+    queryKey: ["websites"], // Simple key, no user ID needed
     queryFn: api.getWebsites,
+    enabled: isAuthenticated, // Only when logged in
   });
+
+  if (isLoading) return <div>Loading...</div>;
+  if (!isAuthenticated) return <div>Please log in</div>;
 
   return (
     <div className="py-6">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
-        {/* Page Header */}
         <div className="md:flex md:items-center md:justify-between mb-8">
           <div className="flex-1 min-w-0">
             <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
@@ -45,7 +52,6 @@ export default function Websites() {
           </div>
         </div>
 
-        {/* Search and Filter Bar */}
         <div className="mb-6 flex flex-col sm:flex-row gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -62,8 +68,7 @@ export default function Websites() {
           </Button>
         </div>
 
-        {/* Websites Summary Cards */}
-        {!isLoading && websites && (
+        {!websitesLoading && websites && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div className="bg-white rounded-lg shadow-sm p-6 border">
               <h3 className="text-lg font-medium text-gray-900 mb-2">Total Websites</h3>
@@ -87,7 +92,6 @@ export default function Websites() {
           </div>
         )}
 
-        {/* Websites Table */}
         <WebsitesTable />
       </div>
     </div>

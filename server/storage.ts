@@ -38,7 +38,7 @@ import {
   type InsertBackup
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, or, isNull, inArray } from "drizzle-orm";
 import { wordPressAuthService } from "./services/wordpress-auth";
 
 export interface IStorage {
@@ -48,41 +48,54 @@ export interface IStorage {
   upsertUser(user: UpsertUser): Promise<User>;
   createUser(user: InsertUser): Promise<User>;
 
-  // Websites
-  getWebsites(): Promise<Website[]>;
-  getWebsite(id: string): Promise<Website | undefined>;
-  createWebsite(website: InsertWebsite): Promise<Website>;
+  // User-scoped Websites
+  getUserWebsites(userId: string): Promise<Website[]>;
+  getUserWebsite(id: string, userId: string): Promise<Website | undefined>;
+  createWebsite(website: InsertWebsite & { userId: string }): Promise<Website>;
   updateWebsite(id: string, website: Partial<Website>): Promise<Website | undefined>;
   deleteWebsite(id: string): Promise<boolean>;
+  validateWebsiteOwnership(websiteId: string, userId: string): Promise<boolean>;
 
-  // Content
+  // User-scoped Content
+  getUserContent(userId: string, websiteId?: string): Promise<Content[]>;
   getContentByWebsite(websiteId: string): Promise<Content[]>;
   getContent(id: string): Promise<Content | undefined>;
-  createContent(content: InsertContent): Promise<Content>;
+  createContent(content: InsertContent & { userId: string }): Promise<Content>;
   updateContent(id: string, content: Partial<Content>): Promise<Content | undefined>;
   getPendingApprovalContent(): Promise<Content[]>;
+  getUserPendingApprovalContent(userId: string): Promise<Content[]>;
 
-  // SEO Reports
+  // User-scoped SEO Reports
+  getUserSeoReports(userId: string, websiteId?: string): Promise<SeoReport[]>;
   getSeoReportsByWebsite(websiteId: string): Promise<SeoReport[]>;
   getLatestSeoReport(websiteId: string): Promise<SeoReport | undefined>;
-  createSeoReport(report: InsertSeoReport): Promise<SeoReport>;
+  createSeoReport(report: InsertSeoReport & { userId: string }): Promise<SeoReport>;
 
-  // Activity Logs
+  // User-scoped Activity Logs
+  getUserActivityLogs(userId: string, websiteId?: string): Promise<ActivityLog[]>;
   getActivityLogs(websiteId?: string): Promise<ActivityLog[]>;
-  createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
+  createActivityLog(log: InsertActivityLog & { userId: string }): Promise<ActivityLog>;
 
   // Client Reports
   getClientReports(websiteId: string): Promise<ClientReport[]>;
-  createClientReport(report: InsertClientReport): Promise<ClientReport>;
+  createClientReport(report: InsertClientReport & { userId: string }): Promise<ClientReport>;
 
   // Enhanced features
-  createContentApproval(approval: InsertContentApproval): Promise<ContentApproval>;
-  createSecurityAudit(audit: InsertSecurityAudit): Promise<SecurityAudit>;
-  trackAiUsage(usage: InsertAiUsageTracking): Promise<AiUsageTracking>;
-  createSeoAudit(audit: InsertSeoAudit): Promise<SeoAudit>;
+  createContentApproval(approval: InsertContentApproval & { userId: string }): Promise<ContentApproval>;
+  createSecurityAudit(audit: InsertSecurityAudit & { userId?: string }): Promise<SecurityAudit>;
+  trackAiUsage(usage: InsertAiUsageTracking & { userId: string }): Promise<AiUsageTracking>;
+  createSeoAudit(audit: InsertSeoAudit & { userId: string }): Promise<SeoAudit>;
   getContentSchedule(websiteId: string): Promise<ContentSchedule[]>;
-  createContentSchedule(schedule: InsertContentSchedule): Promise<ContentSchedule>;
-  createBackup(backup: InsertBackup): Promise<Backup>;
+  createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule>;
+  createBackup(backup: InsertBackup & { userId: string }): Promise<Backup>;
+
+  // Dashboard stats
+  getUserDashboardStats(userId: string): Promise<{
+    websiteCount: number;
+    contentCount: number;
+    avgSeoScore: number;
+    recentActivity: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -97,74 +110,7 @@ export class DatabaseStorage implements IStorage {
       const existingWebsites = await db.select().from(websites).limit(1);
       if (existingWebsites.length > 0) return;
 
-      // Create sample websites with secure Application Password format
-      const sampleWebsites = [
-        {
-          name: "TechBlog.com",
-          url: "https://techblog.com",
-          wpApplicationName: "AI Content Manager - TechBlog",
-          wpApplicationPassword: "demo-encrypted-app-password-1", // Would be encrypted in real use
-          wpUsername: "admin",
-          aiModel: "gpt-4o",
-          autoPosting: false, // Default to manual approval
-          requireApproval: true,
-          status: "active",
-          seoScore: 92,
-          contentCount: 24,
-          brandVoice: "technical",
-          targetAudience: "developers",
-        },
-        {
-          name: "E-Commerce.store",
-          url: "https://e-commerce.store",
-          wpApplicationName: "AI Content Manager - ECommerce",
-          wpApplicationPassword: "demo-encrypted-app-password-2",
-          wpUsername: "admin",
-          aiModel: "gpt-4o",
-          autoPosting: false,
-          requireApproval: true,
-          status: "processing",
-          seoScore: 78,
-          contentCount: 18,
-          brandVoice: "friendly",
-          targetAudience: "online shoppers",
-        },
-        {
-          name: "RestaurantSite.com",
-          url: "https://restaurantsite.com",
-          wpApplicationName: "AI Content Manager - Restaurant",
-          wpApplicationPassword: "demo-encrypted-app-password-3",
-          wpUsername: "admin",
-          aiModel: "claude-3",
-          autoPosting: false,
-          requireApproval: true,
-          status: "issues",
-          seoScore: 65,
-          contentCount: 12,
-          brandVoice: "warm",
-          targetAudience: "local diners",
-        },
-      ];
-
-      await db.insert(websites).values(sampleWebsites);
-
-      // Sample activity logs
-      const sampleActivities = [
-        {
-          websiteId: null, // System-wide activity
-          type: "system_init",
-          description: "WordPress AI automation platform initialized",
-          metadata: { version: "2.0", secure: true },
-        },
-        {
-          websiteId: null,
-          type: "security_upgrade",
-          description: "Upgraded to WordPress Application Passwords authentication",
-          metadata: { previousAuth: "username/password", newAuth: "application_passwords" },
-        },
-      ];
-
-      await db.insert(activityLogs).values(sampleActivities);
+      console.log('No existing websites found, sample data initialization skipped');
     } catch (error) {
       console.error('Failed to initialize sample data:', error);
     }
@@ -201,20 +147,26 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  // Websites
-  async getWebsites(): Promise<Website[]> {
+  // User-scoped Websites
+  async getUserWebsites(userId: string): Promise<Website[]> {
     return await db
       .select()
       .from(websites)
+      .where(eq(websites.userId, userId))
       .orderBy(desc(websites.updatedAt));
   }
 
-  async getWebsite(id: string): Promise<Website | undefined> {
-    const [website] = await db.select().from(websites).where(eq(websites.id, id));
+  async getUserWebsite(id: string, userId: string): Promise<Website | undefined> {
+    const [website] = await db
+      .select()
+      .from(websites)
+      .where(and(eq(websites.id, id), eq(websites.userId, userId)));
     return website;
   }
 
-  async createWebsite(insertWebsite: InsertWebsite): Promise<Website> {
+  async createWebsite(insertWebsite: InsertWebsite & { userId: string }): Promise<Website> {
+    console.log("Creating website in database:", insertWebsite);
+    
     // Encrypt the application password before storing
     const encryptedPassword = wordPressAuthService.encryptCredentials({
       applicationName: insertWebsite.wpApplicationName,
@@ -226,15 +178,19 @@ export class DatabaseStorage implements IStorage {
       .insert(websites)
       .values({
         ...insertWebsite,
-        wpApplicationPassword: encryptedPassword.encrypted,
+        wpApplicationPassword: insertWebsite.wpApplicationPassword,
         status: "active",
         seoScore: 0,
         contentCount: 0,
+        userId: insertWebsite.userId // Ensure userId is set
       })
       .returning();
     
+    console.log("Website created successfully:", website);
+
     // Log activity
     await this.createActivityLog({
+      userId: insertWebsite.userId,
       websiteId: website.id,
       type: "website_connected",
       description: `Website connected: ${website.name}`,
@@ -243,6 +199,7 @@ export class DatabaseStorage implements IStorage {
 
     // Create security audit log
     await this.createSecurityAudit({
+      userId: insertWebsite.userId,
       websiteId: website.id,
       action: "website_connection",
       success: true,
@@ -269,7 +226,30 @@ export class DatabaseStorage implements IStorage {
     return (result.rowCount ?? 0) > 0;
   }
 
-  // Content
+  async validateWebsiteOwnership(websiteId: string, userId: string): Promise<boolean> {
+    const website = await this.getUserWebsite(websiteId, userId);
+    return !!website;
+  }
+
+  // User-scoped Content
+  async getUserContent(userId: string, websiteId?: string): Promise<Content[]> {
+    if (websiteId) {
+      // Verify website ownership first
+      const website = await this.getUserWebsite(websiteId, userId);
+      if (!website) {
+        return [];
+      }
+      return await this.getContentByWebsite(websiteId);
+    }
+    
+    // Get all content for user's websites
+    return await db
+      .select()
+      .from(content)
+      .where(eq(content.userId, userId))
+      .orderBy(desc(content.createdAt));
+  }
+
   async getContentByWebsite(websiteId: string): Promise<Content[]> {
     return await db
       .select()
@@ -291,12 +271,26 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(content.createdAt));
   }
 
-  async createContent(insertContent: InsertContent): Promise<Content> {
+  async getUserPendingApprovalContent(userId: string): Promise<Content[]> {
+    return await db
+      .select()
+      .from(content)
+      .where(
+        and(
+          eq(content.status, "pending_approval"),
+          eq(content.userId, userId)
+        )
+      )
+      .orderBy(desc(content.createdAt));
+  }
+
+  async createContent(insertContent: InsertContent & { userId: string }): Promise<Content> {
     const [contentItem] = await db
       .insert(content)
       .values({
         ...insertContent,
         status: "pending_approval", // Default to requiring approval
+        userId: insertContent.userId
       })
       .returning();
     return contentItem;
@@ -311,7 +305,25 @@ export class DatabaseStorage implements IStorage {
     return contentItem;
   }
 
-  // SEO Reports
+  // User-scoped SEO Reports
+  async getUserSeoReports(userId: string, websiteId?: string): Promise<SeoReport[]> {
+    if (websiteId) {
+      // Verify ownership first
+      const website = await this.getUserWebsite(websiteId, userId);
+      if (!website) {
+        return [];
+      }
+      return await this.getSeoReportsByWebsite(websiteId);
+    }
+    
+    // Get all SEO reports for user's websites
+    return await db
+      .select()
+      .from(seoReports)
+      .where(eq(seoReports.userId, userId))
+      .orderBy(desc(seoReports.createdAt));
+  }
+
   async getSeoReportsByWebsite(websiteId: string): Promise<SeoReport[]> {
     return await db
       .select()
@@ -330,15 +342,46 @@ export class DatabaseStorage implements IStorage {
     return report;
   }
 
-  async createSeoReport(insertReport: InsertSeoReport): Promise<SeoReport> {
+  async createSeoReport(insertReport: InsertSeoReport & { userId: string }): Promise<SeoReport> {
     const [report] = await db
       .insert(seoReports)
-      .values(insertReport)
+      .values({
+        ...insertReport,
+        userId: insertReport.userId
+      })
       .returning();
     return report;
   }
 
-  // Activity Logs
+  // User-scoped Activity Logs
+  async getUserActivityLogs(userId: string, websiteId?: string): Promise<ActivityLog[]> {
+    if (websiteId) {
+      // First verify the website belongs to the user
+      const website = await this.getUserWebsite(websiteId, userId);
+      if (!website) {
+        return []; // Return empty array if user doesn't own the website
+      }
+      
+      return await db
+        .select()
+        .from(activityLogs)
+        .where(eq(activityLogs.websiteId, websiteId))
+        .orderBy(desc(activityLogs.createdAt));
+    }
+    
+    // Get all activity logs for this user
+    return await db
+      .select()
+      .from(activityLogs)
+      .where(
+        or(
+          eq(activityLogs.userId, userId),
+          isNull(activityLogs.userId) // Include system-wide logs
+        )
+      )
+      .orderBy(desc(activityLogs.createdAt));
+  }
+
   async getActivityLogs(websiteId?: string): Promise<ActivityLog[]> {
     if (websiteId) {
       return await db
@@ -354,10 +397,13 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(activityLogs.createdAt));
   }
 
-  async createActivityLog(insertLog: InsertActivityLog): Promise<ActivityLog> {
+  async createActivityLog(insertLog: InsertActivityLog & { userId: string }): Promise<ActivityLog> {
     const [log] = await db
       .insert(activityLogs)
-      .values(insertLog)
+      .values({
+        ...insertLog,
+        userId: insertLog.userId
+      })
       .returning();
     return log;
   }
@@ -371,43 +417,58 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(clientReports.generatedAt));
   }
 
-  async createClientReport(insertReport: InsertClientReport): Promise<ClientReport> {
+  async createClientReport(insertReport: InsertClientReport & { userId: string }): Promise<ClientReport> {
     const [report] = await db
       .insert(clientReports)
-      .values(insertReport)
+      .values({
+        ...insertReport,
+        userId: insertReport.userId
+      })
       .returning();
     return report;
   }
 
   // Enhanced Security and Management Features
-  async createContentApproval(approval: InsertContentApproval): Promise<ContentApproval> {
+  async createContentApproval(approval: InsertContentApproval & { userId: string }): Promise<ContentApproval> {
     const [approvalRecord] = await db
       .insert(contentApprovals)
-      .values(approval)
+      .values({
+        ...approval,
+        userId: approval.userId
+      })
       .returning();
     return approvalRecord;
   }
 
-  async createSecurityAudit(audit: InsertSecurityAudit): Promise<SecurityAudit> {
+  async createSecurityAudit(audit: InsertSecurityAudit & { userId?: string }): Promise<SecurityAudit> {
     const [auditRecord] = await db
       .insert(securityAudits)
-      .values(audit)
+      .values({
+        ...audit,
+        userId: audit.userId || null
+      })
       .returning();
     return auditRecord;
   }
 
-  async trackAiUsage(usage: InsertAiUsageTracking): Promise<AiUsageTracking> {
+  async trackAiUsage(usage: InsertAiUsageTracking & { userId: string }): Promise<AiUsageTracking> {
     const [usageRecord] = await db
       .insert(aiUsageTracking)
-      .values(usage)
+      .values({
+        ...usage,
+        userId: usage.userId
+      })
       .returning();
     return usageRecord;
   }
 
-  async createSeoAudit(audit: InsertSeoAudit): Promise<SeoAudit> {
+  async createSeoAudit(audit: InsertSeoAudit & { userId: string }): Promise<SeoAudit> {
     const [auditRecord] = await db
       .insert(seoAudits)
-      .values(audit)
+      .values({
+        ...audit,
+        userId: audit.userId
+      })
       .returning();
     return auditRecord;
   }
@@ -420,20 +481,56 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(contentSchedule.scheduledDate));
   }
 
-  async createContentSchedule(schedule: InsertContentSchedule): Promise<ContentSchedule> {
+  async createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule> {
     const [scheduleRecord] = await db
       .insert(contentSchedule)
-      .values(schedule)
+      .values({
+        ...schedule,
+        userId: schedule.userId
+      })
       .returning();
     return scheduleRecord;
   }
 
-  async createBackup(backup: InsertBackup): Promise<Backup> {
+  async createBackup(backup: InsertBackup & { userId: string }): Promise<Backup> {
     const [backupRecord] = await db
       .insert(backups)
-      .values(backup)
+      .values({
+        ...backup,
+        userId: backup.userId
+      })
       .returning();
     return backupRecord;
+  }
+
+  // Dashboard stats
+  async getUserDashboardStats(userId: string): Promise<{
+    websiteCount: number;
+    contentCount: number;
+    avgSeoScore: number;
+    recentActivity: number;
+  }> {
+    const userWebsites = await this.getUserWebsites(userId);
+    const userContent = await this.getUserContent(userId);
+    const recentLogs = await db
+      .select()
+      .from(activityLogs)
+      .where(
+        and(
+          eq(activityLogs.userId, userId),
+          // Last 7 days
+          eq(activityLogs.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+        )
+      );
+
+    return {
+      websiteCount: userWebsites.length,
+      contentCount: userContent.length,
+      avgSeoScore: userWebsites.length > 0 
+        ? Math.round(userWebsites.reduce((sum, w) => sum + w.seoScore, 0) / userWebsites.length)
+        : 0,
+      recentActivity: recentLogs.length
+    };
   }
 }
 

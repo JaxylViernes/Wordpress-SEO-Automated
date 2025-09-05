@@ -23,6 +23,7 @@ export const sessions = pgTable(
 
 export const websites = pgTable("websites", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
   name: text("name").notNull(),
   url: text("url").notNull(),
   // Secure WordPress Application Password authentication
@@ -51,10 +52,14 @@ export const websites = pgTable("websites", {
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => [
+  // Add index for efficient user-website lookups
+  index("idx_websites_user_id").on(table.userId),
+]);
 
 export const content = pgTable("content", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   websiteId: varchar("website_id").notNull().references(() => websites.id),
   title: text("title").notNull(),
   body: text("body").notNull(),
@@ -63,7 +68,7 @@ export const content = pgTable("content", {
   metaTitle: text("meta_title"),
   
   // Content approval and workflow
-  status: text("status").notNull().default("pending_approval"), // pending_approval, draft, approved, generating, published, scheduled, rejected
+  status: text("status").notNull().default("pending_approval"),
   approvedBy: varchar("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   rejectionReason: text("rejection_reason"),
@@ -77,38 +82,55 @@ export const content = pgTable("content", {
   
   // Content quality and brand compliance
   brandVoiceScore: integer("brand_voice_score").default(0),
-  factCheckStatus: text("fact_check_status").default("pending"), // pending, verified, flagged
+  factCheckStatus: text("fact_check_status").default("pending"),
   eatCompliance: boolean("eat_compliance").default(false),
+  
+  // NEW FIELDS - Add these to save AI results properly
+  tokensUsed: integer("tokens_used").default(0),
+  costUsd: integer("cost_usd").default(0), // Store as cents (multiply by 100)
   
   // Scheduling and publishing
   publishDate: timestamp("publish_date"),
   wordpressPostId: integer("wordpress_post_id"),
+
+  wordpressUrl: text("wordpress_url"),
+  publishError: text("publish_error"),
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("idx_content_user_id").on(table.userId),
+  index("idx_content_website_user").on(table.websiteId, table.userId),
+]);
 
 export const seoReports = pgTable("seo_reports", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
   websiteId: varchar("website_id").notNull().references(() => websites.id),
   score: integer("score").notNull(),
   issues: jsonb("issues").notNull().default([]),
   recommendations: jsonb("recommendations").notNull().default([]),
   pageSpeedScore: integer("page_speed_score"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("idx_seo_reports_user_id").on(table.userId),
+]);
 
 export const activityLogs = pgTable("activity_logs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE (nullable for system logs)
   websiteId: varchar("website_id").references(() => websites.id),
   type: text("type").notNull(), // content_generated, seo_analysis, issue_detected, etc.
   description: text("description").notNull(),
   metadata: jsonb("metadata").notNull().default({}),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("idx_activity_logs_user_id").on(table.userId),
+]);
 
 export const clientReports = pgTable("client_reports", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
   websiteId: varchar("website_id").notNull().references(() => websites.id),
   reportType: text("report_type").notNull(), // weekly, monthly, quarterly
   period: text("period").notNull(),
@@ -117,43 +139,54 @@ export const clientReports = pgTable("client_reports", {
   roiData: jsonb("roi_data").notNull().default({}),
   whiteLabelConfig: jsonb("white_label_config").default({}),
   generatedAt: timestamp("generated_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("idx_client_reports_user_id").on(table.userId),
+]);
 
 // New tables for enhanced functionality
 export const contentApprovals = pgTable("content_approvals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
   contentId: varchar("content_id").notNull().references(() => content.id),
   reviewerId: varchar("reviewer_id").notNull().references(() => users.id),
   status: text("status").notNull(), // approved, rejected, needs_revision
   feedback: text("feedback"),
   qualityScore: integer("quality_score"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("idx_content_approvals_user_id").on(table.userId),
+]);
 
 export const securityAudits = pgTable("security_audits", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
   websiteId: varchar("website_id").references(() => websites.id),
-  userId: varchar("user_id").references(() => users.id),
   action: text("action").notNull(), // login, content_publish, seo_change, etc.
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   success: boolean("success").notNull(),
   metadata: jsonb("metadata").notNull().default({}),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("idx_security_audits_user_id").on(table.userId),
+]);
 
 export const aiUsageTracking = pgTable("ai_usage_tracking", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
   websiteId: varchar("website_id").notNull().references(() => websites.id),
   model: text("model").notNull(),
   tokensUsed: integer("tokens_used").notNull(),
   costUsd: integer("cost_usd").notNull(), // Store as cents
   operation: text("operation").notNull(), // content_generation, seo_analysis, etc.
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("idx_ai_usage_user_id").on(table.userId),
+]);
 
 export const seoAudits = pgTable("seo_audits", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
   websiteId: varchar("website_id").notNull().references(() => websites.id),
   url: text("url").notNull(),
   auditType: text("audit_type").notNull(), // technical, content, performance
@@ -162,10 +195,13 @@ export const seoAudits = pgTable("seo_audits", {
   autoFixResults: jsonb("auto_fix_results").default([]),
   coreWebVitals: jsonb("core_web_vitals").default({}),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("idx_seo_audits_user_id").on(table.userId),
+]);
 
 export const contentSchedule = pgTable("content_schedule", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
   websiteId: varchar("website_id").notNull().references(() => websites.id),
   scheduledDate: timestamp("scheduled_date").notNull(),
   topic: text("topic").notNull(),
@@ -174,18 +210,23 @@ export const contentSchedule = pgTable("content_schedule", {
   contentId: varchar("content_id").references(() => content.id),
   abTestVariant: text("ab_test_variant"), // A, B, or null
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("idx_content_schedule_user_id").on(table.userId),
+]);
 
 export const backups = pgTable("backups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
   websiteId: varchar("website_id").notNull().references(() => websites.id),
   backupType: text("backup_type").notNull(), // content, settings, full
   data: jsonb("data").notNull(),
   wordpressBackupId: text("wordpress_backup_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("idx_backups_user_id").on(table.userId),
+]);
 
-// Insert schemas
+// Insert schemas - UPDATED to include userId
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -203,6 +244,7 @@ export const insertWebsiteSchema = createInsertSchema(websites).pick({
   brandVoice: true,
   contentGuidelines: true,
   targetAudience: true,
+  // userId will be added automatically in the backend
 });
 
 export const insertContentSchema = createInsertSchema(content).pick({
@@ -215,6 +257,13 @@ export const insertContentSchema = createInsertSchema(content).pick({
   aiModel: true,
   seoKeywords: true,
   publishDate: true,
+  seoScore: true,
+  readabilityScore: true,
+  brandVoiceScore: true,
+  tokensUsed: true,
+  costUsd: true,
+  eatCompliance: true,
+  // userId will be added automatically in the backend
 });
 
 export const insertSeoReportSchema = createInsertSchema(seoReports).pick({
@@ -223,6 +272,7 @@ export const insertSeoReportSchema = createInsertSchema(seoReports).pick({
   issues: true,
   recommendations: true,
   pageSpeedScore: true,
+  // userId will be added automatically in the backend
 });
 
 export const insertActivityLogSchema = createInsertSchema(activityLogs).pick({
@@ -230,6 +280,7 @@ export const insertActivityLogSchema = createInsertSchema(activityLogs).pick({
   type: true,
   description: true,
   metadata: true,
+  // userId will be added automatically in the backend
 });
 
 export const insertClientReportSchema = createInsertSchema(clientReports).pick({
@@ -240,25 +291,27 @@ export const insertClientReportSchema = createInsertSchema(clientReports).pick({
   insights: true,
   roiData: true,
   whiteLabelConfig: true,
+  // userId will be added automatically in the backend
 });
 
-// New insert schemas for enhanced tables
+// New insert schemas for enhanced tables - UPDATED
 export const insertContentApprovalSchema = createInsertSchema(contentApprovals).pick({
   contentId: true,
   reviewerId: true,
   status: true,
   feedback: true,
   qualityScore: true,
+  // userId will be added automatically in the backend
 });
 
 export const insertSecurityAuditSchema = createInsertSchema(securityAudits).pick({
   websiteId: true,
-  userId: true,
   action: true,
   ipAddress: true,
   userAgent: true,
   success: true,
   metadata: true,
+  // userId will be added automatically in the backend
 });
 
 export const insertAiUsageTrackingSchema = createInsertSchema(aiUsageTracking).pick({
@@ -267,6 +320,7 @@ export const insertAiUsageTrackingSchema = createInsertSchema(aiUsageTracking).p
   tokensUsed: true,
   costUsd: true,
   operation: true,
+  // userId will be added automatically in the backend
 });
 
 export const insertSeoAuditSchema = createInsertSchema(seoAudits).pick({
@@ -277,6 +331,7 @@ export const insertSeoAuditSchema = createInsertSchema(seoAudits).pick({
   autoFixApplied: true,
   autoFixResults: true,
   coreWebVitals: true,
+  // userId will be added automatically in the backend
 });
 
 export const insertContentScheduleSchema = createInsertSchema(contentSchedule).pick({
@@ -285,6 +340,7 @@ export const insertContentScheduleSchema = createInsertSchema(contentSchedule).p
   topic: true,
   keywords: true,
   abTestVariant: true,
+  // userId will be added automatically in the backend
 });
 
 export const insertBackupSchema = createInsertSchema(backups).pick({
@@ -292,6 +348,7 @@ export const insertBackupSchema = createInsertSchema(backups).pick({
   backupType: true,
   data: true,
   wordpressBackupId: true,
+  // userId will be added automatically in the backend
 });
 
 // Types

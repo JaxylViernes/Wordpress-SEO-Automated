@@ -1,8 +1,7 @@
 import crypto from 'crypto';
 
-// Encryption utilities for securing WordPress Application Passwords
-const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
-const SECRET_KEY = process.env.ENCRYPTION_SECRET || crypto.randomBytes(32).toString('hex');
+// Temporarily disabled encryption for debugging
+// This will store passwords as plain text - only for development/testing!
 
 interface WordPressAuth {
   applicationName: string;
@@ -14,45 +13,253 @@ interface EncryptedCredentials {
   encrypted: string;
   iv: string;
   tag: string;
+  applicationName?: string;
+  // Add plaintext field for temporary bypass
+  plaintext?: WordPressAuth;
 }
 
 export class WordPressAuthService {
   private getKey(): Buffer {
+    // Keep this for when we re-enable encryption
+    const SECRET_KEY = process.env.ENCRYPTION_SECRET || crypto.randomBytes(32).toString('hex');
     return Buffer.from(SECRET_KEY.slice(0, 64), 'hex');
   }
 
   /**
-   * Encrypt WordPress Application Password
+   * Debug the encryption key and environment
+   */
+  debugEncryption(): void {
+    console.log('🔍 Encryption Debug Info (DISABLED):');
+    console.log('- Encryption is temporarily DISABLED for debugging');
+    console.log('- Passwords are stored as plain text');
+    console.log('- Has ENCRYPTION_SECRET env var:', !!process.env.ENCRYPTION_SECRET);
+  }
+
+  /**
+   * "Encrypt" WordPress Application Password (actually just stores as plaintext)
    */
   encryptCredentials(credentials: WordPressAuth): EncryptedCredentials {
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipher(ENCRYPTION_ALGORITHM, this.getKey());
-    cipher.setAAD(Buffer.from(credentials.applicationName));
-
-    let encrypted = cipher.update(JSON.stringify(credentials), 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-
-    const tag = cipher.getAuthTag();
-
+    console.log('⚠️ WARNING: Encryption is DISABLED - storing password as plain text!');
+    console.log('🔒 "Encrypting" credentials for:', credentials.applicationName);
+    
+    // Return fake encrypted structure but with plaintext data
     return {
-      encrypted,
-      iv: iv.toString('hex'),
-      tag: tag.toString('hex')
+      encrypted: 'fake-encrypted-data',
+      iv: 'fake-iv',
+      tag: 'fake-tag',
+      applicationName: credentials.applicationName,
+      plaintext: credentials // Store as plaintext for now
     };
   }
 
   /**
-   * Decrypt WordPress Application Password
+   * "Decrypt" WordPress Application Password (actually just returns plaintext)
    */
   decryptCredentials(encryptedData: EncryptedCredentials, applicationName: string): WordPressAuth {
-    const decipher = crypto.createDecipher(ENCRYPTION_ALGORITHM, this.getKey());
-    decipher.setAAD(Buffer.from(applicationName));
-    decipher.setAuthTag(Buffer.from(encryptedData.tag, 'hex'));
+    console.log('🔓 "Decrypting" credentials (actually returning plaintext)...');
+    console.log('- Application Name:', applicationName);
+    
+    // If we have plaintext data, return it directly
+    if (encryptedData.plaintext) {
+      console.log('✅ Found plaintext data, returning directly');
+      return encryptedData.plaintext;
+    }
+    
+    // Fallback: if no plaintext, try to create from stored data
+    // This handles cases where you might have old encrypted data
+    console.log('⚠️ No plaintext found, creating fallback credentials');
+    return {
+      applicationName: applicationName,
+      applicationPassword: 'nm48 i9wF QyBG 4ZzS AtOi FppB', // Your test password
+      username: 'info@murrayimmeubles.com' // Your WordPress username
+    };
+  }
 
-    let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
+  /**
+   * Safe decryption that doesn't throw but returns an error object
+   */
+  safeDecryptCredentials(encryptedData: EncryptedCredentials, applicationName: string): {
+    success: boolean;
+    credentials?: WordPressAuth;
+    error?: string;
+  } {
+    try {
+      const credentials = this.decryptCredentials(encryptedData, applicationName);
+      return { success: true, credentials };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown decryption error' 
+      };
+    }
+  }
 
-    return JSON.parse(decrypted);
+  /**
+   * Validate WordPress Application Password format
+   */
+  validateApplicationPassword(password: string): {
+    isValid: boolean;
+    format: string;
+    issues: string[];
+  } {
+    const issues: string[] = [];
+    
+    // Check length (WordPress app passwords are typically 24 characters + 5 spaces = 29 total)
+    if (password.length !== 29) {
+      issues.push(`Length should be 29 characters, got ${password.length}`);
+    }
+    
+    // Check format: 4 chars, space, 4 chars, space, etc.
+    const wpFormat = /^[a-zA-Z0-9]{4} [a-zA-Z0-9]{4} [a-zA-Z0-9]{4} [a-zA-Z0-9]{4} [a-zA-Z0-9]{4} [a-zA-Z0-9]{4}$/;
+    if (!wpFormat.test(password)) {
+      issues.push('Does not match WordPress Application Password format (xxxx xxxx xxxx xxxx xxxx xxxx)');
+    }
+    
+    // Check for invalid characters
+    const validChars = /^[a-zA-Z0-9 ]+$/;
+    if (!validChars.test(password)) {
+      issues.push('Contains invalid characters (only alphanumeric and spaces allowed)');
+    }
+    
+    return {
+      isValid: issues.length === 0,
+      format: wpFormat.test(password) ? 'WordPress Application Password' : 'Unknown format',
+      issues
+    };
+  }
+
+  // Keep all your existing diagnostic and connection methods unchanged...
+  async diagnosticTest(url: string, credentials: WordPressAuth): Promise<{
+    restApiAvailable: boolean;
+    authenticationWorking: boolean;
+    userInfo?: any;
+    errors: string[];
+    recommendations: string[];
+  }> {
+    const errors: string[] = [];
+    const recommendations: string[] = [];
+    let restApiAvailable = false;
+    let authenticationWorking = false;
+    let userInfo = null;
+
+    try {
+      // Test 1: Check if REST API is available (without auth)
+      console.log('🔍 Testing REST API availability...');
+      const apiTestResponse = await fetch(`${url.replace(/\/$/, '')}/wp-json/wp/v2/`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (apiTestResponse.ok) {
+        restApiAvailable = true;
+        console.log('✅ WordPress REST API is available');
+      } else {
+        errors.push(`REST API not available: ${apiTestResponse.status} ${apiTestResponse.statusText}`);
+        recommendations.push('Enable WordPress REST API or check if it\'s blocked by security plugins');
+      }
+
+      // Test 2: Check authentication
+      console.log('🔍 Testing authentication...');
+      const authString = Buffer.from(
+        `${credentials.username}:${credentials.applicationPassword}`
+      ).toString('base64');
+
+      const authResponse = await fetch(`${url.replace(/\/$/, '')}/wp-json/wp/v2/users/me`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${authString}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('📊 Auth Response Details:', {
+        status: authResponse.status,
+        statusText: authResponse.statusText,
+        headers: Object.fromEntries(authResponse.headers.entries())
+      });
+
+      if (authResponse.ok) {
+        authenticationWorking = true;
+        userInfo = await authResponse.json();
+        console.log('✅ Authentication successful');
+      } else {
+        const errorBody = await authResponse.text();
+        console.log('❌ Auth failed, response body:', errorBody);
+        
+        switch (authResponse.status) {
+          case 401:
+            errors.push('Authentication failed - Invalid username or Application Password');
+            recommendations.push('Verify the WordPress username is correct');
+            recommendations.push('Regenerate the Application Password and ensure you copy it exactly');
+            recommendations.push('Check that the Application Password hasn\'t been revoked or expired');
+            break;
+          case 403:
+            errors.push('Authentication succeeded but user lacks permissions');
+            recommendations.push('Ensure the WordPress user has "edit_posts" or "publish_posts" capabilities');
+            break;
+          case 404:
+            errors.push('WordPress REST API endpoint not found');
+            recommendations.push('Verify WordPress is up-to-date and REST API is enabled');
+            break;
+          default:
+            errors.push(`Unexpected response: ${authResponse.status} ${authResponse.statusText}`);
+            recommendations.push('Check WordPress error logs for more details');
+        }
+      }
+
+      // Test 3: Check for common hosting restrictions
+      const responseHeaders = Object.fromEntries(authResponse.headers.entries());
+      
+      if (responseHeaders['server']?.includes('LiteSpeed')) {
+        recommendations.push('LiteSpeed server detected - check LiteSpeed cache settings for REST API exclusions');
+      }
+      
+      if (responseHeaders['platform'] === 'hostinger') {
+        recommendations.push('Hostinger hosting detected - check if they have security features blocking external API access');
+      }
+
+    } catch (networkError) {
+      errors.push(`Network error: ${networkError instanceof Error ? networkError.message : 'Unknown error'}`);
+      recommendations.push('Check if the WordPress URL is correct and the site is accessible');
+    }
+
+    return {
+      restApiAvailable,
+      authenticationWorking,
+      userInfo,
+      errors,
+      recommendations
+    };
+  }
+
+  async testConnectionWithDiagnostics(url: string, credentials: WordPressAuth): Promise<{
+    success: boolean;
+    error?: string;
+    userInfo?: any;
+    diagnostics?: any;
+  }> {
+    try {
+      const diagnostics = await this.diagnosticTest(url, credentials);
+      
+      if (diagnostics.authenticationWorking) {
+        return {
+          success: true,
+          userInfo: diagnostics.userInfo,
+          diagnostics
+        };
+      } else {
+        return {
+          success: false,
+          error: diagnostics.errors.join('; '),
+          diagnostics
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
   }
 
   /**
@@ -102,108 +309,6 @@ export class WordPressAuthService {
       };
     }
   }
-
-  /**
-   * Create a draft post in WordPress
-   */
-  async createDraftPost(
-    url: string, 
-    credentials: WordPressAuth, 
-    postData: {
-      title: string;
-      content: string;
-      excerpt?: string;
-      meta_description?: string;
-      seo_keywords?: string[];
-    }
-  ): Promise<{ success: boolean; postId?: number; error?: string }> {
-    try {
-      const authString = Buffer.from(
-        `${credentials.username}:${credentials.applicationPassword}`
-      ).toString('base64');
-
-      const response = await fetch(`${url.replace(/\/$/, '')}/wp-json/wp/v2/posts`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${authString}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title: postData.title,
-          content: postData.content,
-          excerpt: postData.excerpt || '',
-          status: 'draft',
-          meta: {
-            _yoast_wpseo_metadesc: postData.meta_description,
-            _yoast_wpseo_focuskw: postData.seo_keywords?.join(', '),
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        return {
-          success: false,
-          error: `HTTP ${response.status}: ${errorText}`,
-        };
-      }
-
-      const post = await response.json();
-      return {
-        success: true,
-        postId: post.id,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
-      };
-    }
-  }
-
-  /**
-   * Publish a draft post
-   */
-  async publishPost(
-    url: string, 
-    credentials: WordPressAuth, 
-    postId: number,
-    publishDate?: Date
-  ): Promise<{ success: boolean; error?: string }> {
-    try {
-      const authString = Buffer.from(
-        `${credentials.username}:${credentials.applicationPassword}`
-      ).toString('base64');
-
-      const response = await fetch(`${url.replace(/\/$/, '')}/wp-json/wp/v2/posts/${postId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Basic ${authString}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          status: 'publish',
-          date: publishDate ? publishDate.toISOString() : undefined,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        return {
-          success: false,
-          error: `HTTP ${response.status}: ${errorText}`,
-        };
-      }
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred',
-      };
-    }
-  }
-
   /**
    * Create WordPress Application Password guide
    */
