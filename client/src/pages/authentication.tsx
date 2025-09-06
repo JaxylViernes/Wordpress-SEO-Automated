@@ -388,60 +388,106 @@ export function AuthPage() {
 }
 
 // User Menu Component
-export function UserMenu() {
+export function CompactSidebarUserMenu() {
   const { user, logout } = useAuth();
-  const [showDropdown, setShowDropdown] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   if (!user) return null;
 
+  const getInitials = (name) => {
+    return name
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase())
+      .join('')
+      .slice(0, 2);
+  };
+
+  const handleLogoutClick = () => {
+    setShowConfirmation(true);
+  };
+
+  const handleConfirmLogout = async () => {
+    setShowConfirmation(false);
+    setIsLoggingOut(true);
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Logout failed:', error);
+      setIsLoggingOut(false);
+    }
+  };
+
+  const handleCancelLogout = () => {
+    setShowConfirmation(false);
+  };
+
+  const displayName = user.name || user.username;
+
   return (
-    <div className="relative">
-      <Button
-        variant="ghost"
-        onClick={() => setShowDropdown(!showDropdown)}
-        className="flex items-center space-x-2"
-      >
-        <User className="h-4 w-4" />
-        <span>{user.name || user.username}</span>
-      </Button>
-
-      {showDropdown && (
-        <>
-          <div 
-            className="fixed inset-0 z-10" 
-            onClick={() => setShowDropdown(false)}
-          />
-          <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-20">
-            <div className="py-1">
-              <div className="px-4 py-2 text-sm text-gray-700 border-b">
-                <div className="font-medium">{user.name || user.username}</div>
-                {user.email && (
-                  <div className="text-gray-500">{user.email}</div>
-                )}
+    <>
+      <div className="px-4 py-3 border-t border-gray-200 mt-auto">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2 min-w-0 flex-1">
+            <div className="relative">
+              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-xs">
+                {getInitials(displayName)}
               </div>
-              
-              <div
-                onClick={() => {
-                  setShowDropdown(false);
-                  window.location.href = '/settings';
-                }}
-                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-              >
-                Settings
-              </div>
-
-              <div
-                onClick={logout}
-                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 border-t cursor-pointer"
-              >
-                <LogOut className="inline h-4 w-4 mr-2" />
-                Sign Out
-              </div>
+              <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 border border-white rounded-full"></div>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-medium text-gray-900 text-xs truncate">{displayName}</div>
+              <div className="text-xs text-gray-500">Pro Plan</div>
             </div>
           </div>
-        </>
+          
+          <button
+            onClick={handleLogoutClick}
+            disabled={isLoggingOut}
+            className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={isLoggingOut ? "Signing Out..." : "Sign Out"}
+          >
+            {isLoggingOut ? (
+              <div className="w-4 h-4 border border-red-300 border-t-red-600 rounded-full animate-spin"></div>
+            ) : (
+              <LogOut className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Logout Confirmation Modal */}
+      {showConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm mx-4 shadow-xl">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                <LogOut className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Sign Out</h3>
+                <p className="text-sm text-gray-500">Are you sure you want to sign out?</p>
+              </div>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={handleCancelLogout}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmLogout}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -464,4 +510,4 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export default { AuthProvider, useAuth, AuthPage, UserMenu, ProtectedRoute };
+export default { AuthProvider, useAuth, AuthPage, CompactSidebarUserMenu, ProtectedRoute };

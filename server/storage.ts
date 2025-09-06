@@ -11,6 +11,7 @@ import {
   seoAudits,
   contentSchedule,
   backups,
+  userSettings,
   type User, 
   type UpsertUser,
   type InsertUser, 
@@ -35,10 +36,18 @@ import {
   type ContentSchedule,
   type InsertContentSchedule,
   type Backup,
-  type InsertBackup
+  type InsertBackup,
+  type UserSettings, // Add this line
+  type InsertUserSettings // Add this line
 } from "@shared/schema";
+import { 
+  userApiKeys,
+  type UserApiKey,
+  type InsertUserApiKey
+} from "@shared/schema";
+import { apiKeyEncryptionService } from "./services/api-key-encryption";
 import { db } from "./db";
-import { eq, desc, and, or, isNull, inArray } from "drizzle-orm";
+import { lte, gte, count, eq, desc, and, or, isNull, inArray } from "drizzle-orm";
 import { wordPressAuthService } from "./services/wordpress-auth";
 import { contentImages, insertContentImageSchema, type InsertContentImage, type ContentImage } from "@shared/schema";
 
@@ -97,6 +106,34 @@ export interface IStorage {
     avgSeoScore: number;
     recentActivity: number;
   }>;
+
+  getUserSettings(userId: string): Promise<UserSettings | undefined>;
+  createUserSettings(userId: string, settings: Partial<InsertUserSettings>): Promise<UserSettings>;
+  updateUserSettings(userId: string, settings: Partial<InsertUserSettings>): Promise<UserSettings | undefined>;
+  deleteUserSettings(userId: string): Promise<boolean>;
+  getOrCreateUserSettings(userId: string): Promise<UserSettings>;
+
+
+   getUserApiKeys(userId: string): Promise<UserApiKey[]>;
+  getUserApiKey(userId: string, keyId: string): Promise<UserApiKey | undefined>;
+  createUserApiKey(userId: string, data: {
+    provider: string;
+    keyName: string;
+    apiKey: string;
+  }): Promise<UserApiKey>;
+  updateUserApiKey(userId: string, keyId: string, updates: Partial<{
+    keyName: string;
+    isActive: boolean;
+    validationStatus: string;
+    lastValidated: Date;
+    validationError: string;
+    usageCount: number;
+    lastUsed: Date;
+  }>): Promise<UserApiKey | undefined>;
+  deleteUserApiKey(userId: string, keyId: string): Promise<boolean>;
+  getDecryptedApiKey(userId: string, keyId: string): Promise<string | null>;
+  validateUserApiKey(userId: string, keyId: string): Promise<{ valid: boolean; error?: string }>;
+
 }
 
 export class DatabaseStorage implements IStorage {
@@ -623,6 +660,553 @@ async getUserImageStats(userId: string): Promise<{
     costThisMonthCents: Number(monthlyStats.costThisMonthCents) || 0
   };
 }
+
+
+async getContentScheduleByContentId(contentId: string): Promise<ContentSchedule | undefined> {
+  const [schedule] = await db
+    .select()
+    .from(contentSchedule)
+    .where(eq(contentSchedule.contentId, contentId));
+  return schedule;
+}
+
+async getContentScheduleWithDetails(websiteId: string): Promise<Array<ContentSchedule & {
+  contentTitle: string;
+  contentExcerpt: string | null;
+  seoKeywords: string[];
+}>> {
+  const schedules = await db
+    .select({
+      // Schedule fields
+      id: contentSchedule.id,
+      userId: contentSchedule.userId,
+      websiteId: contentSchedule.websiteId,
+      scheduledDate: contentSchedule.scheduledDate,
+      status: contentSchedule.status,
+      contentId: contentSchedule.contentId,
+      abTestVariant: contentSchedule.abTestVariant,
+      createdAt: contentSchedule.createdAt,
+      // Content fields
+      contentTitle: content.title,
+      contentExcerpt: content.excerpt,
+      seoKeywords: content.seoKeywords
+    })
+    .from(contentSchedule)
+    .innerJoin(content, eq(contentSchedule.contentId, content.id))
+    .where(eq(contentSchedule.websiteId, websiteId))
+    .orderBy(desc(contentSchedule.scheduledDate));
+
+  return schedules.map(row => ({
+    id: row.id,
+    userId: row.userId,
+    websiteId: row.websiteId,
+    scheduledDate: row.scheduledDate,
+    status: row.status,
+    contentId: row.contentId,
+    abTestVariant: row.abTestVariant,
+    createdAt: row.createdAt,
+    contentTitle: row.contentTitle,
+    contentExcerpt: row.contentExcerpt,
+    seoKeywords: row.seoKeywords || []
+  }));
+}
+
+async updateContentSchedule(id: string, updates: Partial<{
+  scheduledDate: Date;
+  status: string;
+  contentId: string;
+  abTestVariant: string | null;
+}>): Promise<ContentSchedule | undefined> {
+  const [schedule] = await db
+    .update(contentSchedule)
+    .set({ ...updates })
+    .where(eq(contentSchedule.id, id))
+    .returning();
+  return schedule;
+}
+
+async deleteContentSchedule(id: string): Promise<boolean> {
+  const result = await db.delete(contentSchedule).where(eq(contentSchedule.id, id));
+  return (result.rowCount ?? 0) > 0;
+}
+
+async getContentScheduleById(id: string): Promise<ContentSchedule | undefined> {
+  const [schedule] = await db
+    .select()
+    .from(contentSchedule)
+    .where(eq(contentSchedule.id, id));
+  return schedule;
+}
+
+async getUserContentSchedule(userId: string, websiteId?: string): Promise<ContentSchedule[]> {
+  if (websiteId) {
+    // Verify website ownership first
+    const website = await this.getUserWebsite(websiteId, userId);
+    if (!website) {
+      return [];
+    }
+    return await this.getContentSchedule(websiteId);
+  }
+  
+  // Get all scheduled content for user's websites
+  return await db
+    .select()
+    .from(contentSchedule)
+    .where(eq(contentSchedule.userId, userId))
+    .orderBy(contentSchedule.scheduledDate);
+}
+
+// Get scheduled content that's ready to be published (for cron jobs)
+async getPendingScheduledContent(): Promise<ContentSchedule[]> {
+  const now = new Date();
+  return await db
+    .select()
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.status, 'scheduled'),
+        lte(contentSchedule.scheduledDate, now)
+      )
+    )
+    .orderBy(contentSchedule.scheduledDate);
+}
+
+// Get upcoming scheduled content (next 7 days)
+async getUpcomingScheduledContent(userId: string): Promise<ContentSchedule[]> {
+  const now = new Date();
+  const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  
+  return await db
+    .select()
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.userId, userId),
+        eq(contentSchedule.status, 'scheduled'),
+        gte(contentSchedule.scheduledDate, now),
+        lte(contentSchedule.scheduledDate, nextWeek)
+      )
+    )
+    .orderBy(contentSchedule.scheduledDate);
+}
+
+// Get unpublished content for a website
+async getUnpublishedContent(websiteId: string): Promise<Content[]> {
+  return await db
+    .select()
+    .from(content)
+    .where(
+      and(
+        eq(content.websiteId, websiteId),
+        or(
+          eq(content.status, 'ready'),
+          eq(content.status, 'pending_approval')
+        )
+      )
+    )
+    .orderBy(desc(content.createdAt));
+}
+
+// Check if content is already scheduled
+async isContentScheduled(contentId: string): Promise<boolean> {
+  const [schedule] = await db
+    .select()
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.contentId, contentId),
+        or(
+          eq(contentSchedule.status, 'scheduled'),
+          eq(contentSchedule.status, 'publishing')
+        )
+      )
+    );
+  return !!schedule;
+}
+
+// Update the existing createContentSchedule method to work with contentId
+async createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule> {
+  const [scheduleRecord] = await db
+    .insert(contentSchedule)
+    .values({
+      ...schedule,
+      userId: schedule.userId
+    })
+    .returning();
+  return scheduleRecord;
+}
+
+// Update client report methods - ADD THIS METHOD TO SUPPORT REPORT UPDATES
+async updateClientReport(id: string, updates: Partial<{
+  data: any;
+  insights: any[];
+  roiData: any;
+  generatedAt: Date;
+}>): Promise<ClientReport | undefined> {
+  const [report] = await db
+    .update(clientReports)
+    .set({ ...updates })
+    .where(eq(clientReports.id, id))
+    .returning();
+  return report;
+}
+
+// Enhanced content methods
+async getAvailableContentForScheduling(websiteId: string, userId: string): Promise<Content[]> {
+  // Verify website ownership first
+  const website = await this.getUserWebsite(websiteId, userId);
+  if (!website) {
+    return [];
+  }
+  
+  // Get content that's ready for scheduling (not published and not already scheduled)
+  const availableContent = await db
+    .select({
+      id: content.id,
+      userId: content.userId,
+      websiteId: content.websiteId,
+      title: content.title,
+      body: content.body,
+      excerpt: content.excerpt,
+      metaDescription: content.metaDescription,
+      metaTitle: content.metaTitle,
+      status: content.status,
+      approvedBy: content.approvedBy,
+      approvedAt: content.approvedAt,
+      rejectionReason: content.rejectionReason,
+      aiModel: content.aiModel,
+      seoKeywords: content.seoKeywords,
+      seoScore: content.seoScore,
+      readabilityScore: content.readabilityScore,
+      plagiarismScore: content.plagiarismScore,
+      brandVoiceScore: content.brandVoiceScore,
+      factCheckStatus: content.factCheckStatus,
+      eatCompliance: content.eatCompliance,
+      tokensUsed: content.tokensUsed,
+      costUsd: content.costUsd,
+      publishDate: content.publishDate,
+      wordpressPostId: content.wordpressPostId,
+      wordpressUrl: content.wordpressUrl,
+      publishError: content.publishError,
+      createdAt: content.createdAt,
+      updatedAt: content.updatedAt,
+      hasImages: content.hasImages,
+      imageCount: content.imageCount,
+      imageCostCents: content.imageCostCents
+    })
+    .from(content)
+    .leftJoin(contentSchedule, eq(content.id, contentSchedule.contentId))
+    .where(
+      and(
+        eq(content.websiteId, websiteId),
+        eq(content.userId, userId),
+        or(
+          eq(content.status, 'ready'),
+          eq(content.status, 'pending_approval')
+        ),
+        isNull(contentSchedule.id) // Not already scheduled
+      )
+    )
+    .orderBy(desc(content.createdAt));
+  
+  return availableContent;
+}
+
+// Get dashboard stats for scheduled content
+async getSchedulingStats(userId: string): Promise<{
+  totalScheduled: number;
+  scheduledThisWeek: number;
+  scheduledThisMonth: number;
+  overdueCount: number;
+  publishedFromSchedule: number;
+}> {
+  const now = new Date();
+  const thisWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  
+  const [totalScheduled] = await db
+    .select({ count: count() })
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.userId, userId),
+        eq(contentSchedule.status, 'scheduled')
+      )
+    );
+  
+  const [scheduledThisWeek] = await db
+    .select({ count: count() })
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.userId, userId),
+        eq(contentSchedule.status, 'scheduled'),
+        gte(contentSchedule.scheduledDate, now),
+        lte(contentSchedule.scheduledDate, thisWeek)
+      )
+    );
+  
+  const [scheduledThisMonth] = await db
+    .select({ count: count() })
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.userId, userId),
+        eq(contentSchedule.status, 'scheduled'),
+        gte(contentSchedule.scheduledDate, thisMonthStart),
+        lte(contentSchedule.scheduledDate, thisMonthEnd)
+      )
+    );
+  
+  const [overdueCount] = await db
+    .select({ count: count() })
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.userId, userId),
+        eq(contentSchedule.status, 'scheduled'),
+        lte(contentSchedule.scheduledDate, now)
+      )
+    );
+  
+  const [publishedFromSchedule] = await db
+    .select({ count: count() })
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.userId, userId),
+        eq(contentSchedule.status, 'published')
+      )
+    );
+  
+  return {
+    totalScheduled: Number(totalScheduled.count) || 0,
+    scheduledThisWeek: Number(scheduledThisWeek.count) || 0,
+    scheduledThisMonth: Number(scheduledThisMonth.count) || 0,
+    overdueCount: Number(overdueCount.count) || 0,
+    publishedFromSchedule: Number(publishedFromSchedule.count) || 0
+  };
+}
+
+// User Settings Methods
+async getUserSettings(userId: string): Promise<UserSettings | undefined> {
+  const [settings] = await db
+    .select()
+    .from(userSettings)
+    .where(eq(userSettings.userId, userId));
+  return settings;
+}
+
+async createUserSettings(userId: string, settingsData: Partial<InsertUserSettings>): Promise<UserSettings> {
+  const [settings] = await db
+    .insert(userSettings)
+    .values({
+      userId,
+      ...settingsData,
+    })
+    .returning();
+  return settings;
+}
+
+async updateUserSettings(userId: string, settingsData: Partial<InsertUserSettings>): Promise<UserSettings | undefined> {
+  const [settings] = await db
+    .update(userSettings)
+    .set({ 
+      ...settingsData, 
+      updatedAt: new Date() 
+    })
+    .where(eq(userSettings.userId, userId))
+    .returning();
+  return settings;
+}
+
+async deleteUserSettings(userId: string): Promise<boolean> {
+  const result = await db
+    .delete(userSettings)
+    .where(eq(userSettings.userId, userId));
+  return (result.rowCount ?? 0) > 0;
+}
+
+// Helper method to get or create user settings with defaults
+async getOrCreateUserSettings(userId: string): Promise<UserSettings> {
+  let settings = await this.getUserSettings(userId);
+  
+  if (!settings) {
+    // Create default settings if none exist
+    settings = await this.createUserSettings(userId, {
+      profileTimezone: "America/New_York",
+      notificationEmailReports: true,
+      notificationContentGenerated: true,
+      notificationSeoIssues: true,
+      notificationSystemAlerts: false,
+      automationDefaultAiModel: "gpt-4o",
+      automationAutoFixSeoIssues: true,
+      automationContentGenerationFrequency: "twice-weekly",
+      automationReportGeneration: "weekly",
+      securityTwoFactorAuth: false,
+      securitySessionTimeout: 24,
+      securityAllowApiAccess: true,
+    });
+  }
+  
+  return settings;
+}
+
+async getUserApiKeys(userId: string): Promise<UserApiKey[]> {
+    return await db
+      .select()
+      .from(userApiKeys)
+      .where(eq(userApiKeys.userId, userId))
+      .orderBy(desc(userApiKeys.createdAt));
+  }
+
+  async getUserApiKey(userId: string, keyId: string): Promise<UserApiKey | undefined> {
+    const [apiKey] = await db
+      .select()
+      .from(userApiKeys)
+      .where(
+        and(
+          eq(userApiKeys.userId, userId),
+          eq(userApiKeys.id, keyId)
+        )
+      );
+    return apiKey;
+  }
+
+  async createUserApiKey(userId: string, data: {
+    provider: string;
+    keyName: string;
+    apiKey: string;
+  }): Promise<UserApiKey> {
+    // Validate API key format
+    const formatValidation = apiKeyEncryptionService.validateApiKeyFormat(data.provider, data.apiKey);
+    if (!formatValidation.valid) {
+      throw new Error(formatValidation.error || 'Invalid API key format');
+    }
+
+    // Encrypt the API key
+    const encryptedApiKey = apiKeyEncryptionService.encrypt(data.apiKey);
+    const maskedKey = apiKeyEncryptionService.createMaskedKey(data.apiKey);
+
+    const [apiKey] = await db
+      .insert(userApiKeys)
+      .values({
+        userId,
+        provider: data.provider,
+        keyName: data.keyName,
+        encryptedApiKey,
+        maskedKey,
+        validationStatus: 'pending'
+      })
+      .returning();
+
+    return apiKey;
+  }
+
+  async updateUserApiKey(userId: string, keyId: string, updates: Partial<{
+    keyName: string;
+    isActive: boolean;
+    validationStatus: string;
+    lastValidated: Date;
+    validationError: string;
+    usageCount: number;
+    lastUsed: Date;
+  }>): Promise<UserApiKey | undefined> {
+    const [apiKey] = await db
+      .update(userApiKeys)
+      .set({ 
+        ...updates, 
+        updatedAt: new Date() 
+      })
+      .where(
+        and(
+          eq(userApiKeys.userId, userId),
+          eq(userApiKeys.id, keyId)
+        )
+      )
+      .returning();
+    return apiKey;
+  }
+
+  async deleteUserApiKey(userId: string, keyId: string): Promise<boolean> {
+    const result = await db
+      .delete(userApiKeys)
+      .where(
+        and(
+          eq(userApiKeys.userId, userId),
+          eq(userApiKeys.id, keyId)
+        )
+      );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getDecryptedApiKey(userId: string, keyId: string): Promise<string | null> {
+    const apiKey = await this.getUserApiKey(userId, keyId);
+    if (!apiKey || !apiKey.isActive) {
+      return null;
+    }
+
+    try {
+      return apiKeyEncryptionService.decrypt(apiKey.encryptedApiKey);
+    } catch (error) {
+      console.error('Failed to decrypt API key:', error);
+      return null;
+    }
+  }
+
+  async validateUserApiKey(userId: string, keyId: string): Promise<{ valid: boolean; error?: string }> {
+    const apiKey = await this.getUserApiKey(userId, keyId);
+    if (!apiKey) {
+      return { valid: false, error: 'API key not found' };
+    }
+
+    try {
+      const decryptedKey = await this.getDecryptedApiKey(userId, keyId);
+      if (!decryptedKey) {
+        return { valid: false, error: 'Could not decrypt API key' };
+      }
+
+      // Update last validated timestamp
+      await this.updateUserApiKey(userId, keyId, {
+        lastValidated: new Date(),
+        validationStatus: 'valid',
+        validationError: null
+      });
+
+      return { valid: true };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Validation failed';
+      
+      // Update validation status
+      await this.updateUserApiKey(userId, keyId, {
+        lastValidated: new Date(),
+        validationStatus: 'invalid',
+        validationError: errorMessage
+      });
+
+      return { valid: false, error: errorMessage };
+    }
+  }
+
+  // Helper method to get API key usage stats
+  async getApiKeyUsageStats(userId: string): Promise<{
+    totalKeys: number;
+    activeKeys: number;
+    validKeys: number;
+    totalUsage: number;
+  }> {
+    const keys = await this.getUserApiKeys(userId);
+    
+    return {
+      totalKeys: keys.length,
+      activeKeys: keys.filter(k => k.isActive).length,
+      validKeys: keys.filter(k => k.validationStatus === 'valid').length,
+      totalUsage: keys.reduce((sum, k) => sum + (k.usageCount || 0), 0)
+    };
+  }
+  
+  
 }
 
 export const storage = new DatabaseStorage();

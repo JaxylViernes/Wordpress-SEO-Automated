@@ -63,6 +63,7 @@ export default function Reports() {
   const [reportType, setReportType] = useState<string>("all");
   const [message, setMessage] = useState<string>("");
   const [duplicateWarnings, setDuplicateWarnings] = useState<string[]>([]);
+  const [isBulkGenerating, setIsBulkGenerating] = useState<boolean>(false);
   const queryClient = useQueryClient();
 
   // Fetch websites
@@ -141,6 +142,8 @@ export default function Reports() {
       return;
     }
 
+    setIsBulkGenerating(true);
+
     const websiteIds = selectedWebsite === "all" ? 
       websites.map(w => w.id) : 
       [selectedWebsite];
@@ -181,6 +184,8 @@ export default function Reports() {
     } catch (error) {
       console.error("Bulk report generation failed:", error);
       setMessage("Bulk report generation failed");
+    } finally {
+      setIsBulkGenerating(false);
     }
     
     // Clear message after 5 seconds
@@ -188,7 +193,7 @@ export default function Reports() {
   };
 
   // Check if generate button should be disabled
-  const isAnyGenerationInProgress = generateReportMutation.isPending;
+  const isAnyGenerationInProgress = generateReportMutation.isPending || isBulkGenerating;
   const isGenerateDisabled = isAnyGenerationInProgress || 
                            !websites?.length || 
                            reportType === "all" || 
@@ -222,8 +227,17 @@ export default function Reports() {
               className="bg-primary-500 hover:bg-primary-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
               title={reportType === "all" ? "Please select a report type first" : "Generate reports"}
             >
-              <Plus className="w-4 h-4 mr-2" />
-              {reportType === "all" ? "Select Report Type" : "Generate Reports"}
+              {isAnyGenerationInProgress ? (
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4 mr-2" />
+              )}
+              {isAnyGenerationInProgress 
+                ? "Generating..." 
+                : reportType === "all" 
+                ? "Select Report Type" 
+                : "Generate Reports"
+              }
             </Button>
           </div>
         </div>
@@ -389,7 +403,6 @@ export default function Reports() {
                     </TabsContent>
                     
                     <TabsContent value="details" className="space-y-3 mt-4">
-                      {/* Note: These metrics should be replaced with real data */}
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-500">Analytics Data</span>
                         <span className="font-medium text-gray-400">Connect Analytics</span>
@@ -442,10 +455,16 @@ export default function Reports() {
                         size="sm" 
                         variant="outline" 
                         onClick={() => handleGenerateReport(report.websiteId, report.reportType as any)}
-                        disabled={generateReportMutation.isPending}
+                        disabled={isAnyGenerationInProgress}
                       >
-                        <RefreshCw className="w-3 h-3 mr-1" />
-                        Regenerate
+                        {isAnyGenerationInProgress ? (
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <>
+                            <RefreshCw className="w-3 h-3 mr-1" />
+                            Regenerate
+                          </>
+                        )}
                       </Button>
                       <Button size="sm" variant="outline" className="text-primary-600">
                         <Download className="w-3 h-3 mr-1" />
@@ -477,8 +496,17 @@ export default function Reports() {
                   disabled={isGenerateDisabled}
                   className="bg-primary-500 hover:bg-primary-600 disabled:opacity-50"
                 >
-                  <BarChart3 className="w-4 h-4 mr-2" />
-                  {reportType === "all" ? "Select Report Type First" : "Generate Your First Report"}
+                  {isAnyGenerationInProgress ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <BarChart3 className="w-4 h-4 mr-2" />
+                      {reportType === "all" ? "Select Report Type First" : "Generate Your First Report"}
+                    </>
+                  )}
                 </Button>
               </div>
             </CardContent>

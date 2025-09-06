@@ -14,6 +14,7 @@ import {
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useState, createContext, useContext } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { CompactSidebarUserMenu, UserMenu } from "@/pages/authentication";
 
 // Mobile sidebar context
 const MobileSidebarContext = createContext<{
@@ -90,17 +91,7 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
       </nav>
       
       {/* User Profile */}
-      <div className="flex-shrink-0 flex border-t border-gray-200 p-4">
-        <div className="flex items-center">
-          <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center">
-            <span className="text-white text-sm font-medium">JD</span>
-          </div>
-          <div className="ml-3">
-            <p className="text-sm font-medium text-gray-700">John Doe</p>
-            <p className="text-xs text-gray-500">Pro Plan</p>
-          </div>
-        </div>
-      </div>
+      <CompactSidebarUserMenu/>
     </div>
   );
 }

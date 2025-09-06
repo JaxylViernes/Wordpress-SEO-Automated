@@ -1,7 +1,10 @@
 // services/auth-service.ts
 import bcrypt from 'bcryptjs';
 import { storage } from '../storage';
+import { db } from "../db";
 import type { InsertUser } from '@shared/schema';
+import { users, type User, type InsertUser } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 interface UserData {
   username: string;
@@ -203,5 +206,95 @@ export class AuthService {
     }
 
     return errors;
+  }
+
+
+   async updateUserPassword(userId: string, hashedPassword: string): Promise<User | null> {
+    try {
+      const [user] = await db
+        .update(users)
+        .set({ 
+          password: hashedPassword,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId))
+        .returning();
+      
+      return user || null;
+    } catch (error) {
+      console.error('Failed to update user password:', error);
+      throw new Error('Failed to update password');
+    }
+  }
+
+  async verifyPassword(plainPassword: string, hashedPassword: string): Promise<boolean> {
+    try {
+      return await bcrypt.compare(plainPassword, hashedPassword);
+    } catch (error) {
+      console.error('Password verification failed:', error);
+      return false;
+    }
+  }
+
+  // async hashPassword(password: string): Promise<string> {
+  //   try {
+  //     const saltRounds = 12;
+  //     return await bcrypt.hash(password, saltRounds);
+  //   } catch (error) {
+  //     console.error('Password hashing failed:', error);
+  //     throw new Error('Failed to hash password');
+  //   }
+  // }
+
+  validatePassword(password: string): string[] {
+    const errors: string[] = [];
+    
+    if (!password) {
+      errors.push('Password is required');
+      return errors;
+    }
+    
+    if (password.length < 8) {
+      errors.push('Password must be at least 8 characters long');
+    }
+    
+    if (password.length > 128) {
+      errors.push('Password must be less than 128 characters');
+    }
+    
+    if (!/[a-z]/.test(password)) {
+      errors.push('Password must contain at least one lowercase letter');
+    }
+    
+    if (!/[A-Z]/.test(password)) {
+      errors.push('Password must contain at least one uppercase letter');
+    }
+    
+    if (!/\d/.test(password)) {
+      errors.push('Password must contain at least one number');
+    }
+    
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\?]/.test(password)) {
+      errors.push('Password must contain at least one special character');
+    }
+    
+    // Check for common weak passwords
+    const commonPasswords = [
+      'password', '123456', '12345678', 'qwerty', 'abc123', 
+      'password123', 'admin', 'letmein', 'welcome', 'monkey'
+    ];
+    
+    if (commonPasswords.includes(password.toLowerCase())) {
+      errors.push('Password is too common. Please choose a stronger password');
+    }
+    
+    return errors;
+  }
+
+  // Check if password was recently used (optional security feature)
+  async isPasswordRecentlyUsed(userId: string, newPassword: string): Promise<boolean> {
+    // This would require storing password history
+    // For now, just return false (not implemented)
+    return false;
   }
 }

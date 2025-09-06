@@ -398,6 +398,98 @@ export const insertContentImageSchema = createInsertSchema(contentImages).pick({
 });
 
 
+export const userSettings = pgTable("user_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  
+  // Profile settings
+  profileName: text("profile_name"),
+  profileEmail: text("profile_email"),
+  profileCompany: text("profile_company"),
+  profileTimezone: text("profile_timezone").default("America/New_York"),
+  
+  // Notification preferences
+  notificationEmailReports: boolean("notification_email_reports").default(true),
+  notificationContentGenerated: boolean("notification_content_generated").default(true),
+  notificationSeoIssues: boolean("notification_seo_issues").default(true),
+  notificationSystemAlerts: boolean("notification_system_alerts").default(false),
+  
+  // Automation preferences
+  automationDefaultAiModel: text("automation_default_ai_model").default("gpt-4o"),
+  automationAutoFixSeoIssues: boolean("automation_auto_fix_seo_issues").default(true),
+  automationContentGenerationFrequency: text("automation_content_generation_frequency").default("twice-weekly"),
+  automationReportGeneration: text("automation_report_generation").default("weekly"),
+  
+  // Security settings
+  securityTwoFactorAuth: boolean("security_two_factor_auth").default(false),
+  securitySessionTimeout: integer("security_session_timeout").default(24),
+  securityAllowApiAccess: boolean("security_allow_api_access").default(true),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => [
+  index("idx_user_settings_user_id").on(table.userId),
+]);
+
+// Add insert schema for user settings
+export const insertUserSettingsSchema = createInsertSchema(userSettings).pick({
+  profileName: true,
+  profileEmail: true,
+  profileCompany: true,
+  profileTimezone: true,
+  notificationEmailReports: true,
+  notificationContentGenerated: true,
+  notificationSeoIssues: true,
+  notificationSystemAlerts: true,
+  automationDefaultAiModel: true,
+  automationAutoFixSeoIssues: true,
+  automationContentGenerationFrequency: true,
+  automationReportGeneration: true,
+  securityTwoFactorAuth: true,
+  securitySessionTimeout: true,
+  securityAllowApiAccess: true,
+});
+
+export const userApiKeys = pgTable("user_api_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  
+  provider: text("provider").notNull(), // 'openai', 'anthropic', 'google_pagespeed'
+  keyName: text("key_name").notNull(),
+  encryptedApiKey: text("encrypted_api_key").notNull(), // Encrypted API key
+  maskedKey: text("masked_key").notNull(), // For display (e.g., "sk-...xyz123")
+  
+  isActive: boolean("is_active").notNull().default(true),
+  validationStatus: text("validation_status").notNull().default("pending"), // 'valid', 'invalid', 'pending'
+  lastValidated: timestamp("last_validated"),
+  validationError: text("validation_error"),
+  
+  // Usage tracking
+  usageCount: integer("usage_count").notNull().default(0),
+  lastUsed: timestamp("last_used"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => [
+  index("idx_user_api_keys_user_id").on(table.userId),
+  index("idx_user_api_keys_provider").on(table.provider),
+]);
+
+// Add insert schema for user API keys
+export const insertUserApiKeySchema = createInsertSchema(userApiKeys).pick({
+  provider: true,
+  keyName: true,
+  encryptedApiKey: true,
+  maskedKey: true,
+  isActive: true,
+  validationStatus: true,
+  lastValidated: true,
+  validationError: true,
+  usageCount: true,
+  lastUsed: true,
+});
+
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -442,3 +534,10 @@ export type UpsertUser = typeof users.$inferInsert;
 
 export type InsertContentImage = z.infer<typeof insertContentImageSchema>;
 export type ContentImage = typeof contentImages.$inferSelect;
+
+export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;
+export type UserSettings = typeof userSettings.$inferSelect;
+
+
+export type InsertUserApiKey = z.infer<typeof insertUserApiKeySchema>;
+export type UserApiKey = typeof userApiKeys.$inferSelect;

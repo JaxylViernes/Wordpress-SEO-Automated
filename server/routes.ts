@@ -10,6 +10,7 @@ import { AuthService } from "./services/auth-service";
 import { wordpressService } from "./services/wordpress-service";
 import { wordPressAuthService } from './services/wordpress-auth'; // Adjust path as needed
 import { aiFixService } from "./services/ai-fix-service";
+import { apiValidationService } from "./services/api-validation";
 
 
 const authService = new AuthService();
@@ -1545,6 +1546,412 @@ app.post("/api/user/websites/:id/reports/generate", requireAuth, async (req: Req
 
 
 
+// =============================================================================
+// CONTENT SCHEDULING ROUTES (Updated for Existing Content)
+// =============================================================================
+
+app.get("/api/user/websites/:id/content-schedule", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const websiteId = req.params.id;
+    
+    // Verify website ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+    
+    const scheduledContent = await storage.getContentSchedule(websiteId);
+    res.json(scheduledContent);
+  } catch (error) {
+    console.error("Failed to fetch content schedule:", error);
+    res.status(500).json({ message: "Failed to fetch content schedule" });
+  }
+});
+
+app.post("/api/user/websites/:id/schedule-content", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const websiteId = req.params.id;
+    const { contentId, scheduledDate } = req.body;
+    
+    console.log('📅 Scheduling existing content:', { websiteId, contentId, scheduledDate });
+    
+    // Verify website ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+    
+    // Verify content exists and belongs to user
+    const content = await storage.getContent(contentId);
+    if (!content || content.userId !== userId || content.websiteId !== websiteId) {
+      res.status(404).json({ message: "Content not found or access denied" });
+      return;
+    }
+    
+    // Validate content is not already published
+    if (content.status === 'published') {
+      res.status(400).json({ message: "Content is already published" });
+      return;
+    }
+    
+    // Validate required fields
+    if (!contentId || !scheduledDate) {
+      res.status(400).json({ message: "Content ID and scheduled date are required" });
+      return;
+    }
+    
+    // Validate scheduled date is in the future
+    const scheduleTime = new Date(scheduledDate);
+    if (scheduleTime <= new Date()) {
+      res.status(400).json({ message: "Scheduled date must be in the future" });
+      return;
+    }
+    
+    // Check if content is already scheduled
+    const existingSchedule = await storage.getContentScheduleByContentId(contentId);
+    if (existingSchedule) {
+      res.status(400).json({ message: "This content is already scheduled for publication" });
+      return;
+    }
+    
+    // Create scheduled content with topic from content title
+    const scheduledContent = await storage.createContentSchedule({
+      userId,
+      websiteId,
+      scheduledDate: scheduleTime,
+      topic: content.title, // Use content title as topic
+      keywords: content.seoKeywords || [], // Use content keywords
+      contentId,
+      status: "scheduled" // Changed from "planned" to "scheduled"
+    });
+    
+    // Log activity
+    await storage.createActivityLog({
+      userId,
+      websiteId,
+      type: "content_scheduled",
+      description: `Content scheduled for publication: "${content.title}" on ${scheduleTime.toLocaleString()}`,
+      metadata: { 
+        scheduleId: scheduledContent.id,
+        contentId,
+        contentTitle: content.title,
+        scheduledDate: scheduledDate
+      }
+    });
+    
+    console.log('✅ Content scheduled successfully:', scheduledContent.id);
+    res.status(201).json({
+      ...scheduledContent,
+      contentTitle: content.title,
+      contentExcerpt: content.excerpt,
+      seoKeywords: content.seoKeywords
+    });
+    
+  } catch (error) {
+    console.error("Failed to schedule content:", error);
+    res.status(500).json({ 
+      message: "Failed to schedule content",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.put("/api/user/websites/:websiteId/content-schedule/:scheduleId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { websiteId, scheduleId } = req.params;
+    const { scheduledDate, status } = req.body;
+    
+    // Verify website ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+    
+    // Get existing schedule to verify ownership
+    const scheduleItem = await storage.getContentScheduleById(scheduleId);
+    if (!scheduleItem || scheduleItem.userId !== userId) {
+      res.status(404).json({ message: "Scheduled content not found or access denied" });
+      return;
+    }
+    
+    // Update the schedule
+    const updates: any = {};
+    if (scheduledDate !== undefined) {
+      const scheduleTime = new Date(scheduledDate);
+      if (scheduleTime <= new Date() && status !== 'cancelled') {
+        res.status(400).json({ message: "Scheduled date must be in the future unless cancelling" });
+        return;
+      }
+      updates.scheduledDate = scheduleTime;
+    }
+    if (status !== undefined) updates.status = status;
+    
+    const updatedSchedule = await storage.updateContentSchedule(scheduleId, updates);
+    
+    // Log activity
+    await storage.createActivityLog({
+      userId,
+      websiteId,
+      type: "content_schedule_updated",
+      description: `Publication schedule updated for content`,
+      metadata: { 
+        scheduleId,
+        updates: Object.keys(updates)
+      }
+    });
+    
+    res.json(updatedSchedule);
+    
+  } catch (error) {
+    console.error("Failed to update scheduled content:", error);
+    res.status(500).json({ 
+      message: "Failed to update scheduled content",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.delete("/api/user/websites/:websiteId/content-schedule/:scheduleId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { websiteId, scheduleId } = req.params;
+    
+    // Verify website ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+    
+    // Verify schedule ownership
+    const scheduleItem = await storage.getContentScheduleById(scheduleId);
+    if (!scheduleItem || scheduleItem.userId !== userId) {
+      res.status(404).json({ message: "Scheduled content not found or access denied" });
+      return;
+    }
+    
+    // Get content info for logging
+    const content = await storage.getContent(scheduleItem.contentId);
+    
+    // Delete the schedule
+    const deleted = await storage.deleteContentSchedule(scheduleId);
+    
+    if (!deleted) {
+      res.status(404).json({ message: "Scheduled content not found" });
+      return;
+    }
+    
+    // Log activity
+    await storage.createActivityLog({
+      userId,
+      websiteId,
+      type: "content_schedule_deleted",
+      description: `Publication schedule removed: "${content?.title || 'Unknown'}"`,
+      metadata: { 
+        scheduleId,
+        contentId: scheduleItem.contentId,
+        contentTitle: content?.title
+      }
+    });
+    
+    res.status(204).send();
+    
+  } catch (error) {
+    console.error("Failed to delete scheduled content:", error);
+    res.status(500).json({ 
+      message: "Failed to delete scheduled content",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.get("/api/user/content-schedule", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    
+    // Get all user's websites
+    const websites = await storage.getUserWebsites(userId);
+    const allScheduledContent = [];
+    
+    // Get scheduled content for each website
+    for (const website of websites) {
+      const schedules = await storage.getContentScheduleWithDetails(website.id);
+      const schedulesWithWebsite = schedules.map(schedule => ({
+        ...schedule,
+        websiteName: website.name,
+        websiteUrl: website.url
+      }));
+      allScheduledContent.push(...schedulesWithWebsite);
+    }
+    
+    // Sort by scheduled date
+    allScheduledContent.sort((a, b) => 
+      new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
+    );
+    
+    res.json(allScheduledContent);
+  } catch (error) {
+    console.error("Failed to fetch user's scheduled content:", error);
+    res.status(500).json({ message: "Failed to fetch scheduled content" });
+  }
+});
+
+// Automatic publishing endpoint (for cron jobs)
+app.post("/api/system/publish-scheduled-content", async (req: Request, res: Response): Promise<void> => {
+  try {
+    console.log('🕒 Running scheduled content publication check...');
+    
+    // Get all overdue scheduled content
+    const overdueContent = await storage.getPendingScheduledContent();
+    
+    const results = [];
+    
+    for (const schedule of overdueContent) {
+      try {
+        console.log(`📤 Publishing scheduled content: ${schedule.contentId}`);
+        
+        // Get the content
+        const content = await storage.getContent(schedule.contentId);
+        if (!content) {
+          console.error(`Content not found: ${schedule.contentId}`);
+          continue;
+        }
+        
+        // Get the website
+        const website = await storage.getUserWebsite(content.websiteId, content.userId);
+        if (!website) {
+          console.error(`Website not found: ${content.websiteId}`);
+          continue;
+        }
+        
+        // Publish the content (you'll need to implement this)
+        try {
+          // Use your existing publish logic here
+          const wpCredentials = {
+            url: website.url,
+            username: website.wpUsername || 'admin',
+            applicationPassword: website.wpApplicationPassword
+          };
+          
+          const postData = {
+            title: content.title,
+            content: content.body,
+            excerpt: content.excerpt || '',
+            status: 'publish' as const,
+            meta: {
+              description: content.metaDescription || content.excerpt || '',
+              title: content.metaTitle || content.title
+            }
+          };
+          
+          const wpResult = await wordpressService.publishPost(wpCredentials, postData);
+          
+          // Update content with WordPress details
+          await storage.updateContent(content.id, {
+            status: "published",
+            publishDate: new Date(),
+            wordpressPostId: wpResult.id,
+            wordpressUrl: wpResult.link,
+            publishError: null
+          });
+          
+          // Update schedule status
+          await storage.updateContentSchedule(schedule.id, { status: 'published' });
+          
+          // Log activity
+          await storage.createActivityLog({
+            userId: content.userId,
+            websiteId: content.websiteId,
+            type: "scheduled_content_published",
+            description: `Scheduled content published: "${content.title}"`,
+            metadata: { 
+              scheduleId: schedule.id,
+              contentId: content.id,
+              wordpressPostId: wpResult.id,
+              wordpressUrl: wpResult.link
+            }
+          });
+          
+          results.push({
+            scheduleId: schedule.id,
+            contentId: content.id,
+            success: true,
+            wordpressPostId: wpResult.id,
+            wordpressUrl: wpResult.link
+          });
+          
+          console.log(`✅ Successfully published: ${content.title}`);
+          
+        } catch (publishError) {
+          console.error(`Failed to publish content ${content.id}:`, publishError);
+          
+          // Update schedule status to failed
+          await storage.updateContentSchedule(schedule.id, { status: 'failed' });
+          
+          // Update content with error
+          await storage.updateContent(content.id, {
+            status: "publish_failed",
+            publishError: publishError instanceof Error ? publishError.message : 'Unknown error'
+          });
+          
+          // Log failure
+          await storage.createActivityLog({
+            userId: content.userId,
+            websiteId: content.websiteId,
+            type: "scheduled_content_failed",
+            description: `Failed to publish scheduled content: "${content.title}"`,
+            metadata: { 
+              scheduleId: schedule.id,
+              contentId: content.id,
+              error: publishError instanceof Error ? publishError.message : 'Unknown error'
+            }
+          });
+          
+          results.push({
+            scheduleId: schedule.id,
+            contentId: content.id,
+            success: false,
+            error: publishError instanceof Error ? publishError.message : 'Unknown error'
+          });
+        }
+        
+      } catch (error) {
+        console.error(`Error processing schedule ${schedule.id}:`, error);
+        results.push({
+          scheduleId: schedule.id,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+    
+    console.log(`🎯 Processed ${overdueContent.length} scheduled items, ${results.filter(r => r.success).length} published successfully`);
+    
+    res.json({
+      success: true,
+      processed: overdueContent.length,
+      published: results.filter(r => r.success).length,
+      failed: results.filter(r => !r.success).length,
+      results
+    });
+    
+  } catch (error) {
+    console.error("Scheduled publishing process failed:", error);
+    res.status(500).json({ 
+      message: "Failed to process scheduled content",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+
+
   // =============================================================================
   // USER-SCOPED SEO ROUTES
   // =============================================================================
@@ -2173,6 +2580,688 @@ app.get("/api/user/websites/:id/ai-fix-history", requireAuth, async (req: Reques
     console.error("Get AI fix history error:", error);
     res.status(500).json({ 
       message: "Failed to get AI fix history",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+
+
+
+// =============================================================================
+// USER SETTINGS ROUTES
+// =============================================================================
+
+app.get("/api/user/settings", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    console.log(`⚙️ Fetching settings for user: ${userId}`);
+    
+    const settings = await storage.getOrCreateUserSettings(userId);
+    
+    // Transform database format to frontend format
+    const transformedSettings = {
+      profile: {
+        name: settings.profileName || req.user!.name || "",
+        email: settings.profileEmail || req.user!.email || "",
+        company: settings.profileCompany || "",
+        timezone: settings.profileTimezone || "America/New_York",
+      },
+      notifications: {
+        emailReports: settings.notificationEmailReports,
+        contentGenerated: settings.notificationContentGenerated,
+        seoIssues: settings.notificationSeoIssues,
+        systemAlerts: settings.notificationSystemAlerts,
+      },
+      automation: {
+        defaultAiModel: settings.automationDefaultAiModel,
+        autoFixSeoIssues: settings.automationAutoFixSeoIssues,
+        contentGenerationFrequency: settings.automationContentGenerationFrequency,
+        reportGeneration: settings.automationReportGeneration,
+      },
+      security: {
+        twoFactorAuth: settings.securityTwoFactorAuth,
+        sessionTimeout: settings.securitySessionTimeout,
+        allowApiAccess: settings.securityAllowApiAccess,
+      },
+    };
+    
+    console.log(`✅ Settings fetched successfully for user ${userId}`);
+    res.json(transformedSettings);
+  } catch (error) {
+    console.error("Failed to fetch user settings:", error);
+    res.status(500).json({ message: "Failed to fetch settings" });
+  }
+});
+
+app.put("/api/user/settings", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { profile, notifications, automation, security } = req.body;
+    
+    console.log(`⚙️ Updating settings for user: ${userId}`);
+    
+    // Transform frontend format to database format
+    const updateData: Partial<InsertUserSettings> = {};
+    
+    if (profile) {
+      if (profile.name !== undefined) updateData.profileName = profile.name;
+      if (profile.email !== undefined) updateData.profileEmail = profile.email;
+      if (profile.company !== undefined) updateData.profileCompany = profile.company;
+      if (profile.timezone !== undefined) updateData.profileTimezone = profile.timezone;
+    }
+    
+    if (notifications) {
+      if (notifications.emailReports !== undefined) updateData.notificationEmailReports = notifications.emailReports;
+      if (notifications.contentGenerated !== undefined) updateData.notificationContentGenerated = notifications.contentGenerated;
+      if (notifications.seoIssues !== undefined) updateData.notificationSeoIssues = notifications.seoIssues;
+      if (notifications.systemAlerts !== undefined) updateData.notificationSystemAlerts = notifications.systemAlerts;
+    }
+    
+    if (automation) {
+      if (automation.defaultAiModel !== undefined) updateData.automationDefaultAiModel = automation.defaultAiModel;
+      if (automation.autoFixSeoIssues !== undefined) updateData.automationAutoFixSeoIssues = automation.autoFixSeoIssues;
+      if (automation.contentGenerationFrequency !== undefined) updateData.automationContentGenerationFrequency = automation.contentGenerationFrequency;
+      if (automation.reportGeneration !== undefined) updateData.automationReportGeneration = automation.reportGeneration;
+    }
+    
+    if (security) {
+      if (security.twoFactorAuth !== undefined) updateData.securityTwoFactorAuth = security.twoFactorAuth;
+      if (security.sessionTimeout !== undefined) updateData.securitySessionTimeout = security.sessionTimeout;
+      if (security.allowApiAccess !== undefined) updateData.securityAllowApiAccess = security.allowApiAccess;
+    }
+    
+    // Validate session timeout
+    if (updateData.securitySessionTimeout !== undefined) {
+      if (updateData.securitySessionTimeout < 1 || updateData.securitySessionTimeout > 168) {
+        res.status(400).json({ message: "Session timeout must be between 1 and 168 hours" });
+        return;
+      }
+    }
+    
+    // Update the settings
+    const updatedSettings = await storage.updateUserSettings(userId, updateData);
+    
+    if (!updatedSettings) {
+      res.status(404).json({ message: "Settings not found" });
+      return;
+    }
+    
+    // Transform back to frontend format
+    const transformedSettings = {
+      profile: {
+        name: updatedSettings.profileName || req.user!.name || "",
+        email: updatedSettings.profileEmail || req.user!.email || "",
+        company: updatedSettings.profileCompany || "",
+        timezone: updatedSettings.profileTimezone || "America/New_York",
+      },
+      notifications: {
+        emailReports: updatedSettings.notificationEmailReports,
+        contentGenerated: updatedSettings.notificationContentGenerated,
+        seoIssues: updatedSettings.notificationSeoIssues,
+        systemAlerts: updatedSettings.notificationSystemAlerts,
+      },
+      automation: {
+        defaultAiModel: updatedSettings.automationDefaultAiModel,
+        autoFixSeoIssues: updatedSettings.automationAutoFixSeoIssues,
+        contentGenerationFrequency: updatedSettings.automationContentGenerationFrequency,
+        reportGeneration: updatedSettings.automationReportGeneration,
+      },
+      security: {
+        twoFactorAuth: updatedSettings.securityTwoFactorAuth,
+        sessionTimeout: updatedSettings.securitySessionTimeout,
+        allowApiAccess: updatedSettings.securityAllowApiAccess,
+      },
+    };
+    
+    // Log the activity
+    await storage.createActivityLog({
+      userId,
+      type: "settings_updated",
+      description: "User settings updated",
+      metadata: { 
+        sectionsUpdated: Object.keys(req.body),
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+    console.log(`✅ Settings updated successfully for user ${userId}`);
+    res.json(transformedSettings);
+  } catch (error) {
+    console.error("Failed to update user settings:", error);
+    res.status(500).json({ message: "Failed to update settings" });
+  }
+});
+
+app.delete("/api/user/settings", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    console.log(`🗑️ Resetting settings to defaults for user: ${userId}`);
+    
+    const deleted = await storage.deleteUserSettings(userId);
+    
+    if (!deleted) {
+      res.status(404).json({ message: "Settings not found" });
+      return;
+    }
+    
+    // Create new default settings
+    const defaultSettings = await storage.getOrCreateUserSettings(userId);
+    
+    // Transform to frontend format
+    const transformedSettings = {
+      profile: {
+        name: req.user!.name || "",
+        email: req.user!.email || "",
+        company: "",
+        timezone: "America/New_York",
+      },
+      notifications: {
+        emailReports: true,
+        contentGenerated: true,
+        seoIssues: true,
+        systemAlerts: false,
+      },
+      automation: {
+        defaultAiModel: "gpt-4o",
+        autoFixSeoIssues: true,
+        contentGenerationFrequency: "twice-weekly",
+        reportGeneration: "weekly",
+      },
+      security: {
+        twoFactorAuth: false,
+        sessionTimeout: 24,
+        allowApiAccess: true,
+      },
+    };
+    
+    // Log the activity
+    await storage.createActivityLog({
+      userId,
+      type: "settings_reset",
+      description: "User settings reset to defaults",
+      metadata: { 
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+    console.log(`✅ Settings reset to defaults for user ${userId}`);
+    res.json({
+      message: "Settings reset to defaults",
+      settings: transformedSettings
+    });
+  } catch (error) {
+    console.error("Failed to reset user settings:", error);
+    res.status(500).json({ message: "Failed to reset settings" });
+  }
+});
+
+
+
+// =============================================================================
+// REAL API KEY MANAGEMENT ROUTES
+// =============================================================================
+
+app.get("/api/user/api-keys", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    console.log(`🔑 Fetching API keys for user: ${userId}`);
+    
+    const apiKeys = await storage.getUserApiKeys(userId);
+    
+    // Transform for frontend (don't send encrypted keys)
+    const transformedKeys = apiKeys.map(key => ({
+      id: key.id,
+      provider: key.provider,
+      keyName: key.keyName,
+      maskedKey: key.maskedKey,
+      isActive: key.isActive,
+      validationStatus: key.validationStatus,
+      lastValidated: key.lastValidated?.toISOString(),
+      validationError: key.validationError,
+      usageCount: key.usageCount,
+      lastUsed: key.lastUsed?.toISOString(),
+      createdAt: key.createdAt.toISOString()
+    }));
+    
+    console.log(`✅ Found ${transformedKeys.length} API keys for user ${userId}`);
+    res.json(transformedKeys);
+  } catch (error) {
+    console.error("Failed to fetch API keys:", error);
+    res.status(500).json({ message: "Failed to fetch API keys" });
+  }
+});
+
+app.post("/api/user/api-keys", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { provider, keyName, apiKey } = req.body;
+    
+    console.log(`🔑 Adding API key for user: ${userId}, provider: ${provider}`);
+    
+    // Validate input
+    if (!provider || !keyName || !apiKey) {
+      res.status(400).json({ message: "Provider, key name, and API key are required" });
+      return;
+    }
+    
+    // Validate provider
+    if (!apiValidationService.getSupportedProviders().includes(provider)) {
+      res.status(400).json({ message: "Invalid provider" });
+      return;
+    }
+    
+    // Check if user already has a key for this provider
+    const existingKeys = await storage.getUserApiKeys(userId);
+    const existingProviderKey = existingKeys.find(k => k.provider === provider && k.isActive);
+    
+    if (existingProviderKey) {
+      res.status(400).json({ 
+        message: `You already have an active ${apiValidationService.getProviderDisplayName(provider)} API key. Please delete the existing one first.` 
+      });
+      return;
+    }
+    
+    // Create the API key record (this also validates format and encrypts)
+    let newApiKey;
+    try {
+      newApiKey = await storage.createUserApiKey(userId, {
+        provider,
+        keyName,
+        apiKey
+      });
+    } catch (createError) {
+      res.status(400).json({ 
+        message: createError instanceof Error ? createError.message : "Invalid API key format"
+      });
+      return;
+    }
+    
+    // Validate the API key with the actual service
+    console.log(`🔍 Validating ${provider} API key...`);
+    
+    let validationResult;
+    try {
+      validationResult = await apiValidationService.validateApiKey(provider, apiKey);
+    } catch (validationError) {
+      console.error(`Validation failed for ${provider}:`, validationError);
+      validationResult = { 
+        valid: false, 
+        error: validationError instanceof Error ? validationError.message : 'Validation failed' 
+      };
+    }
+    
+    // Update the validation status
+    await storage.updateUserApiKey(userId, newApiKey.id, {
+      validationStatus: validationResult.valid ? 'valid' : 'invalid',
+      lastValidated: new Date(),
+      validationError: validationResult.error || null
+    });
+    
+    // Get the updated key
+    const updatedKey = await storage.getUserApiKey(userId, newApiKey.id);
+    
+    if (!validationResult.valid) {
+      // Delete the key if validation failed
+      await storage.deleteUserApiKey(userId, newApiKey.id);
+      
+      res.status(400).json({ 
+        message: validationResult.error || "API key validation failed",
+        error: "INVALID_API_KEY"
+      });
+      return;
+    }
+    
+    // Log activity
+    await storage.createActivityLog({
+      userId,
+      type: "api_key_added",
+      description: `API key added for ${apiValidationService.getProviderDisplayName(provider)}: ${keyName}`,
+      metadata: { 
+        provider,
+        keyName,
+        keyId: newApiKey.id,
+        validationStatus: validationResult.valid ? 'valid' : 'invalid'
+      }
+    });
+    
+    console.log(`✅ API key added and validated successfully for user ${userId}`);
+    
+    // Return the transformed key (without encrypted data)
+    res.status(201).json({
+      id: updatedKey!.id,
+      provider: updatedKey!.provider,
+      keyName: updatedKey!.keyName,
+      maskedKey: updatedKey!.maskedKey,
+      isActive: updatedKey!.isActive,
+      validationStatus: updatedKey!.validationStatus,
+      lastValidated: updatedKey!.lastValidated?.toISOString(),
+      validationError: updatedKey!.validationError,
+      usageCount: updatedKey!.usageCount,
+      lastUsed: updatedKey!.lastUsed?.toISOString(),
+      createdAt: updatedKey!.createdAt.toISOString()
+    });
+  } catch (error) {
+    console.error("Failed to add API key:", error);
+    res.status(500).json({ 
+      message: "Failed to add API key",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.post("/api/user/api-keys/:id/validate", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const keyId = req.params.id;
+    
+    console.log(`🔍 Validating API key ${keyId} for user: ${userId}`);
+    
+    // Get the API key
+    const apiKey = await storage.getUserApiKey(userId, keyId);
+    if (!apiKey) {
+      res.status(404).json({ message: "API key not found" });
+      return;
+    }
+    
+    // Get the decrypted key
+    const decryptedKey = await storage.getDecryptedApiKey(userId, keyId);
+    if (!decryptedKey) {
+      res.status(400).json({ message: "Cannot decrypt API key" });
+      return;
+    }
+    
+    // Validate with the actual service
+    let validationResult;
+    try {
+      validationResult = await apiValidationService.validateApiKey(apiKey.provider, decryptedKey);
+    } catch (validationError) {
+      console.error(`Validation failed for ${apiKey.provider}:`, validationError);
+      validationResult = { 
+        valid: false, 
+        error: validationError instanceof Error ? validationError.message : 'Validation failed' 
+      };
+    }
+    
+    // Update the validation status
+    await storage.updateUserApiKey(userId, keyId, {
+      validationStatus: validationResult.valid ? 'valid' : 'invalid',
+      lastValidated: new Date(),
+      validationError: validationResult.error || null
+    });
+    
+    // Log activity
+    await storage.createActivityLog({
+      userId,
+      type: "api_key_validated",
+      description: `API key validation ${validationResult.valid ? 'successful' : 'failed'}: ${apiKey.keyName}`,
+      metadata: { 
+        keyId,
+        provider: apiKey.provider,
+        isValid: validationResult.valid,
+        error: validationResult.error
+      }
+    });
+    
+    console.log(`✅ API key validation completed for user ${userId}: ${validationResult.valid ? 'valid' : 'invalid'}`);
+    
+    res.json({
+      isValid: validationResult.valid,
+      error: validationResult.error,
+      lastValidated: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Failed to validate API key:", error);
+    res.status(500).json({ 
+      message: "Failed to validate API key",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.delete("/api/user/api-keys/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const keyId = req.params.id;
+    
+    console.log(`🗑️ Deleting API key ${keyId} for user: ${userId}`);
+    
+    // Get the API key before deletion for logging
+    const apiKey = await storage.getUserApiKey(userId, keyId);
+    if (!apiKey) {
+      res.status(404).json({ message: "API key not found" });
+      return;
+    }
+    
+    // Delete the API key
+    const deleted = await storage.deleteUserApiKey(userId, keyId);
+    
+    if (!deleted) {
+      res.status(404).json({ message: "API key not found" });
+      return;
+    }
+    
+    // Log activity
+    await storage.createActivityLog({
+      userId,
+      type: "api_key_deleted",
+      description: `API key deleted: ${apiKey.keyName} (${apiValidationService.getProviderDisplayName(apiKey.provider)})`,
+      metadata: { 
+        keyId,
+        provider: apiKey.provider,
+        keyName: apiKey.keyName
+      }
+    });
+    
+    console.log(`✅ API key deleted successfully for user ${userId}`);
+    res.status(204).send();
+  } catch (error) {
+    console.error("Failed to delete API key:", error);
+    res.status(500).json({ 
+      message: "Failed to delete API key",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.get("/api/user/api-keys/status", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    console.log(`📊 Fetching API key status for user: ${userId}`);
+    
+    // Get user's API keys
+    const userKeys = await storage.getUserApiKeys(userId);
+    
+    // Build status for each provider
+    const providers = {
+      openai: {
+        configured: false,
+        keyName: null as string | null,
+        lastValidated: null as string | null,
+        status: "not_configured" as string
+      },
+      anthropic: {
+        configured: false,
+        keyName: null as string | null,
+        lastValidated: null as string | null,
+        status: "not_configured" as string
+      },
+      google_pagespeed: {
+        configured: false,
+        keyName: null as string | null,
+        lastValidated: null as string | null,
+        status: "not_configured" as string
+      }
+    };
+    
+    // Check user's keys
+    for (const key of userKeys) {
+      if (key.isActive && providers[key.provider as keyof typeof providers]) {
+        const providerStatus = providers[key.provider as keyof typeof providers];
+        providerStatus.configured = true;
+        providerStatus.keyName = key.keyName;
+        providerStatus.lastValidated = key.lastValidated?.toISOString() || null;
+        providerStatus.status = key.validationStatus === 'valid' ? 'active' : 
+                                 key.validationStatus === 'invalid' ? 'invalid' : 'pending';
+      }
+    }
+    
+    // Also check environment variables (system keys)
+    if (!providers.openai.configured && (process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR)) {
+      providers.openai.configured = true;
+      providers.openai.keyName = "System OpenAI Key";
+      providers.openai.status = "system";
+    }
+    
+    if (!providers.anthropic.configured && process.env.ANTHROPIC_API_KEY) {
+      providers.anthropic.configured = true;
+      providers.anthropic.keyName = "System Anthropic Key";
+      providers.anthropic.status = "system";
+    }
+    
+    if (!providers.google_pagespeed.configured && process.env.GOOGLE_PAGESPEED_API_KEY) {
+      providers.google_pagespeed.configured = true;
+      providers.google_pagespeed.keyName = "System PageSpeed Key";
+      providers.google_pagespeed.status = "system";
+    }
+    
+    console.log(`✅ API key status fetched for user ${userId}`);
+    res.json({ providers });
+  } catch (error) {
+    console.error("Failed to fetch API key status:", error);
+    res.status(500).json({ 
+      message: "Failed to fetch API key status",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+
+// =============================================================================
+// PASSWORD CHANGE ROUTE
+// =============================================================================
+
+app.post("/api/auth/change-password", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+    
+    console.log(`🔐 Password change request for user: ${userId}`);
+    
+    // Validate input
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      res.status(400).json({ 
+        message: "Current password, new password, and confirmation are required" 
+      });
+      return;
+    }
+    
+    // Check if new passwords match
+    if (newPassword !== confirmPassword) {
+      res.status(400).json({ 
+        message: "New password and confirmation do not match" 
+      });
+      return;
+    }
+    
+    // Validate new password strength
+    const passwordValidation = authService.validatePassword(newPassword);
+    if (passwordValidation.length > 0) {
+      res.status(400).json({ 
+        message: "Password does not meet requirements",
+        errors: passwordValidation
+      });
+      return;
+    }
+    
+    // Get current user from database
+    const user = await storage.getUser(userId);
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+    
+    // Verify current password
+    const isCurrentPasswordValid = await authService.verifyPassword(currentPassword, user.password);
+    if (!isCurrentPasswordValid) {
+      res.status(400).json({ 
+        message: "Current password is incorrect" 
+      });
+      return;
+    }
+    
+    // Check if new password is different from current
+    const isSamePassword = await authService.verifyPassword(newPassword, user.password);
+    if (isSamePassword) {
+      res.status(400).json({ 
+        message: "New password must be different from current password" 
+      });
+      return;
+    }
+    
+    // Hash new password
+    const hashedNewPassword = await authService.hashPassword(newPassword);
+    
+    // Update password in database
+    const updatedUser = await authService.updateUserPassword(userId, hashedNewPassword);
+    
+    if (!updatedUser) {
+      res.status(500).json({ message: "Failed to update password" });
+      return;
+    }
+    
+    // Log the activity
+    await storage.createActivityLog({
+      userId,
+      type: "password_changed",
+      description: "User password changed successfully",
+      metadata: { 
+        timestamp: new Date().toISOString(),
+        ipAddress: req.ip || 'unknown'
+      }
+    });
+    
+    // Log security audit
+    await storage.createSecurityAudit({
+      userId,
+      action: "password_change",
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      success: true,
+      metadata: {
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+    console.log(`✅ Password changed successfully for user: ${userId}`);
+    
+    res.json({
+      success: true,
+      message: "Password changed successfully"
+    });
+    
+  } catch (error) {
+    console.error("Password change error:", error);
+    
+    // Log failed attempt
+    try {
+      await storage.createSecurityAudit({
+        userId: req.user?.id,
+        action: "password_change_failed",
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent'),
+        success: false,
+        metadata: {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (logError) {
+      console.error("Failed to log security audit:", logError);
+    }
+    
+    res.status(500).json({ 
+      message: "Failed to change password",
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }

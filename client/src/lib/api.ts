@@ -5,6 +5,28 @@ import { apiRequest } from "./queryClient";
 // Complete user-scoped API client
 export const api = {
 
+  changePassword: (data: {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}) => {
+  console.log("🔐 Changing user password");
+  return fetch("/api/auth/change-password", {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(data)
+  }).then(res => {
+    if (!res.ok) {
+      return res.json().then(error => {
+        throw new Error(error.message || 'Failed to change password');
+      });
+    }
+    return res.json();
+  });
+},
+
+
   fixWithAI: async (websiteId: string, dryRun: boolean = false, options?: {
     fixTypes?: string[];
     maxChanges?: number;
@@ -407,6 +429,254 @@ updateContent: (id: string, data: {
       error: result.status === 'rejected' ? result.reason.message : null
     }));
   },
+
+
+  // ===============================
+// CONTENT SCHEDULING METHODS (Updated for Existing Content)
+// ===============================
+
+// Get scheduled content for a specific website
+getContentSchedule: (websiteId: string) => 
+  fetch(`/api/user/websites/${websiteId}/content-schedule`).then(res => {
+    if (!res.ok) throw new Error('Failed to fetch content schedule');
+    return res.json();
+  }),
+
+// Get all scheduled content for user (across all websites)
+getAllScheduledContent: () => 
+  fetch('/api/user/content-schedule').then(res => {
+    if (!res.ok) throw new Error('Failed to fetch scheduled content');
+    return res.json();
+  }),
+
+// Schedule existing content for publication
+scheduleExistingContent: (websiteId: string, data: {
+  contentId: string;
+  scheduledDate: string;
+}) => {
+  console.log("📅 Scheduling existing content:", data);
+  return fetch(`/api/user/websites/${websiteId}/schedule-content`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(res => {
+    if (!res.ok) throw new Error('Failed to schedule content');
+    return res.json();
+  });
+},
+
+// Update scheduled content
+updateScheduledContent: (websiteId: string, scheduleId: string, data: {
+  scheduledDate?: string;
+  status?: string;
+}) => {
+  console.log("✏️ Updating scheduled content:", { scheduleId, data });
+  return fetch(`/api/user/websites/${websiteId}/content-schedule/${scheduleId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(res => {
+    if (!res.ok) throw new Error('Failed to update scheduled content');
+    return res.json();
+  });
+},
+
+// Delete scheduled content (unschedule)
+deleteScheduledContent: (websiteId: string, scheduleId: string) => {
+  console.log("🗑️ Unscheduling content:", scheduleId);
+  return fetch(`/api/user/websites/${websiteId}/content-schedule/${scheduleId}`, {
+    method: 'DELETE'
+  }).then(res => {
+    if (!res.ok) throw new Error('Failed to unschedule content');
+  });
+},
+
+// Get unpublished content available for scheduling
+getAvailableContentForScheduling: (websiteId: string) => 
+  fetch(`/api/user/websites/${websiteId}/content`).then(res => {
+    if (!res.ok) throw new Error('Failed to fetch content');
+    return res.json();
+  }).then(content => 
+    content.filter((c: any) => c.status === 'ready' || c.status === 'pending_approval')
+  ),
+
+// Bulk schedule multiple content pieces
+batchScheduleContent: async (websiteId: string, schedules: Array<{
+  contentId: string;
+  scheduledDate: string;
+}>) => {
+  console.log(`📅 Batch scheduling ${schedules.length} content pieces`);
+  
+  const results = await Promise.allSettled(
+    schedules.map(schedule => api.scheduleExistingContent(websiteId, schedule))
+  );
+  
+  return results.map((result, index) => ({
+    schedule: schedules[index],
+    success: result.status === 'fulfilled',
+    data: result.status === 'fulfilled' ? result.value : null,
+    error: result.status === 'rejected' ? result.reason.message : null
+  }));
+},
+
+// Get scheduled content statistics
+getScheduleStats: async (websiteId?: string) => {
+  try {
+    const scheduledContent = websiteId 
+      ? await api.getContentSchedule(websiteId)
+      : await api.getAllScheduledContent();
+    
+    const now = new Date();
+    const thisWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const thisMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    
+    const scheduled = scheduledContent.filter((c: any) => c.status === 'scheduled');
+    const published = scheduledContent.filter((c: any) => c.status === 'published');
+    const overdue = scheduled.filter((c: any) => new Date(c.scheduledDate) <= now);
+    const upcoming = scheduled.filter((c: any) => 
+      new Date(c.scheduledDate) <= thisWeek && new Date(c.scheduledDate) > now
+    );
+    const thisMonthCount = scheduled.filter((c: any) => {
+      const scheduleDate = new Date(c.scheduledDate);
+      return scheduleDate.getMonth() === now.getMonth() && 
+             scheduleDate.getFullYear() === now.getFullYear();
+    });
+    
+    return {
+      total: scheduledContent.length,
+      scheduled: scheduled.length,
+      published: published.length,
+      overdue: overdue.length,
+      upcoming: upcoming.length,
+      thisMonth: thisMonthCount.length,
+      nextScheduled: scheduled.length > 0 
+        ? scheduled.sort((a: any, b: any) => 
+            new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
+          )[0]
+        : null
+    };
+  } catch (error) {
+    console.error('Failed to get schedule stats:', error);
+    return {
+      total: 0, scheduled: 0, published: 0, overdue: 0, 
+      upcoming: 0, thisMonth: 0, nextScheduled: null
+    };
+  }
+},
+
+// Check if content is already scheduled
+isContentScheduled: async (contentId: string) => {
+  try {
+    // This would need a new endpoint, or you can check in the frontend
+    const allScheduled = await api.getAllScheduledContent();
+    return allScheduled.some((s: any) => 
+      s.contentId === contentId && (s.status === 'scheduled' || s.status === 'publishing')
+    );
+  } catch (error) {
+    console.error('Failed to check if content is scheduled:', error);
+    return false;
+  }
+},
+
+// Quick schedule content for immediate publication
+scheduleContentForNow: (websiteId: string, contentId: string) => {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() + 1); // Schedule for 1 minute from now
+  
+  return api.scheduleExistingContent(websiteId, {
+    contentId,
+    scheduledDate: now.toISOString()
+  });
+},
+
+// Reschedule content to a new date
+rescheduleContent: (websiteId: string, scheduleId: string, newDate: string) => {
+  return api.updateScheduledContent(websiteId, scheduleId, {
+    scheduledDate: newDate
+  });
+},
+
+// Cancel scheduled content (mark as cancelled)
+cancelScheduledContent: (websiteId: string, scheduleId: string) => {
+  return api.updateScheduledContent(websiteId, scheduleId, {
+    status: 'cancelled'
+  });
+},
+
+// Get scheduling dashboard data
+getSchedulingDashboard: async () => {
+  try {
+    const [scheduledContent, websites] = await Promise.all([
+      api.getAllScheduledContent(),
+      api.getWebsites()
+    ]);
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+    const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    
+    const todayScheduled = scheduledContent.filter((c: any) => {
+      const scheduleDate = new Date(c.scheduledDate);
+      return scheduleDate >= today && scheduleDate < tomorrow && c.status === 'scheduled';
+    });
+    
+    const weekScheduled = scheduledContent.filter((c: any) => {
+      const scheduleDate = new Date(c.scheduledDate);
+      return scheduleDate >= today && scheduleDate <= nextWeek && c.status === 'scheduled';
+    });
+    
+    const overdue = scheduledContent.filter((c: any) => 
+      new Date(c.scheduledDate) < now && c.status === 'scheduled'
+    );
+    
+    const recentlyPublished = scheduledContent.filter((c: any) => {
+      const publishDate = new Date(c.publishedAt || c.scheduledDate);
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      return publishDate >= weekAgo && c.status === 'published';
+    });
+    
+    return {
+      stats: {
+        todayCount: todayScheduled.length,
+        weekCount: weekScheduled.length,
+        overdueCount: overdue.length,
+        recentlyPublishedCount: recentlyPublished.length,
+        totalActiveSchedules: scheduledContent.filter((c: any) => c.status === 'scheduled').length
+      },
+      upcomingToday: todayScheduled,
+      upcomingWeek: weekScheduled.slice(0, 10), // Limit to 10 items
+      overdueItems: overdue,
+      websiteStats: websites?.map((website: any) => {
+        const websiteSchedules = scheduledContent.filter((c: any) => c.websiteId === website.id);
+        return {
+          websiteId: website.id,
+          websiteName: website.name,
+          scheduledCount: websiteSchedules.filter((c: any) => c.status === 'scheduled').length,
+          publishedCount: websiteSchedules.filter((c: any) => c.status === 'published').length,
+          overdueCount: websiteSchedules.filter((c: any) => 
+            new Date(c.scheduledDate) < now && c.status === 'scheduled'
+          ).length
+        };
+      }) || []
+    };
+  } catch (error) {
+    console.error('Failed to get scheduling dashboard:', error);
+    return {
+      stats: {
+        todayCount: 0,
+        weekCount: 0,
+        overdueCount: 0,
+        recentlyPublishedCount: 0,
+        totalActiveSchedules: 0
+      },
+      upcomingToday: [],
+      upcomingWeek: [],
+      overdueItems: [],
+      websiteStats: []
+    };
+  }
+}
 };
 
 // SEO helpers

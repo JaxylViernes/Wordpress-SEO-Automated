@@ -65,7 +65,7 @@ export default function Header() {
           </Dialog>
           
           {/* User Menu - Moved outside of button */}
-          <UserMenu />
+          
         </div>
       </div>
     </div>
