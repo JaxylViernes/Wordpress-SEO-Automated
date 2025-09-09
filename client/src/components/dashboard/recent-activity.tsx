@@ -37,9 +37,9 @@ export default function RecentActivity() {
   }
 
   const recentActivities = activities?.slice(0, 4) || [];
-  
+
   const getWebsiteName = (websiteId: string) => {
-    const website = websites?.find(w => w.id === websiteId);
+    const website = websites?.find((w) => w.id === websiteId);
     return website?.name || "Unknown Website";
   };
 
@@ -50,17 +50,27 @@ export default function RecentActivity() {
       </div>
       <div className="divide-y divide-gray-200">
         {recentActivities.map((activity) => {
-          const colorClass = activityTypeColors[activity.type as keyof typeof activityTypeColors] || "bg-gray-500";
-          
+          const colorClass =
+            activityTypeColors[
+              activity.type as keyof typeof activityTypeColors
+            ] || "bg-gray-500";
+
           return (
             <div key={activity.id} className="px-6 py-4">
               <div className="flex items-center space-x-3">
                 <div className={`w-2 h-2 ${colorClass} rounded-full`}></div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-900">{activity.description}</p>
+                  <p className="text-sm text-gray-900">
+                    {activity.description}
+                  </p>
                   <p className="text-xs text-gray-500">
-                    {activity.websiteId ? getWebsiteName(activity.websiteId) : "System"} • {" "}
-                    {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
+                    {activity.websiteId
+                      ? getWebsiteName(activity.websiteId)
+                      : "System"}{" "}
+                    •{" "}
+                    {formatDistanceToNow(new Date(activity.createdAt), {
+                      addSuffix: true,
+                    })}
                   </p>
                 </div>
               </div>
@@ -69,7 +79,10 @@ export default function RecentActivity() {
         })}
       </div>
       <div className="px-6 py-3 bg-gray-50">
-        <a href="/activity-logs" className="text-sm font-medium text-primary-600 hover:text-primary-500">
+        <a
+          href="/activity-logs"
+          className="text-sm font-medium text-primary-600 hover:text-primary-500"
+        >
           View all activity →
         </a>
       </div>

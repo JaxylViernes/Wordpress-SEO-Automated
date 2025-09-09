@@ -34,7 +34,6 @@ export default function Header() {
                 <Search className="w-5 h-5" />
               </div>
               {/* Fully functional search (typeahead + results page) */}
-      
             </div>
           </div>
         </div>

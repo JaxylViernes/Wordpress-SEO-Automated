@@ -5,7 +5,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -17,7 +23,12 @@ const formSchema = insertWebsiteSchema.extend({
   name: z.string().min(1, "Website name is required"),
   url: z.string().url("Please enter a valid URL"),
   wpApplicationName: z.string().min(1, "Application name is required"),
-  wpApplicationPassword: z.string().min(20, "Application password must be at least 20 characters (WordPress generates 24)"),
+  wpApplicationPassword: z
+    .string()
+    .min(
+      20,
+      "Application password must be at least 20 characters (WordPress generates 24)"
+    ),
   wpUsername: z.string().min(1, "WordPress username is required"),
 });
 
@@ -31,7 +42,7 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isValidatingUrl, setIsValidatingUrl] = useState(false);
-  
+
   const {
     register,
     handleSubmit,
@@ -52,12 +63,14 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
     mutationFn: api.createWebsite,
     onSuccess: (data) => {
       console.log("✅ Website created successfully:", data);
-      
+
       // Invalidate user-scoped queries
       queryClient.invalidateQueries({ queryKey: ["/api/user/websites"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/user/dashboard/stats"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/user/dashboard/stats"],
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/user/activity-logs"] });
-      
+
       // Optionally, add the new website to the cache immediately for instant UI update
       queryClient.setQueryData(["/api/user/websites"], (oldData: any) => {
         if (oldData) {
@@ -68,24 +81,31 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
 
       toast({
         title: "Website Connected Successfully",
-        description: `${watch("name")} has been connected and is ready for content management.`,
+        description: `${watch(
+          "name"
+        )} has been connected and is ready for content management.`,
       });
       onSuccess();
     },
     onError: (error: any) => {
       console.error("❌ Website creation error:", error);
-      
+
       // Handle specific error types
-      let errorMessage = "Failed to connect website. Please check your credentials.";
-      
+      let errorMessage =
+        "Failed to connect website. Please check your credentials.";
+
       if (error.message?.includes("authentication")) {
-        errorMessage = "WordPress authentication failed. Please check your username and application password.";
+        errorMessage =
+          "WordPress authentication failed. Please check your username and application password.";
       } else if (error.message?.includes("network")) {
-        errorMessage = "Unable to reach your WordPress site. Please check the URL.";
+        errorMessage =
+          "Unable to reach your WordPress site. Please check the URL.";
       } else if (error.message?.includes("permission")) {
-        errorMessage = "Insufficient permissions. Please ensure your WordPress user has admin or editor rights.";
+        errorMessage =
+          "Insufficient permissions. Please ensure your WordPress user has admin or editor rights.";
       } else if (error.message?.includes("access denied")) {
-        errorMessage = "Access denied. Please ensure you're logged in and try again.";
+        errorMessage =
+          "Access denied. Please ensure you're logged in and try again.";
       } else if (error.message?.includes("validation")) {
         errorMessage = "Please check all required fields are filled correctly.";
       } else if (error.message) {
@@ -102,21 +122,24 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
 
   // URL validation function
   const validateWebsiteUrl = async (url: string) => {
-    if (!url || !url.startsWith('http')) return;
-    
+    if (!url || !url.startsWith("http")) return;
+
     setIsValidatingUrl(true);
     try {
       const result = await api.validateUrl(url);
       if (!result.valid) {
         toast({
           title: "URL Validation Failed",
-          description: result.message || "The provided URL appears to be invalid or unreachable.",
+          description:
+            result.message ||
+            "The provided URL appears to be invalid or unreachable.",
           variant: "destructive",
         });
       } else if (result.isWordPress === false) {
         toast({
           title: "Not a WordPress Site",
-          description: "The URL doesn't appear to be a WordPress site. Please verify the URL.",
+          description:
+            "The URL doesn't appear to be a WordPress site. Please verify the URL.",
           variant: "destructive",
         });
       } else if (result.isWordPress === true) {
@@ -135,17 +158,17 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
 
   const onSubmit = async (data: FormData) => {
     console.log("🔍 Form submitted:", data);
-    
+
     // Validate URL before creating website
     if (!isValidatingUrl) {
       await validateWebsiteUrl(data.url);
     }
-    
+
     createWebsite.mutate(data);
   };
 
   const watchedUrl = watch("url");
-  
+
   // Auto-validate URL when it changes (debounced)
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -153,7 +176,7 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
         validateWebsiteUrl(watchedUrl);
       }
     }, 1000);
-    
+
     return () => clearTimeout(timer);
   }, [watchedUrl]);
 
@@ -162,8 +185,11 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
       <DialogHeader>
         <DialogTitle>Add New Website</DialogTitle>
       </DialogHeader>
-      
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-h-[70vh] overflow-y-auto px-1">
+
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        className="space-y-4 max-h-[70vh] overflow-y-auto px-1"
+      >
         <div>
           <Label htmlFor="name">Website Name</Label>
           <Input
@@ -196,15 +222,20 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
             <p className="text-sm text-red-600 mt-1">{errors.url.message}</p>
           )}
         </div>
-        
+
         {/* WordPress Application Password Instructions */}
         <div className="bg-blue-50 dark:bg-blue-950 p-3 sm:p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-          <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-2 text-sm sm:text-base">🔒 Secure WordPress Authentication</h4>
+          <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-2 text-sm sm:text-base">
+            🔒 Secure WordPress Authentication
+          </h4>
           <p className="text-xs sm:text-sm text-blue-800 dark:text-blue-200 mb-2">
-            We use WordPress Application Passwords for secure, revokable access without storing your main password.
+            We use WordPress Application Passwords for secure, revokable access
+            without storing your main password.
           </p>
           <details className="text-xs sm:text-sm text-blue-700 dark:text-blue-300">
-            <summary className="cursor-pointer font-medium mb-2">How to create an Application Password →</summary>
+            <summary className="cursor-pointer font-medium mb-2">
+              How to create an Application Password →
+            </summary>
             <ol className="list-decimal list-inside space-y-1 ml-2 text-xs sm:text-sm">
               <li>Log into your WordPress admin dashboard</li>
               <li>Go to Users → Your Profile</li>
@@ -215,7 +246,9 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
               <li>Paste it in the form below</li>
             </ol>
             <div className="mt-2 p-2 bg-yellow-100 dark:bg-yellow-900 rounded text-xs">
-              <strong>⚠️ Security Note:</strong> Application passwords can be revoked at any time from your WordPress dashboard without affecting your main login.
+              <strong>⚠️ Security Note:</strong> Application passwords can be
+              revoked at any time from your WordPress dashboard without
+              affecting your main login.
             </div>
           </details>
         </div>
@@ -228,12 +261,16 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
             placeholder="AI Content Manager - My Site"
           />
           {errors.wpApplicationName && (
-            <p className="text-sm text-red-600 mt-1">{errors.wpApplicationName.message}</p>
+            <p className="text-sm text-red-600 mt-1">
+              {errors.wpApplicationName.message}
+            </p>
           )}
         </div>
-        
+
         <div>
-          <Label htmlFor="wpApplicationPassword">WordPress Application Password</Label>
+          <Label htmlFor="wpApplicationPassword">
+            WordPress Application Password
+          </Label>
           <Input
             id="wpApplicationPassword"
             type="password"
@@ -242,11 +279,15 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
             className="font-mono"
           />
           {errors.wpApplicationPassword && (
-            <p className="text-sm text-red-600 mt-1">{errors.wpApplicationPassword.message}</p>
+            <p className="text-sm text-red-600 mt-1">
+              {errors.wpApplicationPassword.message}
+            </p>
           )}
-          <p className="text-xs text-gray-500 mt-1">24-character password generated by WordPress</p>
+          <p className="text-xs text-gray-500 mt-1">
+            24-character password generated by WordPress
+          </p>
         </div>
-        
+
         <div>
           <Label htmlFor="wpUsername">WordPress Username</Label>
           <Input
@@ -255,12 +296,16 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
             placeholder="your-wp-username"
           />
           {errors.wpUsername && (
-            <p className="text-sm text-red-600 mt-1">{errors.wpUsername.message}</p>
+            <p className="text-sm text-red-600 mt-1">
+              {errors.wpUsername.message}
+            </p>
           )}
         </div>
-        
+
         <div>
-          <Label htmlFor="aiModel">AI Model Preference</Label>
+          <Label htmlFor="aiModel">
+            AI Model Preference (for auto-generate and auto-posting)
+          </Label>
           <Select
             value={watch("aiModel")}
             onValueChange={(value) => setValue("aiModel", value)}
@@ -271,13 +316,16 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
             <SelectContent>
               <SelectItem value="gpt-4o">GPT-4 (Recommended)</SelectItem>
               <SelectItem value="claude-3">Claude-3 (Creative)</SelectItem>
-              <SelectItem value="auto-select">Auto-Select Best</SelectItem>
+              <SelectItem value="gemini">Gemini</SelectItem>
+              {/* <SelectItem value="auto-select">Auto-Select Best</SelectItem> */}
             </SelectContent>
           </Select>
         </div>
-        
+
         <div>
-          <Label htmlFor="brandVoice">Brand Voice</Label>
+          <Label htmlFor="brandVoice">
+            Brand Voice (for auto-generate and auto-posting)
+          </Label>
           <Select
             value={watch("brandVoice") || "professional"}
             onValueChange={(value) => setValue("brandVoice", value)}
@@ -295,9 +343,11 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
             </SelectContent>
           </Select>
         </div>
-        
+
         <div>
-          <Label htmlFor="targetAudience">Target Audience</Label>
+          <Label htmlFor="targetAudience">
+            Target Audience (for auto-generate and auto-posting)
+          </Label>
           <Input
             id="targetAudience"
             {...register("targetAudience")}
@@ -306,26 +356,30 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
         </div>
 
         <div>
-          <Label htmlFor="contentGuidelines">Content Guidelines (Optional)</Label>
+          <Label htmlFor="contentGuidelines">
+            Content Guidelines (for auto-generate and auto-posting) (Optional)
+          </Label>
           <Input
             id="contentGuidelines"
             {...register("contentGuidelines")}
             placeholder="e.g., Always include call-to-action, focus on benefits"
           />
         </div>
-        
+
         <div className="space-y-3">
           <div className="flex items-center space-x-2">
             <Checkbox
               id="requireApproval"
               checked={watch("requireApproval")}
-              onCheckedChange={(checked) => setValue("requireApproval", !!checked)}
+              onCheckedChange={(checked) =>
+                setValue("requireApproval", !!checked)
+              }
             />
             <Label htmlFor="requireApproval" className="text-sm">
               Require manual approval before publishing (Recommended)
             </Label>
           </div>
-          
+
           <div className="flex items-center space-x-2">
             <Checkbox
               id="autoPosting"
@@ -339,14 +393,17 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
         </div>
 
         {/* Connection Test Preview */}
-        {watch("url") && watch("wpUsername") && watch("wpApplicationPassword") && (
-          <div className="bg-green-50 dark:bg-green-950 p-3 rounded-lg border border-green-200 dark:border-green-800">
-            <p className="text-xs text-green-800 dark:text-green-200">
-              ✓ Ready to connect to <strong>{watch("url")}</strong> as user <strong>{watch("wpUsername")}</strong>
-            </p>
-          </div>
-        )}
-        
+        {watch("url") &&
+          watch("wpUsername") &&
+          watch("wpApplicationPassword") && (
+            <div className="bg-green-50 dark:bg-green-950 p-3 rounded-lg border border-green-200 dark:border-green-800">
+              <p className="text-xs text-green-800 dark:text-green-200">
+                ✓ Ready to connect to <strong>{watch("url")}</strong> as user{" "}
+                <strong>{watch("wpUsername")}</strong>
+              </p>
+            </div>
+          )}
+
         <div className="flex flex-col-reverse sm:flex-row space-y-2 space-y-reverse sm:space-y-0 sm:space-x-3 pt-4">
           <Button
             type="button"
@@ -362,7 +419,11 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
             className="w-full sm:flex-1 bg-primary-500 hover:bg-primary-600"
             disabled={createWebsite.isPending || isValidatingUrl}
           >
-            {createWebsite.isPending ? "Connecting..." : isValidatingUrl ? "Validating..." : "Connect Website"}
+            {createWebsite.isPending
+              ? "Connecting..."
+              : isValidatingUrl
+              ? "Validating..."
+              : "Connect Website"}
           </Button>
         </div>
       </form>

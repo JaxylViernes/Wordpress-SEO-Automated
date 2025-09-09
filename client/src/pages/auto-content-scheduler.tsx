@@ -1,111 +1,154 @@
 import { useState, useEffect } from "react";
-import { Calendar, Clock, Settings, Play, Pause, AlertCircle, CheckCircle, Bot, Sparkles, RefreshCw, X, ChevronDown, ChevronUp, Zap, Shield, Target, Cpu } from "lucide-react";
+import {
+  Calendar,
+  Clock,
+  Settings,
+  Play,
+  Pause,
+  AlertCircle,
+  CheckCircle,
+  Bot,
+  Sparkles,
+  RefreshCw,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Zap,
+  Shield,
+  Target,
+  Cpu,
+} from "lucide-react";
 
 // API functions for auto-generation
 const autoGenApi = {
   async getSchedules(websiteId: string) {
-    const url = websiteId ? `/api/user/auto-schedules?websiteId=${websiteId}` : '/api/user/auto-schedules';
+    const url = websiteId
+      ? `/api/user/auto-schedules?websiteId=${websiteId}`
+      : "/api/user/auto-schedules";
     const response = await fetch(url);
-    
+
     // Check if response is HTML (API doesn't exist)
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
-      console.log('Auto-schedules API not implemented yet');
+      console.log("Auto-schedules API not implemented yet");
       return [];
     }
-    
-    if (!response.ok) throw new Error('Failed to fetch schedules');
+
+    if (!response.ok) throw new Error("Failed to fetch schedules");
     return response.json();
   },
 
-async createSchedule(data: any) {
-  try {
-    const response = await fetch('/api/user/auto-schedules', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    
-    // Check if response is HTML (API doesn't exist)
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-      console.log('Create schedule API not implemented yet');
+  async createSchedule(data: any) {
+    try {
+      const response = await fetch("/api/user/auto-schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+
+      // Check if response is HTML (API doesn't exist)
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        console.log("Create schedule API not implemented yet");
+        // Return mock data for testing
+        return {
+          id: Date.now().toString(),
+          ...data,
+          createdAt: new Date().toISOString(),
+        };
+      }
+
+      if (!response.ok) throw new Error("Failed to create schedule");
+      return response.json();
+    } catch (error) {
+      console.log("Create schedule API error:", error);
       // Return mock data for testing
       return {
         id: Date.now().toString(),
         ...data,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
     }
-    
-    if (!response.ok) throw new Error('Failed to create schedule');
-    return response.json();
-  } catch (error) {
-    console.log('Create schedule API error:', error);
-    // Return mock data for testing
-    return {
-      id: Date.now().toString(),
-      ...data,
-      createdAt: new Date().toISOString()
-    };
-  }
-},
+  },
 
   async updateSchedule(scheduleId: string, data: any) {
     const response = await fetch(`/api/user/auto-schedules/${scheduleId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
     });
-    if (!response.ok) throw new Error('Failed to update schedule');
+    if (!response.ok) throw new Error("Failed to update schedule");
     return response.json();
   },
 
   async deleteSchedule(scheduleId: string) {
     const response = await fetch(`/api/user/auto-schedules/${scheduleId}`, {
-      method: 'DELETE'
+      method: "DELETE",
     });
-    if (!response.ok) throw new Error('Failed to delete schedule');
+    if (!response.ok) throw new Error("Failed to delete schedule");
     return response.json();
   },
 
   async toggleSchedule(scheduleId: string, isActive: boolean) {
-    const response = await fetch(`/api/user/auto-schedules/${scheduleId}/toggle`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isActive })
-    });
-    if (!response.ok) throw new Error('Failed to toggle schedule');
+    const response = await fetch(
+      `/api/user/auto-schedules/${scheduleId}/toggle`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+      }
+    );
+    if (!response.ok) throw new Error("Failed to toggle schedule");
     return response.json();
   },
 
   async runScheduleNow(scheduleId: string) {
     const response = await fetch(`/api/user/auto-schedules/${scheduleId}/run`, {
-      method: 'POST'
+      method: "POST",
     });
-    if (!response.ok) throw new Error('Failed to run schedule');
+    if (!response.ok) throw new Error("Failed to run schedule");
     return response.json();
-  }
+  },
 };
 
 const frequencyOptions = [
-  { value: 'daily', label: 'Daily', description: 'Generate content every day' },
-  { value: 'twice_weekly', label: 'Twice a Week', description: 'Monday & Thursday' },
-  { value: 'weekly', label: 'Weekly', description: 'Once per week' },
-  { value: 'biweekly', label: 'Every 2 Weeks', description: 'Every other week' },
-  { value: 'monthly', label: 'Monthly', description: 'Once per month' },
-  { value: 'custom', label: 'Custom Schedule', description: 'Set specific days' }
+  { value: "daily", label: "Daily", description: "Generate content every day" },
+  {
+    value: "twice_weekly",
+    label: "Twice a Week",
+    description: "Monday & Thursday",
+  },
+  { value: "weekly", label: "Weekly", description: "Once per week" },
+  {
+    value: "biweekly",
+    label: "Every 2 Weeks",
+    description: "Every other week",
+  },
+  { value: "monthly", label: "Monthly", description: "Once per month" },
+  {
+    value: "custom",
+    label: "Custom Schedule",
+    description: "Set specific days",
+  },
 ];
 
-const dayOptions = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const dayOptions = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
 
 const getProviderIcon = (provider: string) => {
   switch (provider) {
-    case 'openai':
+    case "openai":
       return <Cpu className="w-4 h-4 text-green-600" />;
-    case 'anthropic':
+    case "anthropic":
       return <Bot className="w-4 h-4 text-purple-600" />;
-    case 'gemini':
+    case "gemini":
       return <Sparkles className="w-4 h-4 text-blue-600" />;
     default:
       return <Bot className="w-4 h-4 text-gray-600" />;
@@ -114,14 +157,14 @@ const getProviderIcon = (provider: string) => {
 
 const getProviderName = (provider: string) => {
   switch (provider) {
-    case 'openai':
-      return 'OpenAI GPT-4O';
-    case 'anthropic':
-      return 'Anthropic Claude';
-    case 'gemini':
-      return 'Google Gemini';
+    case "openai":
+      return "OpenAI GPT-4O";
+    case "anthropic":
+      return "Anthropic Claude";
+    case "gemini":
+      return "Google Gemini";
     default:
-      return provider || 'Unknown';
+      return provider || "Unknown";
   }
 };
 
@@ -131,7 +174,11 @@ interface AutoContentSchedulerProps {
   onScheduleCreated?: () => void;
 }
 
-export default function AutoContentScheduler({ websites, selectedWebsite, onScheduleCreated }: AutoContentSchedulerProps) {
+export default function AutoContentScheduler({
+  websites,
+  selectedWebsite,
+  onScheduleCreated,
+}: AutoContentSchedulerProps) {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -139,46 +186,46 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const [expandedSchedule, setExpandedSchedule] = useState<string | null>(null);
   const [toast, setToast] = useState<any>(null);
-  
+
   // Form state for creating new schedule
   const [scheduleForm, setScheduleForm] = useState({
-    websiteId: selectedWebsite || '',
-    name: '',
-    frequency: 'weekly',
+    websiteId: selectedWebsite || "",
+    name: "",
+    frequency: "weekly",
     customDays: [] as string[],
-    timeOfDay: '09:00',
+    timeOfDay: "09:00",
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    
+
     // Content settings
     topics: [] as string[],
-    topicRotation: 'random', // random, sequential
-    keywords: '',
-    tone: 'professional',
+    topicRotation: "random", // random, sequential
+    keywords: "",
+    tone: "professional",
     wordCount: 800,
     seoOptimized: true,
-    brandVoice: '',
-    targetAudience: '',
+    brandVoice: "",
+    targetAudience: "",
     eatCompliance: false,
-    aiProvider: 'openai',
-    
+    aiProvider: "openai",
+
     // Image settings
     includeImages: false,
     imageCount: 1,
-    imageStyle: 'natural',
-    
+    imageStyle: "natural",
+
     // Publishing settings
     autoPublish: false,
     publishDelay: 0, // hours after generation
-    
+
     // Limits
     maxMonthlyPosts: 30,
-    maxDailyCost: 5.00, // in dollars
-    
-    isActive: true
+    maxDailyCost: 5.0, // in dollars
+
+    isActive: true,
   });
 
   const [formErrors, setFormErrors] = useState<any>({});
-  const [topicInput, setTopicInput] = useState('');
+  const [topicInput, setTopicInput] = useState("");
 
   useEffect(() => {
     if (selectedWebsite) {
@@ -188,19 +235,19 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
 
   useEffect(() => {
     if (selectedWebsite) {
-      setScheduleForm(prev => ({ ...prev, websiteId: selectedWebsite }));
+      setScheduleForm((prev) => ({ ...prev, websiteId: selectedWebsite }));
     }
   }, [selectedWebsite]);
 
   const loadSchedules = async () => {
     if (!selectedWebsite) return;
-    
+
     try {
       setIsLoading(true);
       const data = await autoGenApi.getSchedules(selectedWebsite);
       setSchedules(data);
     } catch (error: any) {
-      console.log('Auto-schedules API not available yet');
+      console.log("Auto-schedules API not available yet");
       setSchedules([]);
       // Don't show error toast during development while API is not implemented
       // showToastMessage('Failed to load schedules', error.message, 'destructive');
@@ -209,146 +256,185 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
     }
   };
 
-  const showToastMessage = (title: string, description: string, variant = 'default') => {
+  const showToastMessage = (
+    title: string,
+    description: string,
+    variant = "default"
+  ) => {
     setToast({ title, description, variant });
     setTimeout(() => setToast(null), 5000);
   };
 
   const validateForm = () => {
     const errors: any = {};
-    
-    if (!scheduleForm.websiteId) errors.websiteId = 'Please select a website';
-    if (!scheduleForm.name.trim()) errors.name = 'Schedule name is required';
-    if (scheduleForm.topics.length === 0) errors.topics = 'At least one topic is required';
-    if (scheduleForm.frequency === 'custom' && scheduleForm.customDays.length === 0) {
-      errors.customDays = 'Please select at least one day for custom schedule';
+
+    if (!scheduleForm.websiteId) errors.websiteId = "Please select a website";
+    if (!scheduleForm.name.trim()) errors.name = "Schedule name is required";
+    if (scheduleForm.topics.length === 0)
+      errors.topics = "At least one topic is required";
+    if (
+      scheduleForm.frequency === "custom" &&
+      scheduleForm.customDays.length === 0
+    ) {
+      errors.customDays = "Please select at least one day for custom schedule";
     }
     if (scheduleForm.wordCount < 100 || scheduleForm.wordCount > 5000) {
-      errors.wordCount = 'Word count must be between 100 and 5000';
+      errors.wordCount = "Word count must be between 100 and 5000";
     }
     if (scheduleForm.maxDailyCost < 0.01 || scheduleForm.maxDailyCost > 100) {
-      errors.maxDailyCost = 'Daily cost limit must be between $0.01 and $100';
+      errors.maxDailyCost = "Daily cost limit must be between $0.01 and $100";
     }
-    
+
     // Image validation - matching ai-content.tsx logic (no OpenAI requirement)
     if (scheduleForm.includeImages) {
       if (scheduleForm.imageCount < 1 || scheduleForm.imageCount > 3) {
-        errors.imageCount = 'Image count must be between 1 and 3';
+        errors.imageCount = "Image count must be between 1 and 3";
       }
-      
-      const validStyles = ['natural', 'digital_art', 'photographic', 'cinematic'];
+
+      const validStyles = [
+        "natural",
+        "digital_art",
+        "photographic",
+        "cinematic",
+      ];
       if (!validStyles.includes(scheduleForm.imageStyle)) {
-        errors.imageStyle = 'Please select a valid image style';
+        errors.imageStyle = "Please select a valid image style";
       }
     }
-    
+
     // AI provider validation
-    if (!scheduleForm.aiProvider || !['openai', 'anthropic', 'gemini'].includes(scheduleForm.aiProvider)) {
-      errors.aiProvider = 'Please select a valid AI provider';
+    if (
+      !scheduleForm.aiProvider ||
+      !["openai", "anthropic", "gemini"].includes(scheduleForm.aiProvider)
+    ) {
+      errors.aiProvider = "Please select a valid AI provider";
     }
-    
+
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
   const handleAddTopic = () => {
     if (topicInput.trim() && !scheduleForm.topics.includes(topicInput.trim())) {
-      setScheduleForm(prev => ({
+      setScheduleForm((prev) => ({
         ...prev,
-        topics: [...prev.topics, topicInput.trim()]
+        topics: [...prev.topics, topicInput.trim()],
       }));
-      setTopicInput('');
+      setTopicInput("");
     }
   };
 
   const handleRemoveTopic = (topic: string) => {
-    setScheduleForm(prev => ({
+    setScheduleForm((prev) => ({
       ...prev,
-      topics: prev.topics.filter(t => t !== topic)
+      topics: prev.topics.filter((t) => t !== topic),
     }));
   };
 
   const handleCreateSchedule = async () => {
     if (!validateForm()) return;
-    
+
     setIsCreating(true);
     try {
       await autoGenApi.createSchedule(scheduleForm);
       await loadSchedules();
       setShowCreateDialog(false);
       resetForm();
-      showToastMessage('Schedule Created', 'Your auto-generation schedule has been created successfully');
+      showToastMessage(
+        "Schedule Created",
+        "Your auto-generation schedule has been created successfully"
+      );
       if (onScheduleCreated) onScheduleCreated();
     } catch (error: any) {
-      showToastMessage('Failed to create schedule', error.message, 'destructive');
+      showToastMessage(
+        "Failed to create schedule",
+        error.message,
+        "destructive"
+      );
     } finally {
       setIsCreating(false);
     }
   };
 
-  const handleToggleSchedule = async (scheduleId: string, currentStatus: boolean) => {
+  const handleToggleSchedule = async (
+    scheduleId: string,
+    currentStatus: boolean
+  ) => {
     try {
       await autoGenApi.toggleSchedule(scheduleId, !currentStatus);
       await loadSchedules();
       showToastMessage(
-        currentStatus ? 'Schedule Paused' : 'Schedule Activated',
-        currentStatus ? 'Auto-generation has been paused' : 'Auto-generation has been activated'
+        currentStatus ? "Schedule Paused" : "Schedule Activated",
+        currentStatus
+          ? "Auto-generation has been paused"
+          : "Auto-generation has been activated"
       );
     } catch (error: any) {
-      showToastMessage('Failed to toggle schedule', error.message, 'destructive');
+      showToastMessage(
+        "Failed to toggle schedule",
+        error.message,
+        "destructive"
+      );
     }
   };
 
   const handleRunNow = async (scheduleId: string) => {
     try {
       await autoGenApi.runScheduleNow(scheduleId);
-      showToastMessage('Generation Started', 'Content generation has been triggered');
+      showToastMessage(
+        "Generation Started",
+        "Content generation has been triggered"
+      );
       await loadSchedules();
     } catch (error: any) {
-      showToastMessage('Failed to run schedule', error.message, 'destructive');
+      showToastMessage("Failed to run schedule", error.message, "destructive");
     }
   };
 
   const handleDeleteSchedule = async (scheduleId: string) => {
-    if (!confirm('Are you sure you want to delete this schedule?')) return;
-    
+    if (!confirm("Are you sure you want to delete this schedule?")) return;
+
     try {
       await autoGenApi.deleteSchedule(scheduleId);
       await loadSchedules();
-      showToastMessage('Schedule Deleted', 'The schedule has been removed');
+      showToastMessage("Schedule Deleted", "The schedule has been removed");
     } catch (error: any) {
-      showToastMessage('Failed to delete schedule', error.message, 'destructive');
+      showToastMessage(
+        "Failed to delete schedule",
+        error.message,
+        "destructive"
+      );
     }
   };
 
   const resetForm = () => {
     setScheduleForm({
-      websiteId: selectedWebsite || '',
-      name: '',
-      frequency: 'weekly',
+      websiteId: selectedWebsite || "",
+      name: "",
+      frequency: "weekly",
       customDays: [],
-      timeOfDay: '09:00',
+      timeOfDay: "09:00",
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       topics: [],
-      topicRotation: 'random',
-      keywords: '',
-      tone: 'professional',
+      topicRotation: "random",
+      keywords: "",
+      tone: "professional",
       wordCount: 800,
       seoOptimized: true,
-      brandVoice: '',
-      targetAudience: '',
+      brandVoice: "",
+      targetAudience: "",
       eatCompliance: false,
-      aiProvider: 'openai',
+      aiProvider: "openai",
       includeImages: false,
       imageCount: 1,
-      imageStyle: 'natural',
+      imageStyle: "natural",
       autoPublish: false,
       publishDelay: 0,
       maxMonthlyPosts: 30,
-      maxDailyCost: 5.00,
-      isActive: true
+      maxDailyCost: 5.0,
+      isActive: true,
     });
-    setTopicInput('');
+    setTopicInput("");
     setFormErrors({});
     setShowAdvancedSettings(false);
   };
@@ -362,27 +448,34 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
   };
 
   const getFrequencyLabel = (frequency: string, customDays?: string[]) => {
-    if (frequency === 'custom' && customDays?.length > 0) {
-      return `Custom (${customDays.join(', ')})`;
+    if (frequency === "custom" && customDays?.length > 0) {
+      return `Custom (${customDays.join(", ")})`;
     }
-    return frequencyOptions.find(f => f.value === frequency)?.label || frequency;
+    return (
+      frequencyOptions.find((f) => f.value === frequency)?.label || frequency
+    );
   };
 
   return (
     <div className="bg-white rounded-lg shadow">
       {/* Toast Notification */}
       {toast && (
-        <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg border max-w-md ${
-          toast.variant === 'destructive' 
-            ? 'bg-red-50 border-red-200 text-red-800' 
-            : 'bg-green-50 border-green-200 text-green-800'
-        }`}>
+        <div
+          className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg border max-w-md ${
+            toast.variant === "destructive"
+              ? "bg-red-50 border-red-200 text-red-800"
+              : "bg-green-50 border-green-200 text-green-800"
+          }`}
+        >
           <div className="flex items-start">
             <div className="flex-1">
               <div className="font-medium text-sm">{toast.title}</div>
               <div className="text-xs opacity-90 mt-1">{toast.description}</div>
             </div>
-            <button onClick={() => setToast(null)} className="ml-3 opacity-70 hover:opacity-100">
+            <button
+              onClick={() => setToast(null)}
+              className="ml-3 opacity-70 hover:opacity-100"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -392,7 +485,9 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-lg font-medium text-gray-900">Auto-Generation Schedules</h3>
+            <h3 className="text-lg font-medium text-gray-900">
+              Auto-Generation Schedules
+            </h3>
             <p className="text-sm text-gray-500 mt-1">
               Automatically generate and publish content on a schedule
             </p>
@@ -410,7 +505,7 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
         {/* Schedules List */}
         {isLoading ? (
           <div className="space-y-3">
-            {[1, 2].map(i => (
+            {[1, 2].map((i) => (
               <div key={i} className="border rounded-lg p-4 animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-1/3 mb-2"></div>
                 <div className="h-3 bg-gray-200 rounded w-2/3"></div>
@@ -420,17 +515,24 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
         ) : schedules.length > 0 ? (
           <div className="space-y-4">
             {schedules.map((schedule) => (
-              <div key={schedule.id} className="border rounded-lg overflow-hidden">
+              <div
+                key={schedule.id}
+                className="border rounded-lg overflow-hidden"
+              >
                 <div className="p-4">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3">
-                        <h4 className="font-medium text-gray-900">{schedule.name}</h4>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          schedule.isActive 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-gray-100 text-gray-800'
-                        }`}>
+                        <h4 className="font-medium text-gray-900">
+                          {schedule.name}
+                        </h4>
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            schedule.isActive
+                              ? "bg-green-100 text-green-800"
+                              : "bg-gray-100 text-gray-800"
+                          }`}
+                        >
                           {schedule.isActive ? (
                             <>
                               <CheckCircle className="w-3 h-3 mr-1" />
@@ -448,11 +550,14 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                           {getProviderName(schedule.aiProvider)}
                         </span>
                       </div>
-                      
+
                       <div className="mt-2 flex items-center space-x-4 text-sm text-gray-600">
                         <span className="flex items-center">
                           <Clock className="w-4 h-4 mr-1" />
-                          {getFrequencyLabel(schedule.frequency, schedule.customDays)}
+                          {getFrequencyLabel(
+                            schedule.frequency,
+                            schedule.customDays
+                          )}
                         </span>
                         <span>•</span>
                         <span>{schedule.topics?.length || 0} topics</span>
@@ -462,7 +567,8 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                           <>
                             <span>•</span>
                             <span className="text-orange-600">
-                              {schedule.imageCount} image{schedule.imageCount > 1 ? 's' : ''}
+                              {schedule.imageCount} image
+                              {schedule.imageCount > 1 ? "s" : ""}
                             </span>
                           </>
                         )}
@@ -473,14 +579,14 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                           </>
                         )}
                       </div>
-                      
+
                       {schedule.isActive && (
                         <div className="mt-2 text-xs text-gray-500">
                           Next run: {getNextRunTime(schedule)}
                         </div>
                       )}
                     </div>
-                    
+
                     <div className="flex items-center space-x-2">
                       <button
                         onClick={() => handleRunNow(schedule.id)}
@@ -490,21 +596,37 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                         <Play className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleToggleSchedule(schedule.id, schedule.isActive)}
+                        onClick={() =>
+                          handleToggleSchedule(schedule.id, schedule.isActive)
+                        }
                         className="p-1.5 text-gray-600 hover:bg-gray-50 rounded"
-                        title={schedule.isActive ? 'Pause' : 'Activate'}
+                        title={schedule.isActive ? "Pause" : "Activate"}
                       >
-                        {schedule.isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                        {schedule.isActive ? (
+                          <Pause className="w-4 h-4" />
+                        ) : (
+                          <Play className="w-4 h-4" />
+                        )}
                       </button>
                       <button
-                        onClick={() => setExpandedSchedule(expandedSchedule === schedule.id ? null : schedule.id)}
+                        onClick={() =>
+                          setExpandedSchedule(
+                            expandedSchedule === schedule.id
+                              ? null
+                              : schedule.id
+                          )
+                        }
                         className="p-1.5 text-gray-600 hover:bg-gray-50 rounded"
                       >
-                        {expandedSchedule === schedule.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        {expandedSchedule === schedule.id ? (
+                          <ChevronUp className="w-4 h-4" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4" />
+                        )}
                       </button>
                     </div>
                   </div>
-                  
+
                   {/* Expanded Details */}
                   {expandedSchedule === schedule.id && (
                     <div className="mt-4 pt-4 border-t space-y-3">
@@ -512,28 +634,44 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                         <div>
                           <span className="text-gray-500">Topics:</span>
                           <div className="mt-1 flex flex-wrap gap-1">
-                            {schedule.topics?.map((topic: string, idx: number) => (
-                              <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-800">
-                                {topic}
-                              </span>
-                            ))}
+                            {schedule.topics?.map(
+                              (topic: string, idx: number) => (
+                                <span
+                                  key={idx}
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-800"
+                                >
+                                  {topic}
+                                </span>
+                              )
+                            )}
                           </div>
                         </div>
-                        
+
                         <div>
                           <span className="text-gray-500">Settings:</span>
                           <div className="mt-1 space-y-1 text-xs">
-                            <div>Max monthly posts: {schedule.maxMonthlyPosts}</div>
-                            <div>Daily cost limit: ${schedule.maxDailyCost?.toFixed(2)}</div>
-                            <div>Time: {schedule.timeOfDay} {schedule.timezone}</div>
+                            <div>
+                              Max monthly posts: {schedule.maxMonthlyPosts}
+                            </div>
+                            <div>
+                              Daily cost limit: $
+                              {schedule.maxDailyCost?.toFixed(2)}
+                            </div>
+                            <div>
+                              Time: {schedule.timeOfDay} {schedule.timezone}
+                            </div>
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center justify-between pt-3 border-t">
                         <div className="text-xs text-gray-500">
-                          Created: {new Date(schedule.createdAt).toLocaleDateString()}
-                          {schedule.lastRun && ` • Last run: ${new Date(schedule.lastRun).toLocaleDateString()}`}
+                          Created:{" "}
+                          {new Date(schedule.createdAt).toLocaleDateString()}
+                          {schedule.lastRun &&
+                            ` • Last run: ${new Date(
+                              schedule.lastRun
+                            ).toLocaleDateString()}`}
                         </div>
                         <button
                           onClick={() => handleDeleteSchedule(schedule.id)}
@@ -551,7 +689,9 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
         ) : (
           <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-lg">
             <Calendar className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No schedules yet</h3>
+            <h3 className="mt-2 text-sm font-medium text-gray-900">
+              No schedules yet
+            </h3>
             <p className="mt-1 text-sm text-gray-500">
               Create a schedule to automatically generate content
             </p>
@@ -573,39 +713,60 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
       {showCreateDialog && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={() => setShowCreateDialog(false)}></div>
-            
+            <div
+              className="fixed inset-0 bg-gray-500 bg-opacity-75"
+              onClick={() => setShowCreateDialog(false)}
+            ></div>
+
             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full">
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6">
                 <div className="mb-4">
-                  <h3 className="text-lg font-medium text-gray-900">Create Auto-Generation Schedule</h3>
+                  <h3 className="text-lg font-medium text-gray-900">
+                    Create Auto-Generation Schedule
+                  </h3>
                   <p className="mt-1 text-sm text-gray-500">
                     Set up automatic content generation with AI
                   </p>
                 </div>
-                
+
                 <div className="space-y-4 max-h-96 overflow-y-auto">
                   {/* Basic Settings */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Schedule Name *</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Schedule Name *
+                      </label>
                       <input
                         type="text"
                         value={scheduleForm.name}
-                        onChange={(e) => setScheduleForm(prev => ({ ...prev, name: e.target.value }))}
+                        onChange={(e) =>
+                          setScheduleForm((prev) => ({
+                            ...prev,
+                            name: e.target.value,
+                          }))
+                        }
                         placeholder="e.g., Weekly Blog Posts"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       />
                       {formErrors.name && (
-                        <p className="text-sm text-red-600 mt-1">{formErrors.name}</p>
+                        <p className="text-sm text-red-600 mt-1">
+                          {formErrors.name}
+                        </p>
                       )}
                     </div>
-                    
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Website *</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Website *
+                      </label>
                       <select
                         value={scheduleForm.websiteId}
-                        onChange={(e) => setScheduleForm(prev => ({ ...prev, websiteId: e.target.value }))}
+                        onChange={(e) =>
+                          setScheduleForm((prev) => ({
+                            ...prev,
+                            websiteId: e.target.value,
+                          }))
+                        }
                         className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       >
                         <option value="">Select website</option>
@@ -616,35 +777,50 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                         ))}
                       </select>
                       {formErrors.websiteId && (
-                        <p className="text-sm text-red-600 mt-1">{formErrors.websiteId}</p>
+                        <p className="text-sm text-red-600 mt-1">
+                          {formErrors.websiteId}
+                        </p>
                       )}
                     </div>
                   </div>
 
                   {/* Frequency Settings */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Generation Frequency *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Generation Frequency *
+                    </label>
                     <div className="grid grid-cols-3 gap-2">
                       {frequencyOptions.map((option) => (
                         <button
                           key={option.value}
                           type="button"
-                          onClick={() => setScheduleForm(prev => ({ ...prev, frequency: option.value }))}
+                          onClick={() =>
+                            setScheduleForm((prev) => ({
+                              ...prev,
+                              frequency: option.value,
+                            }))
+                          }
                           className={`p-3 border-2 rounded-lg text-left transition-all ${
                             scheduleForm.frequency === option.value
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-200 bg-white hover:border-gray-300'
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-gray-200 bg-white hover:border-gray-300"
                           }`}
                         >
-                          <div className="font-medium text-sm">{option.label}</div>
-                          <div className="text-xs text-gray-600 mt-1">{option.description}</div>
+                          <div className="font-medium text-sm">
+                            {option.label}
+                          </div>
+                          <div className="text-xs text-gray-600 mt-1">
+                            {option.description}
+                          </div>
                         </button>
                       ))}
                     </div>
-                    
-                    {scheduleForm.frequency === 'custom' && (
+
+                    {scheduleForm.frequency === "custom" && (
                       <div className="mt-3">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Select Days</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Select Days
+                        </label>
                         <div className="flex flex-wrap gap-2">
                           {dayOptions.map((day) => (
                             <label key={day} className="flex items-center">
@@ -653,14 +829,16 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                                 checked={scheduleForm.customDays.includes(day)}
                                 onChange={(e) => {
                                   if (e.target.checked) {
-                                    setScheduleForm(prev => ({
+                                    setScheduleForm((prev) => ({
                                       ...prev,
-                                      customDays: [...prev.customDays, day]
+                                      customDays: [...prev.customDays, day],
                                     }));
                                   } else {
-                                    setScheduleForm(prev => ({
+                                    setScheduleForm((prev) => ({
                                       ...prev,
-                                      customDays: prev.customDays.filter(d => d !== day)
+                                      customDays: prev.customDays.filter(
+                                        (d) => d !== day
+                                      ),
                                     }));
                                   }
                                 }}
@@ -671,7 +849,9 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                           ))}
                         </div>
                         {formErrors.customDays && (
-                          <p className="text-sm text-red-600 mt-1">{formErrors.customDays}</p>
+                          <p className="text-sm text-red-600 mt-1">
+                            {formErrors.customDays}
+                          </p>
                         )}
                       </div>
                     )}
@@ -679,17 +859,26 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Time of Day</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Time of Day
+                      </label>
                       <input
                         type="time"
                         value={scheduleForm.timeOfDay}
-                        onChange={(e) => setScheduleForm(prev => ({ ...prev, timeOfDay: e.target.value }))}
+                        onChange={(e) =>
+                          setScheduleForm((prev) => ({
+                            ...prev,
+                            timeOfDay: e.target.value,
+                          }))
+                        }
                         className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
-                    
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Timezone
+                      </label>
                       <input
                         type="text"
                         value={scheduleForm.timezone}
@@ -701,13 +890,18 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
 
                   {/* Topics */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Content Topics *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Content Topics *
+                    </label>
                     <div className="flex gap-2 mb-2">
                       <input
                         type="text"
                         value={topicInput}
                         onChange={(e) => setTopicInput(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTopic())}
+                        onKeyPress={(e) =>
+                          e.key === "Enter" &&
+                          (e.preventDefault(), handleAddTopic())
+                        }
                         placeholder="Enter a topic and press Enter"
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       />
@@ -721,7 +915,10 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {scheduleForm.topics.map((topic, idx) => (
-                        <span key={idx} className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
+                        <span
+                          key={idx}
+                          className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
+                        >
                           {topic}
                           <button
                             type="button"
@@ -734,84 +931,138 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                       ))}
                     </div>
                     {formErrors.topics && (
-                      <p className="text-sm text-red-600 mt-1">{formErrors.topics}</p>
+                      <p className="text-sm text-red-600 mt-1">
+                        {formErrors.topics}
+                      </p>
                     )}
-                    
+
                     <div className="mt-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Topic Rotation</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Topic Rotation
+                      </label>
                       <select
                         value={scheduleForm.topicRotation}
-                        onChange={(e) => setScheduleForm(prev => ({ ...prev, topicRotation: e.target.value }))}
+                        onChange={(e) =>
+                          setScheduleForm((prev) => ({
+                            ...prev,
+                            topicRotation: e.target.value,
+                          }))
+                        }
                         className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       >
                         <option value="random">Random selection</option>
-                        <option value="sequential">Sequential (in order)</option>
+                        <option value="sequential">
+                          Sequential (in order)
+                        </option>
                       </select>
                     </div>
                   </div>
 
                   {/* AI Provider Selection - Matching ai-content.tsx exactly */}
                   <div className="border border-blue-200 bg-blue-50 rounded-lg p-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">AI Provider for Content *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      AI Provider for Content *
+                    </label>
                     <p className="text-xs text-gray-600 mb-3">
-                      Select AI provider for content generation. Images will always use DALL-E 3 when enabled.
+                      Select AI provider for content generation. Images will
+                      always use DALL-E 3 when enabled.
                     </p>
                     <div className="grid grid-cols-3 gap-3">
                       <button
                         type="button"
-                        onClick={() => setScheduleForm(prev => ({ ...prev, aiProvider: 'openai' }))}
+                        onClick={() =>
+                          setScheduleForm((prev) => ({
+                            ...prev,
+                            aiProvider: "openai",
+                          }))
+                        }
                         className={`p-3 border-2 rounded-lg text-left transition-all ${
-                          scheduleForm.aiProvider === 'openai'
-                            ? 'border-green-500 bg-green-50'
-                            : 'border-gray-200 bg-white hover:border-gray-300'
+                          scheduleForm.aiProvider === "openai"
+                            ? "border-green-500 bg-green-50"
+                            : "border-gray-200 bg-white hover:border-gray-300"
                         }`}
                       >
                         <div className="flex items-center mb-1">
                           <Cpu className="w-4 h-4 text-green-600 mr-2" />
-                          <span className="font-medium text-sm">OpenAI GPT-4O</span>
+                          <span className="font-medium text-sm">
+                            OpenAI GPT-4O
+                          </span>
                         </div>
-                        <p className="text-xs text-gray-600">Advanced language model with excellent content generation</p>
-                        <p className="text-xs text-green-600 mt-1">$0.005/$0.015 per 1K tokens</p>
+                        <p className="text-xs text-gray-600">
+                          Advanced language model with excellent content
+                          generation
+                        </p>
+                        <p className="text-xs text-green-600 mt-1">
+                          $0.005/$0.015 per 1K tokens
+                        </p>
                       </button>
-                      
+
                       <button
                         type="button"
-                        onClick={() => setScheduleForm(prev => ({ ...prev, aiProvider: 'anthropic' }))}
+                        onClick={() =>
+                          setScheduleForm((prev) => ({
+                            ...prev,
+                            aiProvider: "anthropic",
+                          }))
+                        }
                         className={`p-3 border-2 rounded-lg text-left transition-all ${
-                          scheduleForm.aiProvider === 'anthropic'
-                            ? 'border-purple-500 bg-purple-50'
-                            : 'border-gray-200 bg-white hover:border-gray-300'
+                          scheduleForm.aiProvider === "anthropic"
+                            ? "border-purple-500 bg-purple-50"
+                            : "border-gray-200 bg-white hover:border-gray-300"
                         }`}
                       >
                         <div className="flex items-center mb-1">
                           <Bot className="w-4 h-4 text-purple-600 mr-2" />
-                          <span className="font-medium text-sm">Anthropic Claude</span>
+                          <span className="font-medium text-sm">
+                            Anthropic Claude
+                          </span>
                         </div>
-                        <p className="text-xs text-gray-600">Thoughtful AI with strong analytical capabilities</p>
-                        <p className="text-xs text-purple-600 mt-1">$0.003/$0.015 per 1K tokens</p>
-                        <p className="text-xs text-orange-600 mt-1">Can generate images via DALL-E 3</p>
+                        <p className="text-xs text-gray-600">
+                          Thoughtful AI with strong analytical capabilities
+                        </p>
+                        <p className="text-xs text-purple-600 mt-1">
+                          $0.003/$0.015 per 1K tokens
+                        </p>
+                        <p className="text-xs text-orange-600 mt-1">
+                          Can generate images via DALL-E 3
+                        </p>
                       </button>
-                      
+
                       <button
                         type="button"
-                        onClick={() => setScheduleForm(prev => ({ ...prev, aiProvider: 'gemini' }))}
+                        onClick={() =>
+                          setScheduleForm((prev) => ({
+                            ...prev,
+                            aiProvider: "gemini",
+                          }))
+                        }
                         className={`p-3 border-2 rounded-lg text-left transition-all ${
-                          scheduleForm.aiProvider === 'gemini'
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200 bg-white hover:border-gray-300'
+                          scheduleForm.aiProvider === "gemini"
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-gray-200 bg-white hover:border-gray-300"
                         }`}
                       >
                         <div className="flex items-center mb-1">
                           <Sparkles className="w-4 h-4 text-blue-600 mr-2" />
-                          <span className="font-medium text-sm">Google Gemini</span>
+                          <span className="font-medium text-sm">
+                            Google Gemini
+                          </span>
                         </div>
-                        <p className="text-xs text-gray-600">Google's multimodal AI with strong reasoning</p>
-                        <p className="text-xs text-blue-600 mt-1">$0.0025/$0.0075 per 1K tokens</p>
-                        <p className="text-xs text-orange-600 mt-1">Can generate images via DALL-E 3</p>
+                        <p className="text-xs text-gray-600">
+                          Google's multimodal AI with strong reasoning
+                        </p>
+                        <p className="text-xs text-blue-600 mt-1">
+                          $0.0025/$0.0075 per 1K tokens
+                        </p>
+                        <p className="text-xs text-orange-600 mt-1">
+                          Can generate images via DALL-E 3
+                        </p>
                       </button>
                     </div>
                     {formErrors.aiProvider && (
-                      <p className="text-sm text-red-600 mt-1">{formErrors.aiProvider}</p>
+                      <p className="text-sm text-red-600 mt-1">
+                        {formErrors.aiProvider}
+                      </p>
                     )}
                   </div>
 
@@ -819,44 +1070,68 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                   <div className="border-t pt-4">
                     <button
                       type="button"
-                      onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                      onClick={() =>
+                        setShowAdvancedSettings(!showAdvancedSettings)
+                      }
                       className="flex items-center text-sm text-blue-600 hover:text-blue-500"
                     >
                       <Settings className="w-4 h-4 mr-1" />
                       Advanced Settings
-                      {showAdvancedSettings ? <ChevronUp className="w-4 h-4 ml-1" /> : <ChevronDown className="w-4 h-4 ml-1" />}
+                      {showAdvancedSettings ? (
+                        <ChevronUp className="w-4 h-4 ml-1" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 ml-1" />
+                      )}
                     </button>
-                    
+
                     {showAdvancedSettings && (
                       <div className="mt-4 space-y-4 pl-5 border-l-2 border-blue-100">
                         {/* Content Settings */}
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Word Count</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Word Count
+                            </label>
                             <input
                               type="number"
                               value={scheduleForm.wordCount}
-                              onChange={(e) => setScheduleForm(prev => ({ ...prev, wordCount: parseInt(e.target.value) || 0 }))}
+                              onChange={(e) =>
+                                setScheduleForm((prev) => ({
+                                  ...prev,
+                                  wordCount: parseInt(e.target.value) || 0,
+                                }))
+                              }
                               min="100"
                               max="5000"
                               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                             />
                             {formErrors.wordCount && (
-                              <p className="text-sm text-red-600 mt-1">{formErrors.wordCount}</p>
+                              <p className="text-sm text-red-600 mt-1">
+                                {formErrors.wordCount}
+                              </p>
                             )}
                           </div>
-                          
+
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Tone</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Tone
+                            </label>
                             <select
                               value={scheduleForm.tone}
-                              onChange={(e) => setScheduleForm(prev => ({ ...prev, tone: e.target.value }))}
+                              onChange={(e) =>
+                                setScheduleForm((prev) => ({
+                                  ...prev,
+                                  tone: e.target.value,
+                                }))
+                              }
                               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                             >
                               <option value="professional">Professional</option>
                               <option value="casual">Casual</option>
                               <option value="friendly">Friendly</option>
-                              <option value="authoritative">Authoritative</option>
+                              <option value="authoritative">
+                                Authoritative
+                              </option>
                               <option value="technical">Technical</option>
                               <option value="warm">Warm</option>
                             </select>
@@ -864,33 +1139,54 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">SEO Keywords</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            SEO Keywords
+                          </label>
                           <input
                             type="text"
                             value={scheduleForm.keywords}
-                            onChange={(e) => setScheduleForm(prev => ({ ...prev, keywords: e.target.value }))}
+                            onChange={(e) =>
+                              setScheduleForm((prev) => ({
+                                ...prev,
+                                keywords: e.target.value,
+                              }))
+                            }
                             placeholder="keyword1, keyword2, keyword3"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Target Audience
+                          </label>
                           <input
                             type="text"
                             value={scheduleForm.targetAudience}
-                            onChange={(e) => setScheduleForm(prev => ({ ...prev, targetAudience: e.target.value }))}
+                            onChange={(e) =>
+                              setScheduleForm((prev) => ({
+                                ...prev,
+                                targetAudience: e.target.value,
+                              }))
+                            }
                             placeholder="e.g., Small business owners, Developers"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Brand Voice</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Brand Voice
+                          </label>
                           <input
                             type="text"
                             value={scheduleForm.brandVoice}
-                            onChange={(e) => setScheduleForm(prev => ({ ...prev, brandVoice: e.target.value }))}
+                            onChange={(e) =>
+                              setScheduleForm((prev) => ({
+                                ...prev,
+                                brandVoice: e.target.value,
+                              }))
+                            }
                             placeholder="Leave empty to use website's brand voice"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                           />
@@ -903,55 +1199,105 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                               <input
                                 type="checkbox"
                                 checked={scheduleForm.includeImages}
-                                onChange={(e) => setScheduleForm(prev => ({ ...prev, includeImages: e.target.checked }))}
+                                onChange={(e) =>
+                                  setScheduleForm((prev) => ({
+                                    ...prev,
+                                    includeImages: e.target.checked,
+                                  }))
+                                }
                                 className="rounded border-gray-300 text-orange-600"
                               />
-                              <span className="ml-2 text-sm font-medium text-gray-700">Generate Images with DALL-E 3</span>
+                              <span className="ml-2 text-sm font-medium text-gray-700">
+                                Generate Images with DALL-E 3
+                              </span>
                             </label>
-                            <span className="text-xs text-orange-600">$0.04-$0.12 per image</span>
+                            <span className="text-xs text-orange-600">
+                              $0.04-$0.12 per image
+                            </span>
                           </div>
-                          
+
                           <p className="text-xs text-gray-600 mb-3">
-                            Images are generated using OpenAI's DALL-E 3 regardless of your content AI provider choice.
+                            Images are generated using OpenAI's DALL-E 3
+                            regardless of your content AI provider choice.
                           </p>
-                          
+
                           {scheduleForm.includeImages && (
                             <div className="space-y-3 pl-6 border-l-2 border-orange-100 bg-white p-3 rounded">
                               <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">Number of Images</label>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                                    Number of Images
+                                  </label>
                                   <select
                                     value={scheduleForm.imageCount}
-                                    onChange={(e) => setScheduleForm(prev => ({ ...prev, imageCount: parseInt(e.target.value) }))}
+                                    onChange={(e) =>
+                                      setScheduleForm((prev) => ({
+                                        ...prev,
+                                        imageCount: parseInt(e.target.value),
+                                      }))
+                                    }
                                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
                                   >
                                     <option value={1}>1 Image (Hero)</option>
-                                    <option value={2}>2 Images (Hero + Support)</option>
-                                    <option value={3}>3 Images (Full Set)</option>
+                                    <option value={2}>
+                                      2 Images (Hero + Support)
+                                    </option>
+                                    <option value={3}>
+                                      3 Images (Full Set)
+                                    </option>
                                   </select>
                                 </div>
-                                
+
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">Image Style</label>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                                    Image Style
+                                  </label>
                                   <select
                                     value={scheduleForm.imageStyle}
-                                    onChange={(e) => setScheduleForm(prev => ({ ...prev, imageStyle: e.target.value }))}
+                                    onChange={(e) =>
+                                      setScheduleForm((prev) => ({
+                                        ...prev,
+                                        imageStyle: e.target.value,
+                                      }))
+                                    }
                                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
                                   >
-                                    <option value="natural">Natural/Photorealistic</option>
-                                    <option value="digital_art">Digital Art</option>
-                                    <option value="photographic">Professional Photography</option>
+                                    <option value="natural">
+                                      Natural/Photorealistic
+                                    </option>
+                                    <option value="digital_art">
+                                      Digital Art
+                                    </option>
+                                    <option value="photographic">
+                                      Professional Photography
+                                    </option>
                                     <option value="cinematic">Cinematic</option>
                                   </select>
                                 </div>
                               </div>
-                              
+
                               <div className="text-xs text-gray-600 bg-orange-50 p-2 rounded border border-orange-200">
-                                <strong>Content AI:</strong> {getProviderName(scheduleForm.aiProvider)} (Est: $0.001-$0.005)
+                                <strong>Content AI:</strong>{" "}
+                                {getProviderName(scheduleForm.aiProvider)} (Est:
+                                $0.001-$0.005)
                                 <br />
-                                <strong>Image AI:</strong> DALL-E 3 (${(scheduleForm.imageCount * 0.04).toFixed(2)} - ${(scheduleForm.imageCount * 0.12).toFixed(2)})
+                                <strong>Image AI:</strong> DALL-E 3 ($
+                                {(scheduleForm.imageCount * 0.04).toFixed(2)} -
+                                ${(scheduleForm.imageCount * 0.12).toFixed(2)})
                                 <br />
-                                <strong>Total Estimated Cost per Post:</strong> ${(0.001 + scheduleForm.imageCount * 0.04).toFixed(3)} - ${(0.005 + scheduleForm.imageCount * 0.12).toFixed(3)}
+                                <strong>
+                                  Total Estimated Cost per Post:
+                                </strong>{" "}
+                                $
+                                {(
+                                  0.001 +
+                                  scheduleForm.imageCount * 0.04
+                                ).toFixed(3)}{" "}
+                                - $
+                                {(
+                                  0.005 +
+                                  scheduleForm.imageCount * 0.12
+                                ).toFixed(3)}
                               </div>
                             </div>
                           )}
@@ -963,19 +1309,33 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                             <input
                               type="checkbox"
                               checked={scheduleForm.autoPublish}
-                              onChange={(e) => setScheduleForm(prev => ({ ...prev, autoPublish: e.target.checked }))}
+                              onChange={(e) =>
+                                setScheduleForm((prev) => ({
+                                  ...prev,
+                                  autoPublish: e.target.checked,
+                                }))
+                              }
                               className="rounded border-gray-300 text-green-600"
                             />
-                            <span className="ml-2 text-sm text-gray-700">Auto-publish after generation</span>
+                            <span className="ml-2 text-sm text-gray-700">
+                              Auto-publish after generation
+                            </span>
                           </label>
-                          
+
                           {scheduleForm.autoPublish && (
                             <div className="mt-2">
-                              <label className="block text-xs font-medium text-gray-700 mb-1">Publish Delay (hours)</label>
+                              <label className="block text-xs font-medium text-gray-700 mb-1">
+                                Publish Delay (hours)
+                              </label>
                               <input
                                 type="number"
                                 value={scheduleForm.publishDelay}
-                                onChange={(e) => setScheduleForm(prev => ({ ...prev, publishDelay: parseInt(e.target.value) || 0 }))}
+                                onChange={(e) =>
+                                  setScheduleForm((prev) => ({
+                                    ...prev,
+                                    publishDelay: parseInt(e.target.value) || 0,
+                                  }))
+                                }
                                 min="0"
                                 max="72"
                                 className="w-32 px-2 py-1 text-sm border border-gray-300 rounded-md"
@@ -987,30 +1347,47 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                         {/* Limits */}
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Max Monthly Posts</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Max Monthly Posts
+                            </label>
                             <input
                               type="number"
                               value={scheduleForm.maxMonthlyPosts}
-                              onChange={(e) => setScheduleForm(prev => ({ ...prev, maxMonthlyPosts: parseInt(e.target.value) || 0 }))}
+                              onChange={(e) =>
+                                setScheduleForm((prev) => ({
+                                  ...prev,
+                                  maxMonthlyPosts:
+                                    parseInt(e.target.value) || 0,
+                                }))
+                              }
                               min="1"
                               max="100"
                               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                             />
                           </div>
-                          
+
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Daily Cost Limit ($)</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Daily Cost Limit ($)
+                            </label>
                             <input
                               type="number"
                               value={scheduleForm.maxDailyCost}
-                              onChange={(e) => setScheduleForm(prev => ({ ...prev, maxDailyCost: parseFloat(e.target.value) || 0 }))}
+                              onChange={(e) =>
+                                setScheduleForm((prev) => ({
+                                  ...prev,
+                                  maxDailyCost: parseFloat(e.target.value) || 0,
+                                }))
+                              }
                               min="0.01"
                               max="100"
                               step="0.01"
                               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                             />
                             {formErrors.maxDailyCost && (
-                              <p className="text-sm text-red-600 mt-1">{formErrors.maxDailyCost}</p>
+                              <p className="text-sm text-red-600 mt-1">
+                                {formErrors.maxDailyCost}
+                              </p>
                             )}
                           </div>
                         </div>
@@ -1021,20 +1398,34 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                             <input
                               type="checkbox"
                               checked={scheduleForm.seoOptimized}
-                              onChange={(e) => setScheduleForm(prev => ({ ...prev, seoOptimized: e.target.checked }))}
+                              onChange={(e) =>
+                                setScheduleForm((prev) => ({
+                                  ...prev,
+                                  seoOptimized: e.target.checked,
+                                }))
+                              }
                               className="rounded border-gray-300 text-blue-600"
                             />
-                            <span className="ml-2 text-sm text-gray-700">SEO Optimized</span>
+                            <span className="ml-2 text-sm text-gray-700">
+                              SEO Optimized
+                            </span>
                           </label>
-                          
+
                           <label className="flex items-center">
                             <input
                               type="checkbox"
                               checked={scheduleForm.eatCompliance}
-                              onChange={(e) => setScheduleForm(prev => ({ ...prev, eatCompliance: e.target.checked }))}
+                              onChange={(e) =>
+                                setScheduleForm((prev) => ({
+                                  ...prev,
+                                  eatCompliance: e.target.checked,
+                                }))
+                              }
                               className="rounded border-gray-300 text-purple-600"
                             />
-                            <span className="ml-2 text-sm text-gray-700">E-E-A-T Compliance</span>
+                            <span className="ml-2 text-sm text-gray-700">
+                              E-E-A-T Compliance
+                            </span>
                           </label>
                         </div>
                       </div>
@@ -1042,7 +1433,7 @@ export default function AutoContentScheduler({ websites, selectedWebsite, onSche
                   </div>
                 </div>
               </div>
-              
+
               <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                 <button
                   type="button"
