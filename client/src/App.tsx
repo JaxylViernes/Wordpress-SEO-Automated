@@ -30,6 +30,10 @@ function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/login" component={() => { 
+  window.location.href = '/'; 
+  return null; 
+}} />
       <Route path="/websites" component={Websites} />
       <Route path="/ai-content" component={AIContent} />
       <Route path="/seo-analysis" component={SEOAnalysis} />

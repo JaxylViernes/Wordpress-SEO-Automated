@@ -5,6 +5,12 @@ import { apiRequest } from "./queryClient";
 // Complete user-scoped API client
 export const api = {
 
+  getContentById: (contentId: string) => 
+  fetch(`/api/user/content/${contentId}`).then(res => {
+    if (!res.ok) throw new Error('Failed to fetch content details');
+    return res.json();
+  }),
+
   changePassword: (data: {
   currentPassword: string;
   newPassword: string;
@@ -127,6 +133,7 @@ export const api = {
     }
   },
 
+  
   // User-scoped content
   getWebsiteContent: (websiteId: string) => 
     fetch(`/api/user/websites/${websiteId}/content`).then(res => {

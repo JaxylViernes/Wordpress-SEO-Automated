@@ -47,6 +47,156 @@ const getActivityIcon = (type: string) => {
   }
 };
 
+// Function to format metadata keys into readable labels
+const formatMetadataKey = (key: string): string => {
+  return key
+    .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+    .replace(/[_-]/g, ' ') // Replace underscores and hyphens with spaces
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
+// Function to format metadata values for better readability
+const formatMetadataValue = (value: any): React.ReactNode => {
+  if (value === null || value === undefined) {
+    return <span className="text-gray-400 italic">None</span>;
+  }
+  
+  if (typeof value === 'boolean') {
+    return (
+      <Badge variant={value ? "default" : "secondary"} className="text-xs">
+        {value ? "Yes" : "No"}
+      </Badge>
+    );
+  }
+  
+  if (typeof value === 'string') {
+    // Check if it's a date string
+    const dateMatch = value.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    if (dateMatch) {
+      try {
+        const date = new Date(value);
+        return format(date, "MMM dd, yyyy 'at' HH:mm");
+      } catch {
+        return value;
+      }
+    }
+    
+    // Check if it's a URL
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return (
+        <a 
+          href={value} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-blue-600 hover:text-blue-800 underline break-all"
+        >
+          {value}
+        </a>
+      );
+    }
+    
+    // Long text handling
+    if (value.length > 100) {
+      return (
+        <div className="max-w-md">
+          <p className="break-words">{value.substring(0, 100)}...</p>
+          <details className="mt-1">
+            <summary className="text-xs text-blue-600 cursor-pointer hover:text-blue-800">
+              Show full text
+            </summary>
+            <p className="mt-1 text-xs break-words">{value}</p>
+          </details>
+        </div>
+      );
+    }
+    
+    return <span className="break-words">{value}</span>;
+  }
+  
+  if (typeof value === 'number') {
+    // Format large numbers with commas
+    return value.toLocaleString();
+  }
+  
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return <span className="text-gray-400 italic">Empty list</span>;
+    }
+    
+    return (
+      <div className="space-y-1">
+        {value.slice(0, 3).map((item, index) => (
+          <div key={index} className="text-xs bg-gray-100 rounded px-2 py-1 inline-block mr-1">
+            {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+          </div>
+        ))}
+        {value.length > 3 && (
+          <div className="text-xs text-gray-500">
+            +{value.length - 3} more items
+          </div>
+        )}
+      </div>
+    );
+  }
+  
+  if (typeof value === 'object') {
+    const entries = Object.entries(value);
+    if (entries.length === 0) {
+      return <span className="text-gray-400 italic">Empty</span>;
+    }
+    
+    return (
+      <div className="space-y-1">
+        {entries.slice(0, 3).map(([key, val]) => (
+          <div key={key} className="text-xs">
+            <span className="font-medium">{formatMetadataKey(key)}:</span>{' '}
+            <span>{String(val)}</span>
+          </div>
+        ))}
+        {entries.length > 3 && (
+          <div className="text-xs text-gray-500">
+            +{entries.length - 3} more fields
+          </div>
+        )}
+      </div>
+    );
+  }
+  
+  return <span>{String(value)}</span>;
+};
+
+// Component for rendering metadata in a user-friendly way
+const MetadataDisplay = ({ metadata }: { metadata: Record<string, any> }) => {
+  const entries = Object.entries(metadata);
+  
+  if (entries.length === 0) {
+    return (
+      <div className="text-xs text-gray-500 italic">
+        No additional details available
+      </div>
+    );
+  }
+  
+  return (
+    <div className="mt-2 border rounded-lg bg-gray-50 p-3">
+      <div className="grid gap-3">
+        {entries.map(([key, value]) => (
+          <div key={key} className="grid grid-cols-3 gap-2 items-start">
+            <div className="text-xs font-medium text-gray-700 col-span-1">
+              {formatMetadataKey(key)}:
+            </div>
+            <div className="text-xs text-gray-900 col-span-2">
+              {formatMetadataValue(value)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export default function ActivityLogs() {
   const [selectedWebsite, setSelectedWebsite] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -248,14 +398,15 @@ const filteredActivities = activities?.filter(activity => {
                               <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
                             </div>
                             
-                            {/* Metadata */}
+                            {/* Improved Metadata Display */}
                             {activity.metadata && Object.keys(activity.metadata).length > 0 && (
-                              <div className="mt-2 text-xs text-gray-600">
-                                <details className="cursor-pointer">
-                                  <summary className="hover:text-gray-800">View details</summary>
-                                  <pre className="mt-1 p-2 bg-gray-50 rounded text-xs overflow-x-auto">
-                                    {JSON.stringify(activity.metadata, null, 2)}
-                                  </pre>
+                              <div className="mt-3">
+                                <details className="cursor-pointer group">
+                                  <summary className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                                    <span className="group-open:hidden">Show details</span>
+                                    <span className="hidden group-open:inline">Hide details</span>
+                                  </summary>
+                                  <MetadataDisplay metadata={activity.metadata} />
                                 </details>
                               </div>
                             )}

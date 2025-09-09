@@ -1106,6 +1106,31 @@ app.post("/api/user/content/:id/publish", requireAuth, async (req: Request, res:
   }
 });
 
+app.get("/api/user/content/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const contentId = req.params.id;
+    
+    // Get the content
+    const content = await storage.getContent(contentId);
+    if (!content || content.userId !== userId) {
+      res.status(404).json({ message: "Content not found or access denied" });
+      return;
+    }
+
+    // Return content with proper field mapping
+    res.json({
+      ...content,
+      content: content.body, // Map 'body' field to 'content' for consistency
+      wordCount: content.body ? content.body.split(/\s+/).length : 0,
+      readingTime: content.body ? Math.ceil(content.body.split(/\s+/).length / 200) : 0,
+    });
+  } catch (error) {
+    console.error("Failed to fetch content:", error);
+    res.status(500).json({ message: "Failed to fetch content" });
+  }
+});
+
 // =============================================================================
   // USER-SCOPED CLIENT REPORTS ROUTES (ADD THIS SECTION)
   // =============================================================================

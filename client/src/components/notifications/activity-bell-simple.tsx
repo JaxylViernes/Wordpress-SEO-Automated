@@ -150,14 +150,14 @@ export default function ActivityBellSimple() {
                         <div className="text-xs text-gray-500">
                           {formatDistanceToNow(new Date(l.createdAt), { addSuffix: true })}
                         </div>
-                        {l.metadata && Object.keys(l.metadata).length > 0 && (
+                        {/* {l.metadata && Object.keys(l.metadata).length > 0 && (
                           <details className="mt-1 text-xs text-gray-600">
                             <summary className="hover:text-gray-800">Details</summary>
                             <pre className="mt-1 p-2 bg-gray-50 rounded text-xs overflow-x-auto">
                               {JSON.stringify(l.metadata, null, 2)}
                             </pre>
                           </details>
-                        )}
+                        )} */}
                       </div>
                     </div>
                   </li>

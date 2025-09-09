@@ -71,8 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (data.success && data.user) {
       setUser(data.user);
-      // Always redirect to dashboard after successful login
-      window.location.href = '/';
+      // REMOVED: No forced redirect - let React handle navigation
     } else {
       throw new Error('Login failed - invalid response');
     }
@@ -95,8 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (data.success && data.user) {
       setUser(data.user);
-      // Always redirect to dashboard after successful signup
-      window.location.href = '/dashboard';
+      // REMOVED: No forced redirect - let React handle navigation
     } else {
       throw new Error('Signup failed - invalid response');
     }
@@ -113,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Ignore logout request errors
     } finally {
       setUser(null);
-      window.location.href = '/login';
+      // REMOVED: No forced redirect - just update state
     }
   };
 
@@ -130,9 +128,13 @@ export function useAuth() {
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
-  return context;
+  
+  return {
+    ...context,
+    isAuthenticated: !!context.user, // ADD THIS
+    isLoading: context.loading        // ADD THIS (rename loading to isLoading)
+  };
 }
-
 // Login/Signup Component
 export function AuthPage() {
   const { login, signup } = useAuth();
@@ -167,6 +169,7 @@ export function AuthPage() {
 
     try {
       await login(loginForm.username, loginForm.password);
+      // Success - user state will update and ProtectedRoute will re-render
     } catch (error: any) {
       setError(error.message || 'Login failed');
     } finally {
@@ -201,6 +204,7 @@ export function AuthPage() {
         signupForm.email || undefined,
         signupForm.name || undefined
       );
+      // Success - user state will update and ProtectedRoute will re-render
     } catch (error: any) {
       setError(error.message || 'Signup failed');
     } finally {
@@ -387,7 +391,7 @@ export function AuthPage() {
   );
 }
 
-// User Menu Component
+// User Menu Component (Fixed - no forced reloads)
 export function CompactSidebarUserMenu() {
   const { user, logout } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -395,7 +399,7 @@ export function CompactSidebarUserMenu() {
 
   if (!user) return null;
 
-  const getInitials = (name) => {
+  const getInitials = (name: string) => {
     return name
       .split(' ')
       .map(word => word.charAt(0).toUpperCase())
@@ -412,8 +416,10 @@ export function CompactSidebarUserMenu() {
     setIsLoggingOut(true);
     try {
       await logout();
+      // No forced redirect - React will handle the state change
     } catch (error) {
       console.error('Logout failed:', error);
+    } finally {
       setIsLoggingOut(false);
     }
   };
