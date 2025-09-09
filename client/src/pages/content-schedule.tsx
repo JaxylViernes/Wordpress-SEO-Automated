@@ -164,6 +164,7 @@ export default function ContentSchedule() {
       }
     },
     refetchInterval: 30000,
+    refetchIntervalInBackground: true,
   });
 
   // Create scheduled content mutation
