@@ -401,26 +401,56 @@ updateContent: (id: string, data: {
     });
   },
 
-  generateClientReport: (websiteId: string, data?: { reportType?: 'weekly' | 'monthly' | 'quarterly' }) => {
-    const reportType = data?.reportType || 'monthly';
-    console.log(`Generating ${reportType} report for website: ${websiteId}`);
+//nadagdag
+// Modify your existing api.generateClientReport function:
+generateClientReport: async (
+  websiteId: string, 
+  data: { 
+    reportType: 'weekly' | 'monthly' | 'quarterly',
+    reportId?: string | number  // Add this optional parameter
+  }
+) => {
+  const response = await fetch('/api/user/reports', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ 
+      websiteId, 
+      ...data 
+    }),
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to generate report');
+  }
+  
+  return response.json();
+},
+
+
+
+  //WAG ALISIN
+  // generateClientReport: (websiteId: string, data?: { reportType?: 'weekly' | 'monthly' | 'quarterly' }) => {
+  //   const reportType = data?.reportType || 'monthly';
+  //   console.log(`Generating ${reportType} report for website: ${websiteId}`);
     
-    return fetch(`/api/user/websites/${websiteId}/reports/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reportType })
-    }).then(res => {
-      console.log(`Generate report response status: ${res.status}`);
-      if (!res.ok) {
-        console.error(`Failed to generate report: ${res.status} ${res.statusText}`);
-        throw new Error('Failed to generate report');
-      }
-      return res.json();
-    }).then(result => {
-      console.log(`Report generated successfully:`, result);
-      return result;
-    });
-  },
+  //   return fetch(`/api/user/websites/${websiteId}/reports/generate`, {
+  //     method: 'POST',
+  //     headers: { 'Content-Type': 'application/json' },
+  //     body: JSON.stringify({ reportType })
+  //   }).then(res => {
+  //     console.log(`Generate report response status: ${res.status}`);
+  //     if (!res.ok) {
+  //       console.error(`Failed to generate report: ${res.status} ${res.statusText}`);
+  //       throw new Error('Failed to generate report');
+  //     }
+  //     return res.json();
+  //   }).then(result => {
+  //     console.log(`Report generated successfully:`, result);
+  //     return result;
+  //   });
+  // },
 
   generateBulkReports: async (websiteIds: string[], reportType: 'weekly' | 'monthly' | 'quarterly' = 'monthly') => {
     console.log(`Generating bulk reports for ${websiteIds.length} websites`);
@@ -721,5 +751,6 @@ export const seoHelpers = {
     };
   },
 };
+
 
 export default api;

@@ -50,6 +50,10 @@ import { db } from "./db";
 import { lte, gte, count, eq, desc, and, or, isNull, inArray } from "drizzle-orm";
 import { wordPressAuthService } from "./services/wordpress-auth";
 import { contentImages, insertContentImageSchema, type InsertContentImage, type ContentImage } from "@shared/schema";
+//nadagdag
+import { autoSchedules, type AutoSchedule, type InsertAutoSchedule } from "@shared/schema";
+import { randomUUID } from 'crypto';
+
 
 export interface IStorage {
   // Users (Required for Replit Auth)
@@ -1205,6 +1209,255 @@ async getUserApiKeys(userId: string): Promise<UserApiKey[]> {
       totalUsage: keys.reduce((sum, k) => sum + (k.usageCount || 0), 0)
     };
   }
+
+
+  //nadagdag
+  // Auto-Schedule Methods for Neon Database
+  async getActiveAutoSchedules(): Promise<AutoSchedule[]> {
+    try {
+      const schedules = await db
+        .select()
+        .from(autoSchedules)
+        .where(
+          and(
+            eq(autoSchedules.isActive, true),
+            isNull(autoSchedules.deletedAt)
+          )
+        )
+        .orderBy(desc(autoSchedules.createdAt));
+      
+      return schedules.map(schedule => ({
+        ...schedule,
+        topics: schedule.topics || [],
+        customDays: schedule.customDays || [],
+        publishDelay: schedule.publishDelay || 0,
+        topicRotation: schedule.topicRotation || 'sequential',
+        nextTopicIndex: schedule.nextTopicIndex || 0,
+        maxDailyCost: schedule.maxDailyCost || 10,
+        maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
+        costToday: schedule.costToday || 0,
+        postsThisMonth: schedule.postsThisMonth || 0,
+      }));
+    } catch (error) {
+      console.error('Error fetching active auto-schedules:', error);
+      return [];
+    }
+  }
+
+// In storage/index.ts, update the updateAutoSchedule method (around line 1263)
+
+  //nadagdag - Fixed to ensure numeric values are properly handled
+//nadagdag - Fixed to ensure numeric values are properly handled
+  async updateAutoSchedule(scheduleId: string, updates: any): Promise<void> {
+    try {
+      const updateData: any = {
+        updatedAt: new Date()
+      };
+      
+      if (updates.lastRun !== undefined) {
+        updateData.lastRun = updates.lastRun;
+      }
+      
+      if (updates.postsThisMonth !== undefined) {
+        // Ensure it's a number
+        const posts = typeof updates.postsThisMonth === 'string' 
+          ? parseInt(updates.postsThisMonth) 
+          : updates.postsThisMonth;
+        updateData.postsThisMonth = posts || 0;
+      }
+      
+      if (updates.costToday !== undefined) {
+        // CRITICAL FIX: Ensure costToday is a valid number
+        let cost = updates.costToday;
+        
+        // Handle if it's already a malformed string like "0.000.051885"
+        if (typeof cost === 'string' && cost.includes('.') && cost.split('.').length > 2) {
+          // Extract the last valid decimal number
+          const parts = cost.split('.');
+          cost = parseFloat(`0.${parts[parts.length - 1]}`);
+        } else {
+          // Normal parsing
+          cost = parseFloat(cost);
+        }
+        
+        if (isNaN(cost)) {
+          console.error('Invalid costToday value:', updates.costToday);
+          updateData.costToday = 0;
+        } else {
+          updateData.costToday = cost;
+        }
+        
+        console.log('Cost update:', {
+          original: updates.costToday,
+          parsed: cost,
+          final: updateData.costToday
+        });
+      }
+      
+      if (updates.nextTopicIndex !== undefined) {
+        const index = typeof updates.nextTopicIndex === 'string' 
+          ? parseInt(updates.nextTopicIndex) 
+          : updates.nextTopicIndex;
+        updateData.nextTopicIndex = index || 0;
+      }
+
+      console.log('Updating auto-schedule:', {
+        scheduleId,
+        updates: updateData
+      });
+
+      await db
+        .update(autoSchedules)
+        .set(updateData)
+        .where(eq(autoSchedules.id, scheduleId));
+        
+      console.log('✅ Auto-schedule updated successfully');
+    } catch (error) {
+      console.error('Error updating auto-schedule:', error);
+      throw error;
+    }
+  }
+
+  async resetAutoScheduleDailyCosts(): Promise<void> {
+    try {
+      await db
+        .update(autoSchedules)
+        .set({ 
+          costToday: 0,
+          updatedAt: new Date()
+        })
+        .where(eq(autoSchedules.isActive, true));
+      
+      console.log('✅ Daily costs reset for all active auto-schedules');
+    } catch (error) {
+      console.error('Error resetting daily costs:', error);
+      throw error;
+    }
+  }
+
+  async resetAutoScheduleMonthlyCounts(): Promise<void> {
+    try {
+      await db
+        .update(autoSchedules)
+        .set({ 
+          postsThisMonth: 0,
+          updatedAt: new Date()
+        })
+        .where(eq(autoSchedules.isActive, true));
+      
+      console.log('✅ Monthly post counts reset for all active auto-schedules');
+    } catch (error) {
+      console.error('Error resetting monthly counts:', error);
+      throw error;
+    }
+  }
+
+  // Additional auto-schedule methods
+// Update this method in your storage file (around line 1309)
+
+async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Promise<AutoSchedule> {
+  try {
+    // Manually generate the UUID
+    const scheduleData = {
+      id: randomUUID(), // Generate UUID here
+      userId: schedule.userId,
+      websiteId: schedule.websiteId,
+      name: schedule.name,
+      frequency: schedule.frequency,
+      timeOfDay: schedule.timeOfDay,
+      customDays: schedule.customDays || [],
+      topics: schedule.topics || [],
+      keywords: schedule.keywords || null,
+      tone: schedule.tone || 'professional',
+      wordCount: schedule.wordCount || 800,
+      brandVoice: schedule.brandVoice || null,
+      targetAudience: schedule.targetAudience || null,
+      eatCompliance: schedule.eatCompliance || false,
+      aiProvider: schedule.aiProvider || 'openai',
+      includeImages: schedule.includeImages || false,
+      imageCount: schedule.imageCount || 1,
+      imageStyle: schedule.imageStyle || 'natural',
+      seoOptimized: schedule.seoOptimized !== false,
+      autoPublish: schedule.autoPublish || false,
+      publishDelay: schedule.publishDelay || 0,
+      topicRotation: schedule.topicRotation || 'random',
+      nextTopicIndex: schedule.nextTopicIndex || 0,
+      maxDailyCost: schedule.maxDailyCost || 5.00,
+      maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
+      costToday: schedule.costToday || 0,
+      postsThisMonth: schedule.postsThisMonth || 0,
+      lastRun: schedule.lastRun || null,
+      isActive: schedule.isActive !== false,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const [newSchedule] = await db
+      .insert(autoSchedules)
+      .values(scheduleData)
+      .returning();
+    
+    console.log('Auto-schedule created successfully:', newSchedule.id);
+    return newSchedule;
+  } catch (error) {
+    console.error('Error creating auto-schedule:', error);
+    throw error;
+  }
+}
+  async getAutoSchedule(scheduleId: string): Promise<AutoSchedule | undefined> {
+    try {
+      const [schedule] = await db
+        .select()
+        .from(autoSchedules)
+        .where(eq(autoSchedules.id, scheduleId));
+      
+      return schedule;
+    } catch (error) {
+      console.error('Error fetching auto-schedule:', error);
+      return undefined;
+    }
+  }
+
+  async deleteAutoSchedule(scheduleId: string): Promise<boolean> {
+    try {
+      // Soft delete
+      await db
+        .update(autoSchedules)
+        .set({ 
+          deletedAt: new Date(),
+          isActive: false,
+          updatedAt: new Date()
+        })
+        .where(eq(autoSchedules.id, scheduleId));
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting auto-schedule:', error);
+      return false;
+    }
+  }
+
+  async getUserAutoSchedules(userId: string): Promise<AutoSchedule[]> {
+    try {
+      const schedules = await db
+        .select()
+        .from(autoSchedules)
+        .where(
+          and(
+            eq(autoSchedules.userId, userId),
+            isNull(autoSchedules.deletedAt)
+          )
+        )
+        .orderBy(desc(autoSchedules.createdAt));
+      
+      return schedules;
+    } catch (error) {
+      console.error('Error fetching user auto-schedules:', error);
+      return [];
+    }
+  }
+
+  // Note: createContentSchedule and createActivityLog already exist in your code
   
   
 }

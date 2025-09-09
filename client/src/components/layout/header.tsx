@@ -33,14 +33,12 @@ export default function Header() {
               <div className="absolute inset-y-0 left-0 flex items-center pointer-events-none">
                 <Search className="w-5 h-5" />
               </div>
-              {/* Fully functional search (typeahead + results page) */}
       
             </div>
           </div>
         </div>
 
         <div className="ml-2 sm:ml-4 flex items-center md:ml-6 space-x-2 sm:space-x-4">
-          {/* Notification Bell (real Activity Logs) */}
           <ActivityBellSimple />
 
           {/* Add Website Dialog */}

@@ -737,7 +737,7 @@ export default function AIContent() {
   return (
     <div className="py-6 bg-gray-50 min-h-screen">
       {/* PROGRESS BAR ADDITION: Add CSS for animated stripes inline */}
-      <style jsx>{`
+      <style>{`
         @keyframes stripes {
           0% { background-position: 0 0; }
           100% { background-position: 40px 0; }
