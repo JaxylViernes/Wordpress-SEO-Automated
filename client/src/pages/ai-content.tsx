@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
-import { Bot, Plus, Sparkles, Clock, CheckCircle, Play, Edit, Trash2, X, BarChart3, Target, Zap, Shield, DollarSign, RefreshCw, Save, AlertTriangle, Cpu, Brain } from "lucide-react";
+// PROGRESS BAR ADDITION: Added Loader2 for spinning animation in progress indicator
+import { Bot, Plus, Sparkles, Clock, CheckCircle, Play, Edit, Trash2, X, BarChart3, Target, Zap, Shield, DollarSign, RefreshCw, Save, AlertTriangle, Cpu, Brain, Loader2 } from "lucide-react";
+//nadagdag
+import AutoContentScheduler from './auto-content-scheduler';
+
+
 
 // API utility functions
 const api = {
@@ -188,6 +193,13 @@ export default function AIContent() {
   const [isLoadingContent, setIsLoadingContent] = useState(false);
   const [toast, setToast] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  
+  // PROGRESS BAR ADDITION: State for tracking generation progress percentage
+  const [generationProgress, setGenerationProgress] = useState(0);
+  // PROGRESS BAR ADDITION: State for showing current generation phase/step
+  const [generationPhase, setGenerationPhase] = useState("");
+  // PROGRESS BAR ADDITION: State for estimated time remaining in seconds
+  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState(0);
 
   // Enhanced form state with AI provider
   const [formData, setFormData] = useState({
@@ -353,6 +365,51 @@ export default function AIContent() {
     if (!validateForm()) return;
 
     setIsGenerating(true);
+    // PROGRESS BAR ADDITION: Reset progress to 0 at start
+    setGenerationProgress(0);
+    // PROGRESS BAR ADDITION: Set initial phase message
+    setGenerationPhase("Initializing AI...");
+    
+    // PROGRESS BAR ADDITION: Start interval to simulate progress
+    const progressInterval = setInterval(() => {
+      setGenerationProgress(prev => {
+        // PROGRESS BAR ADDITION: Stop at 90% until API completes
+        if (prev >= 90) {
+          clearInterval(progressInterval);
+          return 90;
+        }
+        
+        // PROGRESS BAR ADDITION: Variable speed based on current progress
+        const increment = prev < 20 ? 3 : prev < 50 ? 2 : prev < 80 ? 1.5 : 0.5;
+        const newProgress = Math.min(prev + increment, 90);
+        
+        // PROGRESS BAR ADDITION: Update phase messages based on progress
+        if (newProgress < 15) {
+          setGenerationPhase("Initializing AI...");
+          setEstimatedTimeRemaining(25);
+        } else if (newProgress < 30) {
+          setGenerationPhase("Analyzing topic and keywords...");
+          setEstimatedTimeRemaining(20);
+        } else if (newProgress < 45) {
+          setGenerationPhase("Generating content with " + getProviderName(formData.aiProvider) + "...");
+          setEstimatedTimeRemaining(15);
+        } else if (newProgress < 60) {
+          setGenerationPhase("Optimizing for SEO...");
+          setEstimatedTimeRemaining(10);
+        } else if (newProgress < 75) {
+          setGenerationPhase("Analyzing readability and brand voice...");
+          setEstimatedTimeRemaining(5);
+        } else if (newProgress < 85) {
+          setGenerationPhase(formData.includeImages ? "Generating AI images..." : "Finalizing content...");
+          setEstimatedTimeRemaining(3);
+        } else {
+          setGenerationPhase("Almost done...");
+          setEstimatedTimeRemaining(1);
+        }
+        
+        return newProgress;
+      });
+    }, 300); // Update every 300ms
     
     try {
       const keywords = formData.keywords.split(",").map(k => k.trim()).filter(k => k);
@@ -371,6 +428,14 @@ export default function AIContent() {
         imageCount: formData.imageCount,
         imageStyle: formData.imageStyle
       });
+
+      // PROGRESS BAR ADDITION: Clear interval and set to 100% on success
+      clearInterval(progressInterval);
+      setGenerationProgress(100);
+      setGenerationPhase("Content generated successfully!");
+      
+      // PROGRESS BAR ADDITION: Brief pause to show completion
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       const aiResult = result.aiResult;
       
@@ -393,10 +458,21 @@ export default function AIContent() {
         imageCount: 1 
       }));
       setFormErrors({});
+      
+      // PROGRESS BAR ADDITION: Reset all progress states
+      setGenerationProgress(0);
+      setGenerationPhase("");
+      setEstimatedTimeRemaining(0);
 
       await loadContent();
 
     } catch (error) {
+      // PROGRESS BAR ADDITION: Clear interval on error
+      clearInterval(progressInterval);
+      // PROGRESS BAR ADDITION: Reset progress states on error
+      setGenerationProgress(0);
+      setGenerationPhase("");
+      
       const errorType = getErrorType(error);
       const severity = getErrorSeverity(error);
       
@@ -660,6 +736,28 @@ export default function AIContent() {
 
   return (
     <div className="py-6 bg-gray-50 min-h-screen">
+      {/* PROGRESS BAR ADDITION: Add CSS for animated stripes inline */}
+      <style jsx>{`
+        @keyframes stripes {
+          0% { background-position: 0 0; }
+          100% { background-position: 40px 0; }
+        }
+        .bg-stripes {
+          background-image: linear-gradient(
+            45deg,
+            rgba(255, 255, 255, 0.15) 25%,
+            transparent 25%,
+            transparent 50%,
+            rgba(255, 255, 255, 0.15) 50%,
+            rgba(255, 255, 255, 0.15) 75%,
+            transparent 75%,
+            transparent
+          );
+          background-size: 40px 40px;
+          animation: stripes 1s linear infinite;
+        }
+      `}</style>
+      
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
         {/* Enhanced Toast Notification */}
         {toast && (
@@ -725,7 +823,8 @@ export default function AIContent() {
         {isGenerateDialogOpen && (
           <div className="fixed inset-0 z-50 overflow-y-auto">
             <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setIsGenerateDialogOpen(false)}></div>
+              {/* PROGRESS BAR ADDITION: Disable backdrop click when generating */}
+              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => !isGenerating && setIsGenerateDialogOpen(false)}></div>
               <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
                 <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                   <div className="mb-4">
@@ -1019,38 +1118,101 @@ export default function AIContent() {
                     </div>
                   </div>
                 </div>
-                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                  <button
-                    type="button"
-                    onClick={generateContent}
-                    disabled={isGenerating}
-                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isGenerating ? (
-                      <>
-                        <Bot className="w-4 h-4 mr-2 animate-spin" />
-                        Generating with {getProviderName(formData.aiProvider)}
-                        {formData.includeImages && ` + ${formData.imageCount} image${formData.imageCount > 1 ? 's' : ''}`}...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4 mr-2" />
-                        Generate with {getProviderName(formData.aiProvider)}
-                        {formData.includeImages && (
-                          <span className="ml-1 text-xs bg-orange-500 px-1 rounded">
-                            +${(formData.imageCount * 0.04).toFixed(2)}
-                          </span>
+                
+                {/* PROGRESS BAR ADDITION: Enhanced footer with progress bar */}
+                <div className="bg-gray-50 px-4 py-3 sm:px-6">
+                  {/* PROGRESS BAR ADDITION: Progress section only visible when generating */}
+                  {isGenerating && (
+                    <div className="mb-4 px-1">
+                      <div className="relative pt-1">
+                        {/* PROGRESS BAR ADDITION: Progress header with percentage */}
+                        <div className="flex mb-2 items-center justify-between">
+                          <div>
+                            <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200">
+                              Generating Content
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-semibold inline-block text-blue-600">
+                              {generationProgress}%
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {/* PROGRESS BAR ADDITION: Progress bar container */}
+                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-100">
+                          {/* PROGRESS BAR ADDITION: Animated progress bar fill */}
+                          <div 
+                            style={{ width: `${generationProgress}%` }}
+                            className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300 ease-out relative"
+                          >
+                            {/* PROGRESS BAR ADDITION: Animated stripe overlay */}
+                            <div className="absolute inset-0 bg-stripes opacity-20"></div>
+                          </div>
+                        </div>
+                        
+                        {/* PROGRESS BAR ADDITION: Status text and time remaining */}
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center">
+                            {/* PROGRESS BAR ADDITION: Spinning loader icon */}
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin text-blue-600" />
+                            <span className="text-gray-700">{generationPhase}</span>
+                          </div>
+                          {/* PROGRESS BAR ADDITION: Time remaining display */}
+                          {estimatedTimeRemaining > 0 && (
+                            <div className="flex items-center text-gray-500">
+                              <Clock className="w-4 h-4 mr-1" />
+                              <span className="text-xs">~{estimatedTimeRemaining}s remaining</span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* PROGRESS BAR ADDITION: Special notice for image generation */}
+                        {formData.includeImages && generationProgress > 70 && (
+                          <div className="mt-2 text-xs text-orange-600 bg-orange-50 p-2 rounded">
+                            <span className="font-medium">Generating {formData.imageCount} image{formData.imageCount > 1 ? 's' : ''} with DALL-E 3...</span>
+                          </div>
                         )}
-                      </>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsGenerateDialogOpen(false)}
-                    className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-                  >
-                    Cancel
-                  </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Action buttons */}
+                  <div className="sm:flex sm:flex-row-reverse">
+                    <button
+                      type="button"
+                      onClick={generateContent}
+                      disabled={isGenerating}
+                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                    >
+                      {isGenerating ? (
+                        <>
+                          {/* PROGRESS BAR ADDITION: Show progress percentage in button */}
+                          <Bot className="w-4 h-4 mr-2 animate-spin" />
+                          Generating ({generationProgress}%)...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          Generate with {getProviderName(formData.aiProvider)}
+                          {formData.includeImages && (
+                            <span className="ml-1 text-xs bg-orange-500 px-1 rounded">
+                              +${(formData.imageCount * 0.04).toFixed(2)}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => !isGenerating && setIsGenerateDialogOpen(false)}
+                      disabled={isGenerating}
+                      className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {/* PROGRESS BAR ADDITION: Change cancel text when generating */}
+                      {isGenerating ? 'Please wait...' : 'Cancel'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1884,7 +2046,21 @@ export default function AIContent() {
             </div>
           </div>
         )}
+
+        
+        {/* Auto Content Scheduler Section */}
+        {/*nadagdag*/}
+        {selectedWebsite && (
+          <div className="mt-8">
+            <AutoContentScheduler 
+              websites={websites}
+              selectedWebsite={selectedWebsite}
+              onScheduleCreated={loadContent}
+            />
+          </div>
+        )}
       </div>
     </div>
-  );
+  );  
 }
+

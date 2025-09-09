@@ -6,7 +6,8 @@ import session from "express-session";
 import { Pool } from '@neondatabase/serverless';
 import pgSession from "connect-pg-simple";
 import 'dotenv/config'; // must come before importing encryption-service
-
+//nadagdag
+import { schedulerService } from './services/scheduler-service';
 
 // =============================================================================
 // TYPE DECLARATIONS (moved to top)
@@ -145,6 +146,30 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     // Register all API routes
     const server = await registerRoutes(app);
 
+     //nadagdag
+    // ADD: Manual trigger endpoint for testing scheduler
+    app.post('/api/admin/trigger-scheduler', async (req: Request, res: Response) => {
+      try {
+        // Check if user is authenticated
+        if (!req.user) {
+          return res.status(401).json({ success: false, message: 'Unauthorized' });
+        }
+        
+        const result = await schedulerService.manualProcess();
+        res.json({ 
+          success: true, 
+          message: 'Scheduler triggered manually',
+          result 
+        });
+      } catch (error: any) {
+        res.status(500).json({ 
+          success: false, 
+          message: error.message 
+        });
+      }
+    });
+
+
     // Global error handler (must be after routes)
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
@@ -196,13 +221,18 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     server.listen({
       port,
       host,
-      reusePort: true,
     }, () => {
       log(`🚀 Server running on http://${host}:${port}`);
       log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
       log(`🔐 Session store: PostgreSQL`);
       log(`📡 API available at: http://${host}:${port}/api`);
       
+
+            //nadagdag
+      schedulerService.startScheduler(1); // Check every 1 minute
+      log(`⏰ Content scheduler started - checking every minute for scheduled content`);
+      
+
       if (process.env.NODE_ENV === 'development') {
         log(`🛠️  Development mode: Vite dev server enabled`);
       }
