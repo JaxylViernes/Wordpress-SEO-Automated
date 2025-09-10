@@ -20,7 +20,7 @@ import Sidebar, { MobileSidebarProvider } from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 
 // Auth components (you'll need to create these)
-import { AuthProvider, ProtectedRoute } from "@/pages/authentication"
+import { AuthProvider, ProtectedRoute } from "@/pages/authentication";
 
 // =============================================================================
 // MAIN ROUTER COMPONENT
@@ -30,10 +30,13 @@ function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
-      <Route path="/login" component={() => { 
-  window.location.href = '/'; 
-  return null; 
-}} />
+      <Route
+        path="/login"
+        component={() => {
+          window.location.href = "/";
+          return null;
+        }}
+      />
       <Route path="/websites" component={Websites} />
       <Route path="/ai-content" component={AIContent} />
       <Route path="/seo-analysis" component={SEOAnalysis} />
@@ -57,9 +60,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col w-0 flex-1 overflow-hidden">
         <Header />
         <main className="flex-1 relative overflow-y-auto focus:outline-none px-4 sm:px-6 lg:px-8">
-          <div className="py-4 sm:py-6">
-            {children}
-          </div>
+          <div className="py-4 sm:py-6">{children}</div>
         </main>
       </div>
     </div>

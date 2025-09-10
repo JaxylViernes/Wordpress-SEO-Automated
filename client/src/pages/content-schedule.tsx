@@ -117,11 +117,17 @@ const getTomorrowString = () => {
 
 // Helper functions for data normalization
 const getContentTitle = (content: any) => {
-  return content.contentTitle || content.title || content.topic || content.name || 'Untitled Content';
+  return (
+    content.contentTitle ||
+    content.title ||
+    content.topic ||
+    content.name ||
+    "Untitled Content"
+  );
 };
 
 const getContentExcerpt = (content: any) => {
-  return content.contentExcerpt || content.excerpt || content.description || '';
+  return content.contentExcerpt || content.excerpt || content.description || "";
 };
 
 // Simple date input component that bypasses UI library
@@ -204,7 +210,10 @@ export default function ContentSchedule() {
   // Get content details for viewing
   const { data: contentDetails = null } = useQuery({
     queryKey: ["content-details", viewingContent?.contentId],
-    queryFn: () => viewingContent?.contentId ? api.getContentById(viewingContent.contentId) : Promise.resolve(null),
+    queryFn: () =>
+      viewingContent?.contentId
+        ? api.getContentById(viewingContent.contentId)
+        : Promise.resolve(null),
     enabled: !!viewingContent?.contentId,
   });
 
@@ -230,17 +239,17 @@ export default function ContentSchedule() {
   // Normalize the data structure to handle different API responses
   const normalizedScheduledContent = scheduledContent.map((content: any) => {
     // More explicit title extraction to avoid caching issues
-    let title = 'Untitled Content';
+    let title = "Untitled Content";
     if (content.contentTitle) title = content.contentTitle;
     else if (content.title) title = content.title;
     else if (content.topic) title = content.topic;
     else if (content.name) title = content.name;
-    
-    let excerpt = '';
+
+    let excerpt = "";
     if (content.contentExcerpt) excerpt = content.contentExcerpt;
     else if (content.excerpt) excerpt = content.excerpt;
     else if (content.description) excerpt = content.description;
-    
+
     return {
       ...content,
       // Ensure we have consistent property names
@@ -342,10 +351,12 @@ export default function ContentSchedule() {
   };
 
   const handleDeleteSchedule = (schedule: any) => {
-    if (confirm(`Are you sure you want to unschedule "${schedule.contentTitle}"?`)) {
+    if (
+      confirm(`Are you sure you want to unschedule "${schedule.contentTitle}"?`)
+    ) {
       deleteScheduleMutation.mutate({
         websiteId: schedule.websiteId,
-        scheduleId: schedule.id
+        scheduleId: schedule.id,
       });
     }
   };
@@ -736,8 +747,13 @@ export default function ContentSchedule() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-2">
-                            <h3 className="font-medium text-gray-900">{content.contentTitle}</h3>
-                            {getStatusBadge(content.status, new Date(content.scheduledDate))}
+                            <h3 className="font-medium text-gray-900">
+                              {content.contentTitle}
+                            </h3>
+                            {getStatusBadge(
+                              content.status,
+                              new Date(content.scheduledDate)
+                            )}
                           </div>
 
                           {content.contentExcerpt && (
@@ -967,7 +983,7 @@ export default function ContentSchedule() {
                 Content Preview
               </DialogTitle>
             </DialogHeader>
-            
+
             {/* Scrollable content area with fixed height */}
             <div className="flex-1 overflow-hidden flex flex-col min-h-0">
               {viewingContent && (
@@ -981,14 +997,22 @@ export default function ContentSchedule() {
                       <div className="flex items-center space-x-4 text-sm text-gray-500">
                         <span className="flex items-center">
                           <Calendar className="w-4 h-4 mr-1" />
-                          Scheduled: {getDateLabel(new Date(viewingContent.scheduledDate))} at {formatDate(new Date(viewingContent.scheduledDate), "HH:mm")}
+                          Scheduled:{" "}
+                          {getDateLabel(
+                            new Date(viewingContent.scheduledDate)
+                          )}{" "}
+                          at{" "}
+                          {formatDate(
+                            new Date(viewingContent.scheduledDate),
+                            "HH:mm"
+                          )}
                         </span>
                         <span>
-                          Website: {viewingContent.websiteName || getWebsiteName(viewingContent.websiteId)}
+                          Website:{" "}
+                          {viewingContent.websiteName ||
+                            getWebsiteName(viewingContent.websiteId)}
                         </span>
-                        <span>
-                          Status: {viewingContent.status}
-                        </span>
+                        <span>Status: {viewingContent.status}</span>
                       </div>
                     </div>
 
@@ -1019,22 +1043,27 @@ export default function ContentSchedule() {
 
                   {/* Scrollable Content Body */}
                   <div className="flex-1 overflow-y-auto p-4">
-                 
                     {contentDetails ? (
                       <div className="prose max-w-none">
                         {contentDetails.content ? (
-                          <div 
+                          <div
                             className="text-sm text-gray-700 leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: contentDetails.content }}
+                            dangerouslySetInnerHTML={{
+                              __html: contentDetails.content,
+                            }}
                           />
                         ) : (
-                          <p className="text-sm text-gray-500 italic">No content available</p>
+                          <p className="text-sm text-gray-500 italic">
+                            No content available
+                          </p>
                         )}
                       </div>
                     ) : (
                       <div className="flex items-center justify-center py-8">
                         <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-                        <span className="ml-2 text-sm text-gray-500">Loading content...</span>
+                        <span className="ml-2 text-sm text-gray-500">
+                          Loading content...
+                        </span>
                       </div>
                     )}
 
@@ -1043,22 +1072,32 @@ export default function ContentSchedule() {
                       <div className="mt-8 pt-4 border-t grid grid-cols-2 gap-4 text-xs text-gray-500">
                         {contentDetails.wordCount && (
                           <div>
-                            <span className="font-medium">Word Count:</span> {contentDetails.wordCount}
+                            <span className="font-medium">Word Count:</span>{" "}
+                            {contentDetails.wordCount}
                           </div>
                         )}
                         {contentDetails.readingTime && (
                           <div>
-                            <span className="font-medium">Reading Time:</span> {contentDetails.readingTime} min
+                            <span className="font-medium">Reading Time:</span>{" "}
+                            {contentDetails.readingTime} min
                           </div>
                         )}
                         {contentDetails.createdAt && (
                           <div>
-                            <span className="font-medium">Created:</span> {formatDate(new Date(contentDetails.createdAt), "MMM dd, yyyy")}
+                            <span className="font-medium">Created:</span>{" "}
+                            {formatDate(
+                              new Date(contentDetails.createdAt),
+                              "MMM dd, yyyy"
+                            )}
                           </div>
                         )}
                         {contentDetails.lastModified && (
                           <div>
-                            <span className="font-medium">Modified:</span> {formatDate(new Date(contentDetails.lastModified), "MMM dd, yyyy")}
+                            <span className="font-medium">Modified:</span>{" "}
+                            {formatDate(
+                              new Date(contentDetails.lastModified),
+                              "MMM dd, yyyy"
+                            )}
                           </div>
                         )}
                       </div>

@@ -30,24 +30,27 @@ export class ApprovalWorkflowService {
       }
 
       await storage.updateContent(contentId, {
-        status: "pending_approval"
+        status: "pending_approval",
       });
 
       await storage.createActivityLog({
         websiteId: content.websiteId,
         type: "content_submitted_for_approval",
         description: `Content submitted for approval: "${content.title}"`,
-        metadata: { contentId, previousStatus: content.status }
+        metadata: { contentId, previousStatus: content.status },
       });
 
-      return { 
-        success: true, 
-        message: "Content submitted for approval successfully" 
+      return {
+        success: true,
+        message: "Content submitted for approval successfully",
       };
     } catch (error) {
-      return { 
-        success: false, 
-        message: error instanceof Error ? error.message : "Failed to submit for approval" 
+      return {
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to submit for approval",
       };
     }
   }
@@ -72,7 +75,7 @@ export class ApprovalWorkflowService {
         reviewerId: request.reviewerId,
         status: request.decision,
         feedback: request.feedback,
-        qualityScore: request.qualityScore
+        qualityScore: request.qualityScore,
       });
 
       // Update content status based on decision
@@ -93,9 +96,13 @@ export class ApprovalWorkflowService {
 
       await storage.updateContent(request.contentId, {
         status: newStatus,
-        approvedBy: request.decision === "approved" ? request.reviewerId : undefined,
+        approvedBy:
+          request.decision === "approved" ? request.reviewerId : undefined,
         approvedAt: request.decision === "approved" ? new Date() : undefined,
-        rejectionReason: request.decision === "rejected" ? (request.feedback || undefined) : undefined
+        rejectionReason:
+          request.decision === "rejected"
+            ? request.feedback || undefined
+            : undefined,
       });
 
       // Log the approval decision
@@ -103,23 +110,24 @@ export class ApprovalWorkflowService {
         websiteId: content.websiteId,
         type: `content_${request.decision}`,
         description: `Content ${request.decision}: "${content.title}"`,
-        metadata: { 
-          contentId: request.contentId, 
+        metadata: {
+          contentId: request.contentId,
           reviewerId: request.reviewerId,
           qualityScore: request.qualityScore,
-          feedback: request.feedback
-        }
+          feedback: request.feedback,
+        },
       });
 
-      return { 
-        success: true, 
+      return {
+        success: true,
         message: `Content ${request.decision} successfully`,
-        contentStatus: newStatus
+        contentStatus: newStatus,
       };
     } catch (error) {
-      return { 
-        success: false, 
-        message: error instanceof Error ? error.message : "Failed to process approval" 
+      return {
+        success: false,
+        message:
+          error instanceof Error ? error.message : "Failed to process approval",
       };
     }
   }
@@ -128,7 +136,7 @@ export class ApprovalWorkflowService {
    * Publish approved content to WordPress
    */
   async publishApprovedContent(
-    contentId: string, 
+    contentId: string,
     options: PublishingOptions = {}
   ): Promise<{
     success: boolean;
@@ -142,7 +150,10 @@ export class ApprovalWorkflowService {
       }
 
       if (content.status !== "approved") {
-        return { success: false, message: "Content must be approved before publishing" };
+        return {
+          success: false,
+          message: "Content must be approved before publishing",
+        };
       }
 
       const website = await storage.getWebsite(content.websiteId);
@@ -160,7 +171,7 @@ export class ApprovalWorkflowService {
         {
           encrypted: website.wpApplicationPassword,
           iv: "", // Would need to store IV separately in real implementation
-          tag: ""
+          tag: "",
         },
         website.wpApplicationName
       );
@@ -174,12 +185,15 @@ export class ApprovalWorkflowService {
           content: content.body,
           excerpt: content.excerpt,
           meta_description: content.metaDescription,
-          seo_keywords: content.seoKeywords
+          seo_keywords: content.seoKeywords,
         }
       );
 
       if (!draftResult.success || !draftResult.postId) {
-        return { success: false, message: draftResult.error || "Failed to create draft" };
+        return {
+          success: false,
+          message: draftResult.error || "Failed to create draft",
+        };
       }
 
       // Publish the post
@@ -196,37 +210,45 @@ export class ApprovalWorkflowService {
       }
 
       if (!publishResult.success) {
-        return { success: false, message: publishResult.error || "Failed to publish post" };
+        return {
+          success: false,
+          message: publishResult.error || "Failed to publish post",
+        };
       }
 
       // Update content with WordPress post ID and published status
       await storage.updateContent(contentId, {
         status: options.publishNow ? "published" : "scheduled",
         publishDate: options.publishNow ? new Date() : options.scheduledDate,
-        wordpressPostId: draftResult.postId
+        wordpressPostId: draftResult.postId,
       });
 
       // Log the publishing activity
       await storage.createActivityLog({
         websiteId: content.websiteId,
         type: options.publishNow ? "content_published" : "content_scheduled",
-        description: `Content ${options.publishNow ? "published" : "scheduled"}: "${content.title}"`,
-        metadata: { 
+        description: `Content ${
+          options.publishNow ? "published" : "scheduled"
+        }: "${content.title}"`,
+        metadata: {
           contentId,
           wordpressPostId: draftResult.postId,
-          publishDate: options.publishNow ? new Date() : options.scheduledDate
-        }
+          publishDate: options.publishNow ? new Date() : options.scheduledDate,
+        },
       });
 
-      return { 
-        success: true, 
-        message: `Content ${options.publishNow ? "published" : "scheduled"} successfully`,
-        wordpressPostId: draftResult.postId
+      return {
+        success: true,
+        message: `Content ${
+          options.publishNow ? "published" : "scheduled"
+        } successfully`,
+        wordpressPostId: draftResult.postId,
       };
     } catch (error) {
-      return { 
-        success: false, 
-        message: error instanceof Error ? error.message : "Failed to publish content" 
+      return {
+        success: false,
+        message:
+          error instanceof Error ? error.message : "Failed to publish content",
       };
     }
   }
@@ -234,7 +256,10 @@ export class ApprovalWorkflowService {
   /**
    * Create content backup before publishing
    */
-  private async createContentBackup(contentId: string, websiteId: string): Promise<void> {
+  private async createContentBackup(
+    contentId: string,
+    websiteId: string
+  ): Promise<void> {
     try {
       const content = await storage.getContent(contentId);
       if (!content) return;
@@ -248,8 +273,8 @@ export class ApprovalWorkflowService {
           body: content.body,
           status: content.status,
           createdAt: content.createdAt,
-          backupReason: "pre_publish"
-        }
+          backupReason: "pre_publish",
+        },
       });
     } catch (error) {
       console.error("Failed to create content backup:", error);
@@ -271,14 +296,17 @@ export class ApprovalWorkflowService {
   /**
    * Emergency stop - pause all automation for a website
    */
-  async emergencyStop(websiteId: string, reason: string): Promise<{
+  async emergencyStop(
+    websiteId: string,
+    reason: string
+  ): Promise<{
     success: boolean;
     message: string;
   }> {
     try {
       const website = await storage.updateWebsite(websiteId, {
         status: "suspended",
-        autoPosting: false
+        autoPosting: false,
       });
 
       if (!website) {
@@ -289,24 +317,27 @@ export class ApprovalWorkflowService {
         websiteId,
         type: "emergency_stop",
         description: `Emergency stop activated: ${reason}`,
-        metadata: { reason, timestamp: new Date() }
+        metadata: { reason, timestamp: new Date() },
       });
 
       await storage.createSecurityAudit({
         websiteId,
         action: "emergency_stop",
         success: true,
-        metadata: { reason }
+        metadata: { reason },
       });
 
-      return { 
-        success: true, 
-        message: "Emergency stop activated successfully" 
+      return {
+        success: true,
+        message: "Emergency stop activated successfully",
       };
     } catch (error) {
-      return { 
-        success: false, 
-        message: error instanceof Error ? error.message : "Failed to activate emergency stop" 
+      return {
+        success: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to activate emergency stop",
       };
     }
   }

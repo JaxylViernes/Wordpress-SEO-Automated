@@ -50,44 +50,67 @@ export default function ClientReports() {
       <div className="px-6 py-5 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-medium text-gray-900">Client Reports</h3>
-            <p className="text-sm text-gray-500">Automated weekly and monthly client reports</p>
+            <h3 className="text-lg font-medium text-gray-900">
+              Client Reports
+            </h3>
+            <p className="text-sm text-gray-500">
+              Automated weekly and monthly client reports
+            </p>
           </div>
           <Button className="bg-primary-500 hover:bg-primary-600 text-white">
             Generate Report
           </Button>
         </div>
       </div>
-      
+
       <div className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {clientReports.map((report) => (
-            <div key={report.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+            <div
+              key={report.id}
+              className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+            >
               <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-medium text-gray-900">{report.name}</h4>
+                <h4 className="text-sm font-medium text-gray-900">
+                  {report.name}
+                </h4>
                 <span className="text-xs text-gray-500">{report.period}</span>
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">SEO Score</span>
-                  <span className={`font-medium flex items-center ${getTrendColor(report.seoChange)}`}>
+                  <span
+                    className={`font-medium flex items-center ${getTrendColor(
+                      report.seoChange
+                    )}`}
+                  >
                     {getTrendIcon(report.seoChange)}
                     <span className="ml-1">
-                      {report.seoChange > 0 ? '+' : ''}{report.seoChange}%
+                      {report.seoChange > 0 ? "+" : ""}
+                      {report.seoChange}%
                     </span>
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Content Published</span>
-                  <span className="font-medium">{report.contentPublished} posts</span>
+                  <span className="font-medium">
+                    {report.contentPublished} posts
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Traffic Change</span>
-                  <span className={`font-medium flex items-center ${getTrendColor(report.trafficChange)}`}>
-                    {report.trafficChange !== 0 && getTrendIcon(report.trafficChange)}
+                  <span
+                    className={`font-medium flex items-center ${getTrendColor(
+                      report.trafficChange
+                    )}`}
+                  >
+                    {report.trafficChange !== 0 &&
+                      getTrendIcon(report.trafficChange)}
                     <span className="ml-1">
-                      {report.trafficChange > 0 ? '+' : ''}
-                      {report.trafficChange === 0 ? 'Stable' : `${report.trafficChange}%`}
+                      {report.trafficChange > 0 ? "+" : ""}
+                      {report.trafficChange === 0
+                        ? "Stable"
+                        : `${report.trafficChange}%`}
                     </span>
                   </span>
                 </div>

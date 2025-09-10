@@ -9,46 +9,53 @@ export type AIProvider = "openai" | "anthropic" | "gemini";
 
 // Initialize with environment variables directly
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR
+  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR,
 });
 
-const anthropic = new Anthropic({ 
-  apiKey: process.env.ANTHROPIC_API_KEY! 
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-const gemini = process.env.GOOGLE_GEMINI_API_KEY ? 
-  new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY) : null;
+const gemini = process.env.GOOGLE_GEMINI_API_KEY
+  ? new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY)
+  : null;
 
 // Model configurations
 const AI_MODELS = {
   openai: {
     model: "gpt-4o",
     pricing: {
-      input: 0.005,  // $0.005 per 1K input tokens
-      output: 0.015  // $0.015 per 1K output tokens
-    }
+      input: 0.005, // $0.005 per 1K input tokens
+      output: 0.015, // $0.015 per 1K output tokens
+    },
   },
   anthropic: {
     model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
     pricing: {
-      input: 0.003,  // $0.003 per 1K input tokens
-      output: 0.015  // $0.015 per 1K output tokens
-    }
+      input: 0.003, // $0.003 per 1K input tokens
+      output: 0.015, // $0.015 per 1K output tokens
+    },
   },
-   gemini: {
+  gemini: {
     model: "gemini-1.5-flash", // Make sure this matches what's in your code
     pricing: {
       input: 0.0025,
-      output: 0.0075
-    }
-  }
+      output: 0.0075,
+    },
+  },
 } as const;
 
 export interface ContentGenerationRequest {
   websiteId: string;
   topic: string;
   keywords: string[];
-  tone: "professional" | "casual" | "friendly" | "authoritative" | "technical" | "warm";
+  tone:
+    | "professional"
+    | "casual"
+    | "friendly"
+    | "authoritative"
+    | "technical"
+    | "warm";
   wordCount: number;
   seoOptimized: boolean;
   brandVoice?: string;
@@ -59,7 +66,7 @@ export interface ContentGenerationRequest {
 
   includeImages?: boolean;
   imageCount?: number; // 1-3 images
-  imageStyle?: 'natural' | 'digital_art' | 'photographic' | 'cinematic';
+  imageStyle?: "natural" | "digital_art" | "photographic" | "cinematic";
 }
 
 export interface ContentAnalysisRequest {
@@ -95,7 +102,7 @@ export interface ContentGenerationResult {
     brandAlignment: "excellent" | "good" | "needs_improvement";
   };
 
-   images?: Array<{
+  images?: Array<{
     url: string;
     filename: string;
     altText: string;
@@ -118,14 +125,14 @@ export interface ContentAnalysisResult {
 export class AIProviderError extends Error {
   constructor(provider: AIProvider, message: string) {
     super(`${provider.toUpperCase()} Error: ${message}`);
-    this.name = 'AIProviderError';
+    this.name = "AIProviderError";
   }
 }
 
 export class AnalysisError extends Error {
   constructor(analysisType: string, message: string) {
     super(`${analysisType} Analysis Error: ${message}`);
-    this.name = 'AnalysisError';
+    this.name = "AnalysisError";
   }
 }
 
@@ -134,41 +141,45 @@ export class ContentFormatter {
    * Convert markdown-style headers to HTML headers
    */
   static convertMarkdownToHtml(content: string): string {
-    return content
-      // Convert H6 first to avoid conflicts with shorter patterns
-      .replace(/^######\s+(.+)$/gm, '<h6>$1</h6>')
-      .replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>')
-      .replace(/^####\s+(.+)$/gm, '<h4>$1</h4>')
-      .replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
-      .replace(/^##\s+(.+)$/gm, '<h2>$1</h2>')
-      .replace(/^#\s+(.+)$/gm, '<h1>$1</h1>')
-      // Handle headers that might have trailing spaces
-      .replace(/^######\s+(.+?)\s*$/gm, '<h6>$1</h6>')
-      .replace(/^#####\s+(.+?)\s*$/gm, '<h5>$1</h5>')
-      .replace(/^####\s+(.+?)\s*$/gm, '<h4>$1</h4>')
-      .replace(/^###\s+(.+?)\s*$/gm, '<h3>$1</h3>')
-      .replace(/^##\s+(.+?)\s*$/gm, '<h2>$1</h2>')
-      .replace(/^#\s+(.+?)\s*$/gm, '<h1>$1</h1>');
+    return (
+      content
+        // Convert H6 first to avoid conflicts with shorter patterns
+        .replace(/^######\s+(.+)$/gm, "<h6>$1</h6>")
+        .replace(/^#####\s+(.+)$/gm, "<h5>$1</h5>")
+        .replace(/^####\s+(.+)$/gm, "<h4>$1</h4>")
+        .replace(/^###\s+(.+)$/gm, "<h3>$1</h3>")
+        .replace(/^##\s+(.+)$/gm, "<h2>$1</h2>")
+        .replace(/^#\s+(.+)$/gm, "<h1>$1</h1>")
+        // Handle headers that might have trailing spaces
+        .replace(/^######\s+(.+?)\s*$/gm, "<h6>$1</h6>")
+        .replace(/^#####\s+(.+?)\s*$/gm, "<h5>$1</h5>")
+        .replace(/^####\s+(.+?)\s*$/gm, "<h4>$1</h4>")
+        .replace(/^###\s+(.+?)\s*$/gm, "<h3>$1</h3>")
+        .replace(/^##\s+(.+?)\s*$/gm, "<h2>$1</h2>")
+        .replace(/^#\s+(.+?)\s*$/gm, "<h1>$1</h1>")
+    );
   }
 
   /**
    * Convert markdown formatting to HTML
    */
   static convertMarkdownFormatting(content: string): string {
-    return content
-      // Bold text: **text** or __text__ -> <strong>text</strong>
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/__(.*?)__/g, '<strong>$1</strong>')
-      
-      // Italic text: *text* or _text_ -> <em>text</em>
-      .replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, '<em>$1</em>')
-      .replace(/(?<!_)_([^_]+?)_(?!_)/g, '<em>$1</em>')
-      
-      // Convert bullet points with various markers
-      .replace(/^[\-\–\—\*\+]\s+(.+)$/gm, '<li>$1</li>')
-      
-      // Convert numbered lists
-      .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+    return (
+      content
+        // Bold text: **text** or __text__ -> <strong>text</strong>
+        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+        .replace(/__(.*?)__/g, "<strong>$1</strong>")
+
+        // Italic text: *text* or _text_ -> <em>text</em>
+        .replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, "<em>$1</em>")
+        .replace(/(?<!_)_([^_]+?)_(?!_)/g, "<em>$1</em>")
+
+        // Convert bullet points with various markers
+        .replace(/^[\-\–\—\*\+]\s+(.+)$/gm, "<li>$1</li>")
+
+        // Convert numbered lists
+        .replace(/^\d+\.\s+(.+)$/gm, "<li>$1</li>")
+    );
   }
 
   /**
@@ -176,12 +187,15 @@ export class ContentFormatter {
    */
   static wrapListItems(content: string): string {
     // Handle unordered lists (bullet points)
-    content = content.replace(/(<li>.*?<\/li>(?:\s*<li>.*?<\/li>)*)/gs, (match) => {
-      if (match.includes('<li>')) {
-        return `<ul>\n${match}\n</ul>`;
+    content = content.replace(
+      /(<li>.*?<\/li>(?:\s*<li>.*?<\/li>)*)/gs,
+      (match) => {
+        if (match.includes("<li>")) {
+          return `<ul>\n${match}\n</ul>`;
+        }
+        return match;
       }
-      return match;
-    });
+    );
 
     return content;
   }
@@ -193,110 +207,127 @@ export class ContentFormatter {
     let formatted = content;
     formatted = this.convertMarkdownToHtml(content);
     formatted = this.convertMarkdownFormatting(formatted);
-    
+
     // Wrap list items in proper list tags
     formatted = this.wrapListItems(formatted);
-    
+
     // Add proper paragraph tags if they don't exist
     formatted = this.addParagraphTags(formatted);
-    
+
     // Ensure proper spacing around headers
     formatted = this.addHeaderSpacing(formatted);
     formatted = this.addProperSpacing(formatted);
-    
+
     return formatted;
   }
 
   private static addParagraphTags(content: string): string {
     // Split content into blocks
-    const blocks = content.split('\n\n');
-    
-    return blocks.map(block => {
-      const trimmed = block.trim();
-      if (!trimmed) return '';
-      
-      // Skip if already wrapped in HTML tags
-      if (trimmed.startsWith('<') && trimmed.endsWith('>')) {
-        return trimmed;
-      }
-      
-      // Skip headers
-      if (trimmed.match(/^<h[1-6]>/)) {
-        return trimmed;
-      }
-      
-      // Wrap in paragraph tags
-      return `<p>${trimmed}</p>`;
-    }).join('\n\n');
+    const blocks = content.split("\n\n");
+
+    return blocks
+      .map((block) => {
+        const trimmed = block.trim();
+        if (!trimmed) return "";
+
+        // Skip if already wrapped in HTML tags
+        if (trimmed.startsWith("<") && trimmed.endsWith(">")) {
+          return trimmed;
+        }
+
+        // Skip headers
+        if (trimmed.match(/^<h[1-6]>/)) {
+          return trimmed;
+        }
+
+        // Wrap in paragraph tags
+        return `<p>${trimmed}</p>`;
+      })
+      .join("\n\n");
   }
 
   private static addProperSpacing(content: string): string {
-    return content
-      // Add line breaks around headers
-      .replace(/(<h[1-6]>.*?<\/h[1-6]>)/g, '\n$1\n')
-      // Add line breaks around lists
-      .replace(/(<\/?(?:ul|ol)>)/g, '\n$1\n')
-      // Clean up excessive line breaks
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    return (
+      content
+        // Add line breaks around headers
+        .replace(/(<h[1-6]>.*?<\/h[1-6]>)/g, "\n$1\n")
+        // Add line breaks around lists
+        .replace(/(<\/?(?:ul|ol)>)/g, "\n$1\n")
+        // Clean up excessive line breaks
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()
+    );
   }
 
   private static addHeaderSpacing(content: string): string {
     // Add line breaks around headers for better WordPress formatting
     return content
-      .replace(/(<h[1-6]>.*?<\/h[1-6]>)/g, '\n$1\n')
-      .replace(/\n{3,}/g, '\n\n'); // Clean up excessive line breaks
-  }
-};
-
-export class AIService {
-
-  async analyzeExistingContent(request: {
-  title: string;
-  content: string;
-  keywords: string[];
-  tone: string;
-  brandVoice?: string;
-  targetAudience?: string;
-  eatCompliance?: boolean;
-  websiteId: string;
-  aiProvider: AIProvider;
-  userId: string;
-}): Promise<ContentAnalysisResult> {
-  try {
-    console.log(`Re-analyzing existing content with ${request.aiProvider.toUpperCase()}`);
-    
-    // Use the existing performContentAnalysis method
-    const analysisResult = await this.performContentAnalysis({
-      title: request.title,
-      content: request.content,
-      keywords: request.keywords,
-      tone: request.tone,
-      brandVoice: request.brandVoice,
-      targetAudience: request.targetAudience,
-      eatCompliance: request.eatCompliance || false,
-      websiteId: request.websiteId,
-      aiProvider: request.aiProvider,
-      userId: request.userId
-    });
-
-    console.log(`✅ Existing content re-analyzed - SEO: ${analysisResult.seoScore}%, Readability: ${analysisResult.readabilityScore}%, Brand Voice: ${analysisResult.brandVoiceScore}%`);
-
-    return analysisResult;
-  } catch (error: any) {
-    console.error('Failed to analyze existing content:', error);
-    
-    if (error instanceof AIProviderError || error instanceof AnalysisError) {
-      throw error;
-    }
-    
-    throw new AnalysisError('Content Re-analysis', error.message || 'Unknown error during content analysis');
+      .replace(/(<h[1-6]>.*?<\/h[1-6]>)/g, "\n$1\n")
+      .replace(/\n{3,}/g, "\n\n"); // Clean up excessive line breaks
   }
 }
 
-  public async callOpenAI(messages: any[], responseFormat?: any, temperature = 0.7): Promise<{content: string, tokens: number}> {
+export class AIService {
+  async analyzeExistingContent(request: {
+    title: string;
+    content: string;
+    keywords: string[];
+    tone: string;
+    brandVoice?: string;
+    targetAudience?: string;
+    eatCompliance?: boolean;
+    websiteId: string;
+    aiProvider: AIProvider;
+    userId: string;
+  }): Promise<ContentAnalysisResult> {
+    try {
+      console.log(
+        `Re-analyzing existing content with ${request.aiProvider.toUpperCase()}`
+      );
+
+      // Use the existing performContentAnalysis method
+      const analysisResult = await this.performContentAnalysis({
+        title: request.title,
+        content: request.content,
+        keywords: request.keywords,
+        tone: request.tone,
+        brandVoice: request.brandVoice,
+        targetAudience: request.targetAudience,
+        eatCompliance: request.eatCompliance || false,
+        websiteId: request.websiteId,
+        aiProvider: request.aiProvider,
+        userId: request.userId,
+      });
+
+      console.log(
+        `✅ Existing content re-analyzed - SEO: ${analysisResult.seoScore}%, Readability: ${analysisResult.readabilityScore}%, Brand Voice: ${analysisResult.brandVoiceScore}%`
+      );
+
+      return analysisResult;
+    } catch (error: any) {
+      console.error("Failed to analyze existing content:", error);
+
+      if (error instanceof AIProviderError || error instanceof AnalysisError) {
+        throw error;
+      }
+
+      throw new AnalysisError(
+        "Content Re-analysis",
+        error.message || "Unknown error during content analysis"
+      );
+    }
+  }
+
+  public async callOpenAI(
+    messages: any[],
+    responseFormat?: any,
+    temperature = 0.7
+  ): Promise<{ content: string; tokens: number }> {
     if (!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
-      throw new AIProviderError('openai', 'API key not configured in environment variables');
+      throw new AIProviderError(
+        "openai",
+        "API key not configured in environment variables"
+      );
     }
 
     try {
@@ -309,223 +340,289 @@ export class AIService {
 
       const content = response.choices[0]?.message?.content;
       if (!content) {
-        throw new AIProviderError('openai', 'No content returned from API');
+        throw new AIProviderError("openai", "No content returned from API");
       }
 
       return {
         content,
-        tokens: response.usage?.total_tokens || 0
+        tokens: response.usage?.total_tokens || 0,
       };
     } catch (error: any) {
       if (error instanceof AIProviderError) throw error;
-      
+
       // Handle specific OpenAI errors
       if (error.status === 401) {
-        throw new AIProviderError('openai', 'Invalid API key. Please check your OpenAI API key configuration.');
+        throw new AIProviderError(
+          "openai",
+          "Invalid API key. Please check your OpenAI API key configuration."
+        );
       } else if (error.status === 429) {
-        throw new AIProviderError('openai', 'Rate limit exceeded. Please try again later.');
+        throw new AIProviderError(
+          "openai",
+          "Rate limit exceeded. Please try again later."
+        );
       } else if (error.status === 403) {
-        throw new AIProviderError('openai', 'Insufficient permissions. Please check your OpenAI API key permissions.');
+        throw new AIProviderError(
+          "openai",
+          "Insufficient permissions. Please check your OpenAI API key permissions."
+        );
       }
-      
-      throw new AIProviderError('openai', error.message || 'Unknown API error');
+
+      throw new AIProviderError("openai", error.message || "Unknown API error");
     }
   }
 
-  public embedImagesInContent(content: string, images: Array<{
-  url: string;
-  filename: string;
-  altText: string;
-  prompt: string;
-  cost: number;
-}>): string {
-  return this.embedImagesInContent(content, images);
-}
-
-
-   private embedImagesInContentPrivate(content: string, images: Array<{
-  url: string;
-  filename: string;
-  altText: string;
-  prompt: string;
-  cost: number;
-}>): string {
-  if (!images || images.length === 0) {
-    return content;
+  public embedImagesInContent(
+    content: string,
+    images: Array<{
+      url: string;
+      filename: string;
+      altText: string;
+      prompt: string;
+      cost: number;
+    }>
+  ): string {
+    return this.embedImagesInContent(content, images);
   }
 
-  let modifiedContent = content;
+  private embedImagesInContentPrivate(
+    content: string,
+    images: Array<{
+      url: string;
+      filename: string;
+      altText: string;
+      prompt: string;
+      cost: number;
+    }>
+  ): string {
+    if (!images || images.length === 0) {
+      return content;
+    }
 
-  images.forEach((image, index) => {
-    // Create WordPress-friendly image HTML with better formatting
-    const imageHtml = `
+    let modifiedContent = content;
+
+    images.forEach((image, index) => {
+      // Create WordPress-friendly image HTML with better formatting
+      const imageHtml = `
 <figure class="wp-block-image size-large">
   <img src="${image.url}" alt="${image.altText}" class="wp-image" style="max-width: 100%; height: auto;" />
   <figcaption>${image.altText}</figcaption>
 </figure>
 `;
 
-    if (index === 0) {
-      // Place first image after the introduction (after first </p>)
-      const firstParagraphEnd = modifiedContent.indexOf('</p>');
-      if (firstParagraphEnd !== -1) {
-        modifiedContent = modifiedContent.slice(0, firstParagraphEnd + 4) + 
-                         '\n\n' + imageHtml + '\n\n' + 
-                         modifiedContent.slice(firstParagraphEnd + 4);
-        console.log(`🖼️ Placed hero image after introduction`);
-      } else {
-        // Fallback: place at the beginning
-        modifiedContent = imageHtml + '\n\n' + modifiedContent;
-        console.log(`🖼️ Placed hero image at beginning (fallback)`);
-      }
-    } else {
-      // Place subsequent images before H2 headings
-      const h2Regex = /<h2>/g;
-      const h2Matches = Array.from(modifiedContent.matchAll(h2Regex));
-      
-      if (h2Matches.length > index - 1) {
-        const insertPoint = h2Matches[index - 1].index;
-        modifiedContent = modifiedContent.slice(0, insertPoint) + 
-                         imageHtml + '\n\n' + 
-                         modifiedContent.slice(insertPoint);
-        console.log(`🖼️ Placed image ${index + 1} before H2 section`);
-      } else {
-        // Fallback: place before conclusion
-        const conclusionHeadings = ['<h2>Conclusion', '<h2>Summary', '<h2>Final'];
-        let insertPoint = -1;
-        
-        for (const heading of conclusionHeadings) {
-          insertPoint = modifiedContent.lastIndexOf(heading);
-          if (insertPoint !== -1) break;
-        }
-        
-        if (insertPoint !== -1) {
-          modifiedContent = modifiedContent.slice(0, insertPoint) + 
-                           imageHtml + '\n\n' + 
-                           modifiedContent.slice(insertPoint);
-          console.log(`🖼️ Placed image ${index + 1} before conclusion`);
+      if (index === 0) {
+        // Place first image after the introduction (after first </p>)
+        const firstParagraphEnd = modifiedContent.indexOf("</p>");
+        if (firstParagraphEnd !== -1) {
+          modifiedContent =
+            modifiedContent.slice(0, firstParagraphEnd + 4) +
+            "\n\n" +
+            imageHtml +
+            "\n\n" +
+            modifiedContent.slice(firstParagraphEnd + 4);
+          console.log(`🖼️ Placed hero image after introduction`);
         } else {
-          // Final fallback: place at the end
-          modifiedContent = modifiedContent + '\n\n' + imageHtml;
-          console.log(`🖼️ Placed image ${index + 1} at end (fallback)`);
+          // Fallback: place at the beginning
+          modifiedContent = imageHtml + "\n\n" + modifiedContent;
+          console.log(`🖼️ Placed hero image at beginning (fallback)`);
+        }
+      } else {
+        // Place subsequent images before H2 headings
+        const h2Regex = /<h2>/g;
+        const h2Matches = Array.from(modifiedContent.matchAll(h2Regex));
+
+        if (h2Matches.length > index - 1) {
+          const insertPoint = h2Matches[index - 1].index;
+          modifiedContent =
+            modifiedContent.slice(0, insertPoint) +
+            imageHtml +
+            "\n\n" +
+            modifiedContent.slice(insertPoint);
+          console.log(`🖼️ Placed image ${index + 1} before H2 section`);
+        } else {
+          // Fallback: place before conclusion
+          const conclusionHeadings = [
+            "<h2>Conclusion",
+            "<h2>Summary",
+            "<h2>Final",
+          ];
+          let insertPoint = -1;
+
+          for (const heading of conclusionHeadings) {
+            insertPoint = modifiedContent.lastIndexOf(heading);
+            if (insertPoint !== -1) break;
+          }
+
+          if (insertPoint !== -1) {
+            modifiedContent =
+              modifiedContent.slice(0, insertPoint) +
+              imageHtml +
+              "\n\n" +
+              modifiedContent.slice(insertPoint);
+            console.log(`🖼️ Placed image ${index + 1} before conclusion`);
+          } else {
+            // Final fallback: place at the end
+            modifiedContent = modifiedContent + "\n\n" + imageHtml;
+            console.log(`🖼️ Placed image ${index + 1} at end (fallback)`);
+          }
         }
       }
-    }
-  });
+    });
 
-  return modifiedContent;
-}
+    return modifiedContent;
+  }
 
   // Add this debug version of callGemini method in your ai-service.ts
 
-// Update your callGemini method in ai-service.ts with better error handling
+  // Update your callGemini method in ai-service.ts with better error handling
 
-private async callGemini(messages: any[], temperature = 0.7): Promise<{content: string, tokens: number}> {
-  if (!process.env.GOOGLE_GEMINI_API_KEY || !gemini) {
-    throw new AIProviderError('gemini', 'API key not configured in environment variables');
-  }
-
-  try {
-    const model = gemini.getGenerativeModel({ model: AI_MODELS.gemini.model });
-
-    // Convert OpenAI message format to Gemini format
-    const systemMessage = messages.find(m => m.role === 'system');
-    const userMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant');
-
-    // Build the conversation history for Gemini
-    const history = userMessages.slice(0, -1).map(m => ({
-      role: m.role === 'user' ? 'user' : 'model',
-      parts: [{ text: m.content }]
-    }));
-
-    // Get the latest user message
-    const lastMessage = userMessages[userMessages.length - 1];
-    if (!lastMessage || lastMessage.role !== 'user') {
-      throw new AIProviderError('gemini', 'Invalid message format - last message must be from user');
-    }
-
-    // Create chat session with history
-    const chat = model.startChat({
-      history,
-      generationConfig: {
-        temperature,
-        maxOutputTokens: 4000,
-      },
-    });
-
-    // Add system instructions to the user prompt if present
-    let prompt = lastMessage.content;
-    if (systemMessage?.content) {
-      prompt = `${systemMessage.content}\n\n${prompt}`;
-      
-      // Enhance for JSON response if needed
-      if (systemMessage.content.includes('JSON') || systemMessage.content.includes('json')) {
-        prompt += '\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object. Start your response with { and end with }.';
-      }
-    }
-
-    const result = await chat.sendMessage(prompt);
-    const response = await result.response;
-    const responseText = response.text();
-
-    if (!responseText) {
-      throw new AIProviderError('gemini', 'No content returned from API');
-    }
-
-    let cleanedText = responseText.trim();
-    
-    // Try to extract JSON if it's wrapped in other text
-    if (!cleanedText.startsWith('{') && cleanedText.includes('{')) {
-      const jsonStart = cleanedText.indexOf('{');
-      const jsonEnd = cleanedText.lastIndexOf('}') + 1;
-      if (jsonStart !== -1 && jsonEnd > jsonStart) {
-        cleanedText = cleanedText.substring(jsonStart, jsonEnd);
-      }
-    }
-
-    // Estimate token usage (Gemini doesn't provide exact token counts in all cases)
-    const estimatedTokens = Math.ceil((prompt.length + cleanedText.length) / 4);
-
-    return {
-      content: cleanedText,
-      tokens: estimatedTokens
-    };
-  } catch (error: any) {
-    if (error instanceof AIProviderError) throw error;
-    
-    // Handle specific Gemini errors with better messages
-    if (error.status === 429 || error.message?.includes('Too Many Requests')) {
-      throw new AIProviderError('gemini', 
-        'Rate limit exceeded. Google Gemini free tier allows only 15 requests/minute and 1,500/day. ' +
-        'Please wait a few minutes or consider upgrading to a paid plan. ' +
-        'Alternatively, use OpenAI or Anthropic for now.'
+  private async callGemini(
+    messages: any[],
+    temperature = 0.7
+  ): Promise<{ content: string; tokens: number }> {
+    if (!process.env.GOOGLE_GEMINI_API_KEY || !gemini) {
+      throw new AIProviderError(
+        "gemini",
+        "API key not configured in environment variables"
       );
-    } else if (error.message?.includes('API_KEY_INVALID')) {
-      throw new AIProviderError('gemini', 'Invalid API key. Please check your Google Gemini API key configuration.');
-    } else if (error.message?.includes('RATE_LIMIT_EXCEEDED')) {
-      throw new AIProviderError('gemini', 'Rate limit exceeded. Please try again later.');
-    } else if (error.message?.includes('PERMISSION_DENIED')) {
-      throw new AIProviderError('gemini', 'Insufficient permissions. Please check your Google Gemini API key permissions.');
     }
-    
-    throw new AIProviderError('gemini', error.message || 'Unknown API error');
-  }
-}
 
-  private async callAnthropic(messages: any[], temperature = 0.7): Promise<{content: string, tokens: number}> {
+    try {
+      const model = gemini.getGenerativeModel({
+        model: AI_MODELS.gemini.model,
+      });
+
+      // Convert OpenAI message format to Gemini format
+      const systemMessage = messages.find((m) => m.role === "system");
+      const userMessages = messages.filter(
+        (m) => m.role === "user" || m.role === "assistant"
+      );
+
+      // Build the conversation history for Gemini
+      const history = userMessages.slice(0, -1).map((m) => ({
+        role: m.role === "user" ? "user" : "model",
+        parts: [{ text: m.content }],
+      }));
+
+      // Get the latest user message
+      const lastMessage = userMessages[userMessages.length - 1];
+      if (!lastMessage || lastMessage.role !== "user") {
+        throw new AIProviderError(
+          "gemini",
+          "Invalid message format - last message must be from user"
+        );
+      }
+
+      // Create chat session with history
+      const chat = model.startChat({
+        history,
+        generationConfig: {
+          temperature,
+          maxOutputTokens: 4000,
+        },
+      });
+
+      // Add system instructions to the user prompt if present
+      let prompt = lastMessage.content;
+      if (systemMessage?.content) {
+        prompt = `${systemMessage.content}\n\n${prompt}`;
+
+        // Enhance for JSON response if needed
+        if (
+          systemMessage.content.includes("JSON") ||
+          systemMessage.content.includes("json")
+        ) {
+          prompt +=
+            "\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object. Start your response with { and end with }.";
+        }
+      }
+
+      const result = await chat.sendMessage(prompt);
+      const response = await result.response;
+      const responseText = response.text();
+
+      if (!responseText) {
+        throw new AIProviderError("gemini", "No content returned from API");
+      }
+
+      let cleanedText = responseText.trim();
+
+      // Try to extract JSON if it's wrapped in other text
+      if (!cleanedText.startsWith("{") && cleanedText.includes("{")) {
+        const jsonStart = cleanedText.indexOf("{");
+        const jsonEnd = cleanedText.lastIndexOf("}") + 1;
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          cleanedText = cleanedText.substring(jsonStart, jsonEnd);
+        }
+      }
+
+      // Estimate token usage (Gemini doesn't provide exact token counts in all cases)
+      const estimatedTokens = Math.ceil(
+        (prompt.length + cleanedText.length) / 4
+      );
+
+      return {
+        content: cleanedText,
+        tokens: estimatedTokens,
+      };
+    } catch (error: any) {
+      if (error instanceof AIProviderError) throw error;
+
+      // Handle specific Gemini errors with better messages
+      if (
+        error.status === 429 ||
+        error.message?.includes("Too Many Requests")
+      ) {
+        throw new AIProviderError(
+          "gemini",
+          "Rate limit exceeded. Google Gemini free tier allows only 15 requests/minute and 1,500/day. " +
+            "Please wait a few minutes or consider upgrading to a paid plan. " +
+            "Alternatively, use OpenAI or Anthropic for now."
+        );
+      } else if (error.message?.includes("API_KEY_INVALID")) {
+        throw new AIProviderError(
+          "gemini",
+          "Invalid API key. Please check your Google Gemini API key configuration."
+        );
+      } else if (error.message?.includes("RATE_LIMIT_EXCEEDED")) {
+        throw new AIProviderError(
+          "gemini",
+          "Rate limit exceeded. Please try again later."
+        );
+      } else if (error.message?.includes("PERMISSION_DENIED")) {
+        throw new AIProviderError(
+          "gemini",
+          "Insufficient permissions. Please check your Google Gemini API key permissions."
+        );
+      }
+
+      throw new AIProviderError("gemini", error.message || "Unknown API error");
+    }
+  }
+
+  private async callAnthropic(
+    messages: any[],
+    temperature = 0.7
+  ): Promise<{ content: string; tokens: number }> {
     if (!process.env.ANTHROPIC_API_KEY) {
-      throw new AIProviderError('anthropic', 'API key not configured in environment variables');
+      throw new AIProviderError(
+        "anthropic",
+        "API key not configured in environment variables"
+      );
     }
 
     try {
       // Convert OpenAI format to Anthropic format
-      const systemMessage = messages.find(m => m.role === 'system');
-      const userMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant');
+      const systemMessage = messages.find((m) => m.role === "system");
+      const userMessages = messages.filter(
+        (m) => m.role === "user" || m.role === "assistant"
+      );
 
       // Enhance system message to ensure JSON response
-      let systemContent = systemMessage?.content || '';
-      if (systemContent.includes('JSON') || systemContent.includes('json')) {
-        systemContent += '\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object. Start your response with { and end with }.';
+      let systemContent = systemMessage?.content || "";
+      if (systemContent.includes("JSON") || systemContent.includes("json")) {
+        systemContent +=
+          "\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object. Start your response with { and end with }.";
       }
 
       const response = await anthropic.messages.create({
@@ -533,23 +630,26 @@ private async callGemini(messages: any[], temperature = 0.7): Promise<{content: 
         max_tokens: 4000,
         temperature,
         system: systemContent,
-        messages: userMessages.map(m => ({
-          role: m.role === 'user' ? 'user' : 'assistant',
-          content: m.content
-        }))
+        messages: userMessages.map((m) => ({
+          role: m.role === "user" ? "user" : "assistant",
+          content: m.content,
+        })),
       });
 
       const content = response.content[0];
-      if (content.type !== 'text' || !content.text) {
-        throw new AIProviderError('anthropic', 'No text content returned from API');
+      if (content.type !== "text" || !content.text) {
+        throw new AIProviderError(
+          "anthropic",
+          "No text content returned from API"
+        );
       }
 
       let responseText = content.text.trim();
-      
+
       // Try to extract JSON if it's wrapped in other text
-      if (!responseText.startsWith('{') && responseText.includes('{')) {
-        const jsonStart = responseText.indexOf('{');
-        const jsonEnd = responseText.lastIndexOf('}') + 1;
+      if (!responseText.startsWith("{") && responseText.includes("{")) {
+        const jsonStart = responseText.indexOf("{");
+        const jsonEnd = responseText.lastIndexOf("}") + 1;
         if (jsonStart !== -1 && jsonEnd > jsonStart) {
           responseText = responseText.substring(jsonStart, jsonEnd);
         }
@@ -557,58 +657,91 @@ private async callGemini(messages: any[], temperature = 0.7): Promise<{content: 
 
       return {
         content: responseText,
-        tokens: response.usage.input_tokens + response.usage.output_tokens
+        tokens: response.usage.input_tokens + response.usage.output_tokens,
       };
     } catch (error: any) {
       if (error instanceof AIProviderError) throw error;
-      
+
       // Handle specific Anthropic errors
       if (error.status === 401) {
-        throw new AIProviderError('anthropic', 'Invalid API key. Please check your Anthropic API key configuration.');
+        throw new AIProviderError(
+          "anthropic",
+          "Invalid API key. Please check your Anthropic API key configuration."
+        );
       } else if (error.status === 429) {
-        throw new AIProviderError('anthropic', 'Rate limit exceeded. Please try again later.');
+        throw new AIProviderError(
+          "anthropic",
+          "Rate limit exceeded. Please try again later."
+        );
       } else if (error.status === 403) {
-        throw new AIProviderError('anthropic', 'Insufficient permissions. Please check your Anthropic API key permissions.');
+        throw new AIProviderError(
+          "anthropic",
+          "Insufficient permissions. Please check your Anthropic API key permissions."
+        );
       }
-      
-      throw new AIProviderError('anthropic', error.message || 'Unknown API error');
+
+      throw new AIProviderError(
+        "anthropic",
+        error.message || "Unknown API error"
+      );
     }
   }
 
-  private async callAI(provider: AIProvider, messages: any[], responseFormat?: any, temperature = 0.7): Promise<{content: string, tokens: number}> {
+  private async callAI(
+    provider: AIProvider,
+    messages: any[],
+    responseFormat?: any,
+    temperature = 0.7
+  ): Promise<{ content: string; tokens: number }> {
     switch (provider) {
-      case 'openai':
+      case "openai":
         return this.callOpenAI(messages, responseFormat, temperature);
-      case 'anthropic':
+      case "anthropic":
         return this.callAnthropic(messages, temperature);
-       case 'gemini':
-      return this.callGemini(messages, temperature);
+      case "gemini":
+        return this.callGemini(messages, temperature);
       default:
         throw new Error(`Unsupported AI provider: ${provider}`);
     }
   }
 
+  // Now, here's your updated generateContent method with the integration:
 
-// Now, here's your updated generateContent method with the integration:
+  // Replace the generateContent method in your ai-service.ts
 
-// Replace the generateContent method in your ai-service.ts
+  async generateContent(
+    request: ContentGenerationRequest
+  ): Promise<ContentGenerationResult> {
+    try {
+      console.log(
+        `Generating content for user ${
+          request.userId
+        } with ${request.aiProvider.toUpperCase()}`
+      );
 
-async generateContent(request: ContentGenerationRequest): Promise<ContentGenerationResult> {
-  try {
-    console.log(`Generating content for user ${request.userId} with ${request.aiProvider.toUpperCase()}`);
-    
-    // Step 1: Check if image generation is requested and validate OpenAI availability
-    if (request.includeImages && request.imageCount && request.imageCount > 0) {
-      if (!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
-        throw new Error('Image generation requires OpenAI API key for DALL-E 3');
+      // Step 1: Check if image generation is requested and validate OpenAI availability
+      if (
+        request.includeImages &&
+        request.imageCount &&
+        request.imageCount > 0
+      ) {
+        if (
+          !process.env.OPENAI_API_KEY &&
+          !process.env.OPENAI_API_KEY_ENV_VAR
+        ) {
+          throw new Error(
+            "Image generation requires OpenAI API key for DALL-E 3"
+          );
+        }
+        console.log(
+          `🎨 Will generate ${request.imageCount} images with DALL-E 3 (regardless of content AI provider: ${request.aiProvider})`
+        );
       }
-      console.log(`🎨 Will generate ${request.imageCount} images with DALL-E 3 (regardless of content AI provider: ${request.aiProvider})`);
-    }
 
-    // Step 2: Generate the actual content using selected AI provider
-    const contentPrompt = this.buildContentPrompt(request);
+      // Step 2: Generate the actual content using selected AI provider
+      const contentPrompt = this.buildContentPrompt(request);
 
-    const systemPrompt = `You are an expert content writer and SEO specialist with 10+ years of experience in digital marketing.
+      const systemPrompt = `You are an expert content writer and SEO specialist with 10+ years of experience in digital marketing.
 
 Your task is to create high-quality, original blog content that:
 - Ranks well in search engines through natural keyword integration
@@ -637,239 +770,325 @@ CONTENT QUALITY STANDARDS:
 - Ensure every paragraph adds value to the reader
 - Use clear, concise language appropriate for the target audience
 
-${request.aiProvider === 'openai' ? 'Respond with JSON containing: title, content, excerpt, metaDescription, metaTitle, keywords (array of actual keywords used in content)' : 'Respond with a JSON object containing: title, content, excerpt, metaDescription, metaTitle, keywords (array of actual keywords used in content)'}`;
+${
+  request.aiProvider === "openai"
+    ? "Respond with JSON containing: title, content, excerpt, metaDescription, metaTitle, keywords (array of actual keywords used in content)"
+    : "Respond with a JSON object containing: title, content, excerpt, metaDescription, metaTitle, keywords (array of actual keywords used in content)"
+}`;
 
-    const contentResponse = await this.callAI(
-      request.aiProvider,
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: contentPrompt }
-      ],
-      request.aiProvider === 'openai' ? { type: "json_object" } : undefined,
-      0.7
-    );
+      const contentResponse = await this.callAI(
+        request.aiProvider,
+        [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: contentPrompt },
+        ],
+        request.aiProvider === "openai" ? { type: "json_object" } : undefined,
+        0.7
+      );
 
-    let contentResult;
-    try {
-      let cleanedContent = contentResponse.content.trim();
-      cleanedContent = cleanedContent.replace(/^\uFEFF/, '');
-      contentResult = JSON.parse(cleanedContent);
-      console.log('✅ Successfully parsed JSON response from', request.aiProvider.toUpperCase());
-    } catch (parseError) {
-      console.error('❌ Initial JSON parse failed, attempting extraction...', parseError.message);
-      
-      let cleanedContent = contentResponse.content.trim();
-      const firstBrace = cleanedContent.indexOf('{');
-      const lastBrace = cleanedContent.lastIndexOf('}');
-      
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        const extractedJson = cleanedContent.substring(firstBrace, lastBrace + 1);
-        
-        try {
-          contentResult = JSON.parse(extractedJson);
-          console.log('✅ Successfully parsed extracted JSON from', request.aiProvider.toUpperCase());
-        } catch (secondParseError) {
-          throw new AIProviderError(request.aiProvider, 
-            `Failed to parse JSON response after multiple attempts. Original error: ${parseError.message}`
+      let contentResult;
+      try {
+        let cleanedContent = contentResponse.content.trim();
+        cleanedContent = cleanedContent.replace(/^\uFEFF/, "");
+        contentResult = JSON.parse(cleanedContent);
+        console.log(
+          "✅ Successfully parsed JSON response from",
+          request.aiProvider.toUpperCase()
+        );
+      } catch (parseError) {
+        console.error(
+          "❌ Initial JSON parse failed, attempting extraction...",
+          parseError.message
+        );
+
+        let cleanedContent = contentResponse.content.trim();
+        const firstBrace = cleanedContent.indexOf("{");
+        const lastBrace = cleanedContent.lastIndexOf("}");
+
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          const extractedJson = cleanedContent.substring(
+            firstBrace,
+            lastBrace + 1
+          );
+
+          try {
+            contentResult = JSON.parse(extractedJson);
+            console.log(
+              "✅ Successfully parsed extracted JSON from",
+              request.aiProvider.toUpperCase()
+            );
+          } catch (secondParseError) {
+            throw new AIProviderError(
+              request.aiProvider,
+              `Failed to parse JSON response after multiple attempts. Original error: ${parseError.message}`
+            );
+          }
+        } else {
+          throw new AIProviderError(
+            request.aiProvider,
+            `No valid JSON structure found in response. Response was: ${contentResponse.content.substring(
+              0,
+              300
+            )}...`
           );
         }
-      } else {
-        throw new AIProviderError(request.aiProvider, 
-          `No valid JSON structure found in response. Response was: ${contentResponse.content.substring(0, 300)}...`
+      }
+
+      if (!contentResult.title || !contentResult.content) {
+        throw new AIProviderError(
+          request.aiProvider,
+          "AI response missing required fields (title, content)"
         );
       }
-    }
 
-    if (!contentResult.title || !contentResult.content) {
-      throw new AIProviderError(request.aiProvider, 'AI response missing required fields (title, content)');
-    }
+      // Convert markdown headers to HTML if they exist
+      console.log("📄 Converting markdown headers to HTML...");
 
-    // Convert markdown headers to HTML if they exist
-    console.log('📄 Converting markdown headers to HTML...');
-    
-    if (contentResult.content && contentResult.content.includes('#')) {
-      console.log('🔍 Markdown headers detected, converting to HTML...');
-      contentResult.content = ContentFormatter.convertMarkdownToHtml(contentResult.content);
-    }
-
-    // Format for WordPress
-    contentResult.content = ContentFormatter.formatForWordPress(contentResult.content);
-    console.log('✅ Content formatted for WordPress');
-
-    // Step 3: Generate images if requested (ALWAYS using OpenAI DALL-E 3)
-    let images: Array<{
-      url: string;
-      filename: string;
-      altText: string;
-      prompt: string;
-      cost: number;
-    }> = [];
-    let totalImageCost = 0;
-
-    if (request.includeImages && request.imageCount && request.imageCount > 0) {
-      try {
-        console.log(`🎨 Generating ${request.imageCount} images with DALL-E 3 (content generated with ${request.aiProvider.toUpperCase()})...`);
-        
-        // Import and use the image service
-        const { imageService } = await import('./image-service');
-        
-        const imageGenerationRequest = {
-          topic: request.topic,
-          count: request.imageCount,
-          style: request.imageStyle || 'natural',
-          contentContext: contentResult.content.substring(0, 500),
-          keywords: request.keywords
-        };
-
-        // Validate the request first
-        const validation = imageService.validateImageRequest(imageGenerationRequest);
-        if (!validation.valid) {
-          throw new Error(`Image generation validation failed: ${validation.errors.join(', ')}`);
-        }
-
-        const imageResult = await imageService.generateImages(imageGenerationRequest);
-        images = imageResult.images;
-        totalImageCost = imageResult.totalCost;
-        
-        console.log(`✅ Generated ${images.length} images with DALL-E 3 (Total cost: $${totalImageCost.toFixed(4)})`);
-        
-        if (images.length > 0) {
-          console.log('🖼️ Embedding images into content...');
-          contentResult.content = this.embedImagesInContentPrivate(contentResult.content, images);
-          console.log(`✅ Embedded ${images.length} images into content`);
-        }
-
-      } catch (imageError: any) {
-        console.error('❌ Image generation failed:', imageError.message);
-        
-        // Don't fail the entire content generation for image errors
-        if (imageError.message.includes('Rate limit')) {
-          console.warn('⚠️ DALL-E rate limit reached, continuing without images');
-        } else if (imageError.message.includes('credits') || imageError.message.includes('quota')) {
-          console.warn('⚠️ Insufficient OpenAI credits for images, continuing without images');
-        } else if (imageError.message.includes('API key')) {
-          console.warn('⚠️ OpenAI API key issue for image generation, continuing without images');
-        } else {
-          console.warn(`⚠️ Image generation error: ${imageError.message}`);
-        }
-        
-        // Continue with content generation even if images fail
-        images = [];
-        totalImageCost = 0;
+      if (contentResult.content && contentResult.content.includes("#")) {
+        console.log("🔍 Markdown headers detected, converting to HTML...");
+        contentResult.content = ContentFormatter.convertMarkdownToHtml(
+          contentResult.content
+        );
       }
-    }
 
-    // Step 4: Analyze the generated content using the same AI provider as content generation
-    const analysisResult = await this.performContentAnalysis({
-      title: contentResult.title,
-      content: contentResult.content,
-      keywords: request.keywords,
-      tone: request.tone,
-      brandVoice: request.brandVoice,
-      targetAudience: request.targetAudience,
-      eatCompliance: request.eatCompliance,
-      websiteId: request.websiteId,
-      aiProvider: request.aiProvider, // Use same provider for analysis
-      userId: request.userId
-    });
+      // Format for WordPress
+      contentResult.content = ContentFormatter.formatForWordPress(
+        contentResult.content
+      );
+      console.log("✅ Content formatted for WordPress");
 
-    // Step 5: Calculate total costs (content AI + image AI costs separately)
-    const contentTokens = Math.max(1, contentResponse.tokens + analysisResult.tokensUsed);
-    const contentPricing = AI_MODELS[request.aiProvider].pricing;
-    
-    // Use average of input/output pricing for content generation
-    const avgTokenCost = (contentPricing.input + contentPricing.output) / 2;
-    const textCostUsd = (contentTokens * avgTokenCost) / 1000;
-    
-    // Total cost is content cost + image cost
-    const totalCostUsd = textCostUsd + totalImageCost;
+      // Step 3: Generate images if requested (ALWAYS using OpenAI DALL-E 3)
+      let images: Array<{
+        url: string;
+        filename: string;
+        altText: string;
+        prompt: string;
+        cost: number;
+      }> = [];
+      let totalImageCost = 0;
 
-    console.log(`💰 Cost breakdown:`);
-    console.log(`   Content (${request.aiProvider.toUpperCase()}): $${textCostUsd.toFixed(6)} (${contentTokens} tokens)`);
-    console.log(`   Images (DALL-E 3): $${totalImageCost.toFixed(6)}`);
-    console.log(`   Total: $${totalCostUsd.toFixed(6)}`);
+      if (
+        request.includeImages &&
+        request.imageCount &&
+        request.imageCount > 0
+      ) {
+        try {
+          console.log(
+            `🎨 Generating ${
+              request.imageCount
+            } images with DALL-E 3 (content generated with ${request.aiProvider.toUpperCase()})...`
+          );
 
-    // Step 6: Track AI usage (content and images separately)
-    try {
-      await storage.trackAiUsage({
+          // Import and use the image service
+          const { imageService } = await import("./image-service");
+
+          const imageGenerationRequest = {
+            topic: request.topic,
+            count: request.imageCount,
+            style: request.imageStyle || "natural",
+            contentContext: contentResult.content.substring(0, 500),
+            keywords: request.keywords,
+          };
+
+          // Validate the request first
+          const validation = imageService.validateImageRequest(
+            imageGenerationRequest
+          );
+          if (!validation.valid) {
+            throw new Error(
+              `Image generation validation failed: ${validation.errors.join(
+                ", "
+              )}`
+            );
+          }
+
+          const imageResult = await imageService.generateImages(
+            imageGenerationRequest
+          );
+          images = imageResult.images;
+          totalImageCost = imageResult.totalCost;
+
+          console.log(
+            `✅ Generated ${
+              images.length
+            } images with DALL-E 3 (Total cost: $${totalImageCost.toFixed(4)})`
+          );
+
+          if (images.length > 0) {
+            console.log("🖼️ Embedding images into content...");
+            contentResult.content = this.embedImagesInContentPrivate(
+              contentResult.content,
+              images
+            );
+            console.log(`✅ Embedded ${images.length} images into content`);
+          }
+        } catch (imageError: any) {
+          console.error("❌ Image generation failed:", imageError.message);
+
+          // Don't fail the entire content generation for image errors
+          if (imageError.message.includes("Rate limit")) {
+            console.warn(
+              "⚠️ DALL-E rate limit reached, continuing without images"
+            );
+          } else if (
+            imageError.message.includes("credits") ||
+            imageError.message.includes("quota")
+          ) {
+            console.warn(
+              "⚠️ Insufficient OpenAI credits for images, continuing without images"
+            );
+          } else if (imageError.message.includes("API key")) {
+            console.warn(
+              "⚠️ OpenAI API key issue for image generation, continuing without images"
+            );
+          } else {
+            console.warn(`⚠️ Image generation error: ${imageError.message}`);
+          }
+
+          // Continue with content generation even if images fail
+          images = [];
+          totalImageCost = 0;
+        }
+      }
+
+      // Step 4: Analyze the generated content using the same AI provider as content generation
+      const analysisResult = await this.performContentAnalysis({
+        title: contentResult.title,
+        content: contentResult.content,
+        keywords: request.keywords,
+        tone: request.tone,
+        brandVoice: request.brandVoice,
+        targetAudience: request.targetAudience,
+        eatCompliance: request.eatCompliance,
         websiteId: request.websiteId,
+        aiProvider: request.aiProvider, // Use same provider for analysis
         userId: request.userId,
-        model: AI_MODELS[request.aiProvider].model,
-        tokensUsed: contentTokens,
-        costUsd: Math.max(1, Math.round(textCostUsd * 100)), // Content cost only in cents
-        operation: 'content_generation'
       });
-      
-      // Track image generation separately if images were generated
-      if (images.length > 0) {
+
+      // Step 5: Calculate total costs (content AI + image AI costs separately)
+      const contentTokens = Math.max(
+        1,
+        contentResponse.tokens + analysisResult.tokensUsed
+      );
+      const contentPricing = AI_MODELS[request.aiProvider].pricing;
+
+      // Use average of input/output pricing for content generation
+      const avgTokenCost = (contentPricing.input + contentPricing.output) / 2;
+      const textCostUsd = (contentTokens * avgTokenCost) / 1000;
+
+      // Total cost is content cost + image cost
+      const totalCostUsd = textCostUsd + totalImageCost;
+
+      console.log(`💰 Cost breakdown:`);
+      console.log(
+        `   Content (${request.aiProvider.toUpperCase()}): $${textCostUsd.toFixed(
+          6
+        )} (${contentTokens} tokens)`
+      );
+      console.log(`   Images (DALL-E 3): $${totalImageCost.toFixed(6)}`);
+      console.log(`   Total: $${totalCostUsd.toFixed(6)}`);
+
+      // Step 6: Track AI usage (content and images separately)
+      try {
         await storage.trackAiUsage({
           websiteId: request.websiteId,
           userId: request.userId,
-          model: 'dall-e-3',
-          tokensUsed: 0, // Images don't use tokens
-          costUsd: Math.round(totalImageCost * 100), // Image cost in cents
-          operation: 'image_generation'
+          model: AI_MODELS[request.aiProvider].model,
+          tokensUsed: contentTokens,
+          costUsd: Math.max(1, Math.round(textCostUsd * 100)), // Content cost only in cents
+          operation: "content_generation",
         });
+
+        // Track image generation separately if images were generated
+        if (images.length > 0) {
+          await storage.trackAiUsage({
+            websiteId: request.websiteId,
+            userId: request.userId,
+            model: "dall-e-3",
+            tokensUsed: 0, // Images don't use tokens
+            costUsd: Math.round(totalImageCost * 100), // Image cost in cents
+            operation: "image_generation",
+          });
+        }
+      } catch (trackingError: any) {
+        console.warn("AI usage tracking failed:", trackingError.message);
       }
-    } catch (trackingError: any) {
-      console.warn('AI usage tracking failed:', trackingError.message);
+
+      // Step 7: Generate enhanced quality checks
+      const qualityChecks = this.generateQualityChecks(
+        contentResult.content,
+        request
+      );
+
+      // Step 8: Return complete result
+      const result: ContentGenerationResult = {
+        title: contentResult.title,
+        content: contentResult.content,
+        excerpt:
+          contentResult.excerpt || this.generateExcerpt(contentResult.content),
+        metaDescription:
+          contentResult.metaDescription ||
+          this.generateMetaDescription(
+            contentResult.title,
+            contentResult.content
+          ),
+        metaTitle: contentResult.metaTitle || contentResult.title,
+        keywords: contentResult.keywords || request.keywords,
+        seoScore: Math.max(1, Math.min(100, analysisResult.seoScore)),
+        readabilityScore: Math.max(
+          1,
+          Math.min(100, analysisResult.readabilityScore)
+        ),
+        brandVoiceScore: Math.max(
+          1,
+          Math.min(100, analysisResult.brandVoiceScore)
+        ),
+        eatCompliance: request.eatCompliance || false,
+        tokensUsed: contentTokens,
+        costUsd: Number(textCostUsd.toFixed(6)), // Content cost only
+        aiProvider: request.aiProvider,
+        qualityChecks,
+      };
+
+      // Add image information if images were generated
+      if (images.length > 0) {
+        result.images = images.map((img) => ({
+          url: img.url,
+          filename: img.filename,
+          altText: img.altText,
+          prompt: img.prompt,
+          cost: img.cost,
+        }));
+        result.totalImageCost = totalImageCost;
+      }
+
+      console.log(
+        `✅ Content generation completed successfully with ${request.aiProvider.toUpperCase()}${
+          images.length > 0 ? ` + DALL-E (${images.length} images)` : ""
+        }`
+      );
+
+      return result;
+    } catch (error: any) {
+      if (error instanceof AIProviderError || error instanceof AnalysisError) {
+        throw error;
+      }
+      throw new Error(`Content generation failed: ${error.message}`);
     }
-
-    // Step 7: Generate enhanced quality checks
-    const qualityChecks = this.generateQualityChecks(contentResult.content, request);
-
-    // Step 8: Return complete result
-    const result: ContentGenerationResult = {
-      title: contentResult.title,
-      content: contentResult.content,
-      excerpt: contentResult.excerpt || this.generateExcerpt(contentResult.content),
-      metaDescription: contentResult.metaDescription || this.generateMetaDescription(contentResult.title, contentResult.content),
-      metaTitle: contentResult.metaTitle || contentResult.title,
-      keywords: contentResult.keywords || request.keywords,
-      seoScore: Math.max(1, Math.min(100, analysisResult.seoScore)),
-      readabilityScore: Math.max(1, Math.min(100, analysisResult.readabilityScore)),
-      brandVoiceScore: Math.max(1, Math.min(100, analysisResult.brandVoiceScore)),
-      eatCompliance: request.eatCompliance || false,
-      tokensUsed: contentTokens,
-      costUsd: Number(textCostUsd.toFixed(6)), // Content cost only
-      aiProvider: request.aiProvider,
-      qualityChecks
-    };
-
-    // Add image information if images were generated
-    if (images.length > 0) {
-      result.images = images.map(img => ({
-        url: img.url,
-        filename: img.filename,
-        altText: img.altText,
-        prompt: img.prompt,
-        cost: img.cost
-      }));
-      result.totalImageCost = totalImageCost;
-    }
-
-    console.log(`✅ Content generation completed successfully with ${request.aiProvider.toUpperCase()}${images.length > 0 ? ` + DALL-E (${images.length} images)` : ''}`);
-
-    return result;
-
-  } catch (error: any) {
-    if (error instanceof AIProviderError || error instanceof AnalysisError) {
-      throw error;
-    }
-    throw new Error(`Content generation failed: ${error.message}`);
   }
-}
 
-
-  
-  private async performContentAnalysis(request: ContentAnalysisRequest): Promise<ContentAnalysisResult> {
+  private async performContentAnalysis(
+    request: ContentAnalysisRequest
+  ): Promise<ContentAnalysisResult> {
     let totalTokens = 0;
     let seoScore = 50; // Default fallback
-    let readabilityScore = 50; // Default fallback  
+    let readabilityScore = 50; // Default fallback
     let brandVoiceScore = 50; // Default fallback
 
     try {
-      console.log(`Starting content analysis with ${request.aiProvider.toUpperCase()}`);
+      console.log(
+        `Starting content analysis with ${request.aiProvider.toUpperCase()}`
+      );
 
       // Step 1: SEO Analysis - FIXED TO ENSURE NUMERIC RESPONSE
       const seoAnalysisResponse = await this.callAI(
@@ -909,19 +1128,25 @@ Score conservatively but meaningfully. Minimum score should be 15-25 for very po
 
 CRITICAL: Return ONLY a JSON object with numeric values. Example: {"contentSeoScore": 67, "analysis": "Content shows good keyword usage..."}
 
-${request.aiProvider === 'openai' ? 'Respond with JSON: { "contentSeoScore": number, "analysis": "explanation" }' : 'Respond with JSON: { "contentSeoScore": number, "analysis": "explanation" }'}`
+${
+  request.aiProvider === "openai"
+    ? 'Respond with JSON: { "contentSeoScore": number, "analysis": "explanation" }'
+    : 'Respond with JSON: { "contentSeoScore": number, "analysis": "explanation" }'
+}`,
           },
           {
             role: "user",
             content: `Analyze this content for SEO:
 
 TITLE: ${request.title}
-CONTENT: ${request.content.substring(0, 3000)}... ${request.content.length > 3000 ? '[TRUNCATED]' : ''}
+CONTENT: ${request.content.substring(0, 3000)}... ${
+              request.content.length > 3000 ? "[TRUNCATED]" : ""
+            }
 TARGET KEYWORDS: ${request.keywords.join(", ")}
-TARGET AUDIENCE: ${request.targetAudience || "General audience"}`
-          }
+TARGET AUDIENCE: ${request.targetAudience || "General audience"}`,
+          },
         ],
-        request.aiProvider === 'openai' ? { type: "json_object" } : undefined,
+        request.aiProvider === "openai" ? { type: "json_object" } : undefined,
         0.1
       );
 
@@ -930,24 +1155,30 @@ TARGET AUDIENCE: ${request.targetAudience || "General audience"}`
       // FIXED: Parse SEO response with proper error handling and fallbacks
       try {
         let cleanContent = seoAnalysisResponse.content.trim();
-        if (!cleanContent.startsWith('{')) {
-          const start = cleanContent.indexOf('{');
-          const end = cleanContent.lastIndexOf('}') + 1;
+        if (!cleanContent.startsWith("{")) {
+          const start = cleanContent.indexOf("{");
+          const end = cleanContent.lastIndexOf("}") + 1;
           if (start !== -1 && end > start) {
             cleanContent = cleanContent.substring(start, end);
           }
         }
-        
+
         const seoAnalysis = JSON.parse(cleanContent);
-        if (typeof seoAnalysis.contentSeoScore === 'number' && seoAnalysis.contentSeoScore >= 1 && seoAnalysis.contentSeoScore <= 100) {
+        if (
+          typeof seoAnalysis.contentSeoScore === "number" &&
+          seoAnalysis.contentSeoScore >= 1 &&
+          seoAnalysis.contentSeoScore <= 100
+        ) {
           seoScore = Math.round(seoAnalysis.contentSeoScore);
           console.log(`✅ SEO Score: ${seoScore}`);
         } else {
-          console.warn(`⚠️ Invalid SEO score: ${seoAnalysis.contentSeoScore}, using fallback`);
+          console.warn(
+            `⚠️ Invalid SEO score: ${seoAnalysis.contentSeoScore}, using fallback`
+          );
           seoScore = 55; // Reasonable fallback
         }
       } catch (parseError) {
-        console.error('❌ Failed to parse SEO analysis, using fallback score');
+        console.error("❌ Failed to parse SEO analysis, using fallback score");
         seoScore = 50; // Fallback score
       }
 
@@ -985,14 +1216,21 @@ COMPREHENSION EASE (20 points):
 
 CRITICAL: Return ONLY JSON with numeric score. Example: {"readabilityScore": 73, "analysis": "Text is well-structured..."}
 
-${request.aiProvider === 'openai' ? 'Respond with JSON: { "readabilityScore": number, "analysis": "explanation" }' : 'Respond with JSON: { "readabilityScore": number, "analysis": "explanation" }'}`
+${
+  request.aiProvider === "openai"
+    ? 'Respond with JSON: { "readabilityScore": number, "analysis": "explanation" }'
+    : 'Respond with JSON: { "readabilityScore": number, "analysis": "explanation" }'
+}`,
           },
           {
             role: "user",
-            content: `Analyze readability:\n\n${request.content.substring(0, 2000)}${request.content.length > 2000 ? '...' : ''}`
-          }
+            content: `Analyze readability:\n\n${request.content.substring(
+              0,
+              2000
+            )}${request.content.length > 2000 ? "..." : ""}`,
+          },
         ],
-        request.aiProvider === 'openai' ? { type: "json_object" } : undefined,
+        request.aiProvider === "openai" ? { type: "json_object" } : undefined,
         0.1
       );
 
@@ -1001,16 +1239,20 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON: { "readabilityScore": nu
       // FIXED: Parse readability with fallback
       try {
         let cleanContent = readabilityResponse.content.trim();
-        if (!cleanContent.startsWith('{')) {
-          const start = cleanContent.indexOf('{');
-          const end = cleanContent.lastIndexOf('}') + 1;
+        if (!cleanContent.startsWith("{")) {
+          const start = cleanContent.indexOf("{");
+          const end = cleanContent.lastIndexOf("}") + 1;
           if (start !== -1 && end > start) {
             cleanContent = cleanContent.substring(start, end);
           }
         }
-        
+
         const readabilityAnalysis = JSON.parse(cleanContent);
-        if (typeof readabilityAnalysis.readabilityScore === 'number' && readabilityAnalysis.readabilityScore >= 1 && readabilityAnalysis.readabilityScore <= 100) {
+        if (
+          typeof readabilityAnalysis.readabilityScore === "number" &&
+          readabilityAnalysis.readabilityScore >= 1 &&
+          readabilityAnalysis.readabilityScore <= 100
+        ) {
           readabilityScore = Math.round(readabilityAnalysis.readabilityScore);
           console.log(`✅ Readability Score: ${readabilityScore}`);
         } else {
@@ -1018,7 +1260,9 @@ ${request.aiProvider === 'openai' ? 'Respond with JSON: { "readabilityScore": nu
           readabilityScore = 60; // Reasonable fallback
         }
       } catch (parseError) {
-        console.error('❌ Failed to parse readability analysis, using fallback');
+        console.error(
+          "❌ Failed to parse readability analysis, using fallback"
+        );
         readabilityScore = 60;
       }
 
@@ -1054,22 +1298,28 @@ AUDIENCE APPROPRIATENESS (20 points):
 
 CRITICAL: Return ONLY JSON. Example: {"brandVoiceScore": 78, "analysis": "Brand voice is consistent..."}
 
-${request.aiProvider === 'openai' ? 'Respond with JSON: { "brandVoiceScore": number, "analysis": "evaluation" }' : 'Respond with JSON: { "brandVoiceScore": number, "analysis": "evaluation" }'}`
+${
+  request.aiProvider === "openai"
+    ? 'Respond with JSON: { "brandVoiceScore": number, "analysis": "evaluation" }'
+    : 'Respond with JSON: { "brandVoiceScore": number, "analysis": "evaluation" }'
+}`,
           },
           {
             role: "user",
             content: `Analyze brand voice alignment:
 
-CONTENT: ${request.content.substring(0, 1500)}${request.content.length > 1500 ? '...' : ''}
+CONTENT: ${request.content.substring(0, 1500)}${
+              request.content.length > 1500 ? "..." : ""
+            }
 
 BRAND REQUIREMENTS:
 - Specified Tone: ${request.tone}
 - Brand Voice: ${request.brandVoice || "Not specified - use tone as guidance"}
 - Target Audience: ${request.targetAudience || "General audience"}
-- Industry Context: Based on content topic`
-          }
+- Industry Context: Based on content topic`,
+          },
         ],
-        request.aiProvider === 'openai' ? { type: "json_object" } : undefined,
+        request.aiProvider === "openai" ? { type: "json_object" } : undefined,
         0.1
       );
 
@@ -1078,16 +1328,20 @@ BRAND REQUIREMENTS:
       // FIXED: Parse brand voice with fallback
       try {
         let cleanContent = brandVoiceResponse.content.trim();
-        if (!cleanContent.startsWith('{')) {
-          const start = cleanContent.indexOf('{');
-          const end = cleanContent.lastIndexOf('}') + 1;
+        if (!cleanContent.startsWith("{")) {
+          const start = cleanContent.indexOf("{");
+          const end = cleanContent.lastIndexOf("}") + 1;
           if (start !== -1 && end > start) {
             cleanContent = cleanContent.substring(start, end);
           }
         }
-        
+
         const brandVoiceAnalysis = JSON.parse(cleanContent);
-        if (typeof brandVoiceAnalysis.brandVoiceScore === 'number' && brandVoiceAnalysis.brandVoiceScore >= 1 && brandVoiceAnalysis.brandVoiceScore <= 100) {
+        if (
+          typeof brandVoiceAnalysis.brandVoiceScore === "number" &&
+          brandVoiceAnalysis.brandVoiceScore >= 1 &&
+          brandVoiceAnalysis.brandVoiceScore <= 100
+        ) {
           brandVoiceScore = Math.round(brandVoiceAnalysis.brandVoiceScore);
           console.log(`✅ Brand Voice Score: ${brandVoiceScore}`);
         } else {
@@ -1095,11 +1349,15 @@ BRAND REQUIREMENTS:
           brandVoiceScore = 65; // Reasonable fallback
         }
       } catch (parseError) {
-        console.error('❌ Failed to parse brand voice analysis, using fallback');
+        console.error(
+          "❌ Failed to parse brand voice analysis, using fallback"
+        );
         brandVoiceScore = 65;
       }
 
-      console.log(`Content analysis completed - SEO: ${seoScore}%, Readability: ${readabilityScore}%, Brand Voice: ${brandVoiceScore}%`);
+      console.log(
+        `Content analysis completed - SEO: ${seoScore}%, Readability: ${readabilityScore}%, Brand Voice: ${brandVoiceScore}%`
+      );
 
       // FIXED: Calculate cost properly
       const pricing = AI_MODELS[request.aiProvider].pricing;
@@ -1114,10 +1372,10 @@ BRAND REQUIREMENTS:
           model: AI_MODELS[request.aiProvider].model,
           tokensUsed: totalTokens,
           costUsd: Math.max(1, Math.round(analysisCostUsd * 100)), // Store as cents
-          operation: 'content_analysis'
+          operation: "content_analysis",
         });
       } catch (trackingError) {
-        console.warn('AI usage tracking failed:', trackingError.message);
+        console.warn("AI usage tracking failed:", trackingError.message);
       }
 
       return {
@@ -1126,28 +1384,30 @@ BRAND REQUIREMENTS:
         brandVoiceScore: brandVoiceScore,
         tokensUsed: totalTokens,
         costUsd: Number(analysisCostUsd.toFixed(6)),
-        aiProvider: request.aiProvider
+        aiProvider: request.aiProvider,
       };
-
     } catch (error) {
       if (error instanceof AIProviderError || error instanceof AnalysisError) {
         throw error;
       }
-      
+
       // Return meaningful fallback scores instead of failing
-      console.error('Analysis error, using fallback scores:', error.message);
+      console.error("Analysis error, using fallback scores:", error.message);
       return {
         seoScore: 55,
-        readabilityScore: 60, 
+        readabilityScore: 60,
         brandVoiceScore: 65,
         tokensUsed: Math.max(1, totalTokens || 100), // Reasonable estimate
         costUsd: 0.001, // Small fallback cost
-        aiProvider: request.aiProvider
+        aiProvider: request.aiProvider,
       };
     }
   }
 
-  private generateQualityChecks(content: string, request: ContentGenerationRequest) {
+  private generateQualityChecks(
+    content: string,
+    request: ContentGenerationRequest
+  ) {
     const wordCount = content.split(" ").length;
     const hasKeywords = request.keywords.some((keyword) =>
       content.toLowerCase().includes(keyword.toLowerCase())
@@ -1155,11 +1415,16 @@ BRAND REQUIREMENTS:
     const sentenceCount = content.split(".").length;
     const avgWordsPerSentence = wordCount / sentenceCount;
 
-    const plagiarismRisk = content.length > 500 && hasKeywords ? "low" : "medium";
-    const factualAccuracy = wordCount > 400 && hasKeywords && avgWordsPerSentence < 25
-      ? "verified" : "needs_review";
-    const brandAlignment = request.brandVoice && request.targetAudience
-      ? "good" : "needs_improvement";
+    const plagiarismRisk =
+      content.length > 500 && hasKeywords ? "low" : "medium";
+    const factualAccuracy =
+      wordCount > 400 && hasKeywords && avgWordsPerSentence < 25
+        ? "verified"
+        : "needs_review";
+    const brandAlignment =
+      request.brandVoice && request.targetAudience
+        ? "good"
+        : "needs_improvement";
 
     return {
       plagiarismRisk: plagiarismRisk as const,
@@ -1184,14 +1449,16 @@ BRAND REQUIREMENTS:
     content: string,
     keywords: string[],
     userId: string,
-    aiProvider: AIProvider = 'openai'
+    aiProvider: AIProvider = "openai"
   ): Promise<{
     optimizedContent: string;
     suggestions: string[];
     seoScore: number;
   }> {
     try {
-      const prompt = `Optimize the following content for SEO using these keywords: ${keywords.join(", ")}. 
+      const prompt = `Optimize the following content for SEO using these keywords: ${keywords.join(
+        ", "
+      )}. 
       
       Content: ${content}
       
@@ -1212,22 +1479,36 @@ OPTIMIZATION TASKS:
 5. Suggest internal linking opportunities
 6. Enhance readability while maintaining SEO value
 
-${aiProvider === 'openai' ? 'Respond with JSON: { "optimizedContent": string, "suggestions": string[], "seoScore": number }' : 'Respond with JSON: { "optimizedContent": string, "suggestions": string[], "seoScore": number }'}`
+${
+  aiProvider === "openai"
+    ? 'Respond with JSON: { "optimizedContent": string, "suggestions": string[], "seoScore": number }'
+    : 'Respond with JSON: { "optimizedContent": string, "suggestions": string[], "seoScore": number }'
+}`,
           },
-          { role: "user", content: prompt }
+          { role: "user", content: prompt },
         ],
-        aiProvider === 'openai' ? { type: "json_object" } : undefined
+        aiProvider === "openai" ? { type: "json_object" } : undefined
       );
 
       let result;
       try {
         result = JSON.parse(response.content);
       } catch (parseError) {
-        throw new AIProviderError(aiProvider, 'Failed to parse optimization response');
+        throw new AIProviderError(
+          aiProvider,
+          "Failed to parse optimization response"
+        );
       }
 
-      if (!result.optimizedContent || !Array.isArray(result.suggestions) || typeof result.seoScore !== 'number') {
-        throw new AIProviderError(aiProvider, 'Invalid optimization response structure');
+      if (
+        !result.optimizedContent ||
+        !Array.isArray(result.suggestions) ||
+        typeof result.seoScore !== "number"
+      ) {
+        throw new AIProviderError(
+          aiProvider,
+          "Invalid optimization response structure"
+        );
       }
 
       return {
@@ -1256,13 +1537,17 @@ ${aiProvider === 'openai' ? 'Respond with JSON: { "optimizedContent": string, "s
       ? `\n- E-E-A-T compliance required: Include expertise indicators, authoritative sources, and trustworthiness signals.`
       : "";
 
-    return `Create a comprehensive, original blog post about "${request.topic}" with these requirements:
+    return `Create a comprehensive, original blog post about "${
+      request.topic
+    }" with these requirements:
 
 TOPIC AND KEYWORDS:
 - Primary topic: ${request.topic}
 - Target keywords to integrate naturally: ${request.keywords.join(", ")}
 - Word count target: approximately ${request.wordCount} words
-- Tone: ${request.tone} (maintain consistently)${brandVoiceSection}${audienceSection}${eatSection}
+- Tone: ${
+      request.tone
+    } (maintain consistently)${brandVoiceSection}${audienceSection}${eatSection}
 
 CONTENT REQUIREMENTS:
 - Write with authentic human voice using natural conversational flow
@@ -1274,18 +1559,22 @@ CONTENT REQUIREMENTS:
 - Use contractions naturally (don't, won't, can't)
 - Add specific, concrete details rather than generic statements
 
-SEO OPTIMIZATION (${request.seoOptimized ? 'ENABLED' : 'DISABLED'}):
-${request.seoOptimized ? `
+SEO OPTIMIZATION (${request.seoOptimized ? "ENABLED" : "DISABLED"}):
+${
+  request.seoOptimized
+    ? `
 - Include primary keyword in title (under 60 characters)
 - Use primary keyword in first paragraph naturally
 - Include keywords in 2-3 subheadings without stuffing
 - Maintain keyword density between 1-3%
 - Include semantic/related keywords throughout
 - Create compelling meta description (150-160 characters)
-` : `
+`
+    : `
 - Focus on natural writing without keyword optimization
 - Prioritize user value over search engine optimization
-`}
+`
+}
 
 STRUCTURE:
 - Start with engaging introduction

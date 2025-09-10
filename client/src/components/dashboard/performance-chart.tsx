@@ -34,8 +34,12 @@ export default function PerformanceChart() {
     return (
       <div className="bg-white shadow-sm rounded-lg">
         <div className="px-6 py-5 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">SEO Performance Trend</h3>
-          <p className="text-sm text-gray-500">Last 7 days performance across all websites</p>
+          <h3 className="text-lg font-medium text-gray-900">
+            SEO Performance Trend
+          </h3>
+          <p className="text-sm text-gray-500">
+            Last 7 days performance across all websites
+          </p>
         </div>
         <div className="p-6 h-64 flex items-center justify-center">
           <div className="text-gray-500">Loading chart...</div>
@@ -47,7 +51,10 @@ export default function PerformanceChart() {
   const chartData = {
     labels: performanceData.map((item: any) => {
       const date = new Date(item.date);
-      return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      return date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
     }),
     datasets: [
       {
@@ -90,8 +97,12 @@ export default function PerformanceChart() {
   return (
     <div className="bg-white shadow-sm rounded-lg">
       <div className="px-6 py-5 border-b border-gray-200">
-        <h3 className="text-lg font-medium text-gray-900">SEO Performance Trend</h3>
-        <p className="text-sm text-gray-500">Last 7 days performance across all websites</p>
+        <h3 className="text-lg font-medium text-gray-900">
+          SEO Performance Trend
+        </h3>
+        <p className="text-sm text-gray-500">
+          Last 7 days performance across all websites
+        </p>
       </div>
       <div className="p-6" style={{ height: "300px" }}>
         <Line data={chartData} options={options} />

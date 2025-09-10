@@ -13,14 +13,17 @@ import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 
 // Helper function to calculate percentage change
-const calculatePercentageChange = (current: number, previous: number): { percentage: string; type: "positive" | "negative" | "neutral" } => {
+const calculatePercentageChange = (
+  current: number,
+  previous: number
+): { percentage: string; type: "positive" | "negative" | "neutral" } => {
   if (!previous || previous === 0) {
     return { percentage: "N/A", type: "neutral" };
   }
-  
+
   const change = ((current - previous) / previous) * 100;
   const roundedChange = Math.round(change * 10) / 10; // Round to 1 decimal place
-  
+
   if (roundedChange > 0) {
     return { percentage: `+${roundedChange}%`, type: "positive" };
   } else if (roundedChange < 0) {
@@ -46,25 +49,28 @@ export default function Dashboard() {
   });
 
   // Calculate SEO score percentage change
-  const seoScoreChange = stats?.avgSeoScore && stats?.previousAvgSeoScore 
-    ? calculatePercentageChange(stats.avgSeoScore, stats.previousAvgSeoScore)
-    : { percentage: " ", type: "neutral" as const };
+  const seoScoreChange =
+    stats?.avgSeoScore && stats?.previousAvgSeoScore
+      ? calculatePercentageChange(stats.avgSeoScore, stats.previousAvgSeoScore)
+      : { percentage: " ", type: "neutral" as const };
 
   // Alternative calculation if your API returns historical data differently
   const calculateSeoChangeFromHistory = () => {
     if (!stats?.seoScoreHistory || stats.seoScoreHistory.length < 2) {
       return { percentage: "N/A", type: "neutral" as const };
     }
-    
-    const currentScore = stats.seoScoreHistory[stats.seoScoreHistory.length - 1];
-    const previousScore = stats.seoScoreHistory[stats.seoScoreHistory.length - 2];
-    
+
+    const currentScore =
+      stats.seoScoreHistory[stats.seoScoreHistory.length - 1];
+    const previousScore =
+      stats.seoScoreHistory[stats.seoScoreHistory.length - 2];
+
     return calculatePercentageChange(currentScore, previousScore);
   };
 
   // Use whichever method fits your API structure
-  const finalSeoChange = stats?.previousAvgSeoScore 
-    ? seoScoreChange 
+  const finalSeoChange = stats?.previousAvgSeoScore
+    ? seoScoreChange
     : calculateSeoChangeFromHistory();
 
   if (isLoading) return <div>Loading...</div>;
@@ -83,7 +89,10 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="mt-4 sm:mt-0 sm:ml-4">
-            <Button variant="outline" className="inline-flex items-center w-full sm:w-auto justify-center">
+            <Button
+              variant="outline"
+              className="inline-flex items-center w-full sm:w-auto justify-center"
+            >
               <Download className="w-4 h-4 mr-2" />
               Export Report
             </Button>
@@ -105,7 +114,9 @@ export default function Dashboard() {
           />
           <StatsCard
             title="Avg SEO Score"
-            value={statsLoading ? "..." : formatSeoScore(stats?.avgSeoScore || 0)}
+            value={
+              statsLoading ? "..." : formatSeoScore(stats?.avgSeoScore || 0)
+            }
             icon={Search}
             iconColor="bg-yellow-500"
             change={statsLoading ? "..." : finalSeoChange.percentage}

@@ -1,8 +1,22 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Eye, Edit, Trash2, Globe, ShoppingCart, Utensils, Plus } from "lucide-react";
+import {
+  Eye,
+  Edit,
+  Trash2,
+  Globe,
+  ShoppingCart,
+  Utensils,
+  Plus,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -11,10 +25,16 @@ import AddWebsiteForm from "@/components/forms/add-website-form";
 import { formatDistanceToNow } from "date-fns";
 
 const getWebsiteIcon = (name: string) => {
-  if (name.toLowerCase().includes("commerce") || name.toLowerCase().includes("store")) {
+  if (
+    name.toLowerCase().includes("commerce") ||
+    name.toLowerCase().includes("store")
+  ) {
     return ShoppingCart;
   }
-  if (name.toLowerCase().includes("restaurant") || name.toLowerCase().includes("food")) {
+  if (
+    name.toLowerCase().includes("restaurant") ||
+    name.toLowerCase().includes("food")
+  ) {
     return Utensils;
   }
   return Globe;
@@ -86,7 +106,9 @@ export default function WebsitesTable() {
     return (
       <div className="bg-white shadow-sm rounded-lg">
         <div className="px-6 py-5 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">Managed Websites</h3>
+          <h3 className="text-lg font-medium text-gray-900">
+            Managed Websites
+          </h3>
         </div>
         <div className="p-6">
           <div className="text-gray-500">Loading websites...</div>
@@ -95,9 +117,10 @@ export default function WebsitesTable() {
     );
   }
 
-  const filteredWebsites = websites?.filter(website => 
-    statusFilter === "all" || website.status === statusFilter
-  ) || [];
+  const filteredWebsites =
+    websites?.filter(
+      (website) => statusFilter === "all" || website.status === statusFilter
+    ) || [];
 
   const getSeoScoreColor = (score: number) => {
     if (score >= 80) return "bg-green-500";
@@ -109,7 +132,9 @@ export default function WebsitesTable() {
     <div className="bg-white shadow-sm rounded-lg">
       <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-gray-200">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h3 className="text-lg font-medium text-gray-900">Managed Websites</h3>
+          <h3 className="text-lg font-medium text-gray-900">
+            Managed Websites
+          </h3>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:space-x-2">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full sm:w-32">
@@ -122,7 +147,7 @@ export default function WebsitesTable() {
                 <SelectItem value="issues">Issues</SelectItem>
               </SelectContent>
             </Select>
-            
+
             <Dialog open={isAddWebsiteOpen} onOpenChange={setIsAddWebsiteOpen}>
               <DialogTrigger asChild>
                 <Button className="bg-primary-500 hover:bg-primary-600 text-white w-full sm:w-auto">
@@ -137,7 +162,7 @@ export default function WebsitesTable() {
           </div>
         </div>
       </div>
-      
+
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -166,7 +191,7 @@ export default function WebsitesTable() {
             {filteredWebsites.map((website) => {
               const Icon = getWebsiteIcon(website.name);
               const seoScoreColor = getSeoScoreColor(website.seoScore);
-              
+
               return (
                 <tr key={website.id}>
                   <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
@@ -175,8 +200,12 @@ export default function WebsitesTable() {
                         <Icon className="w-4 sm:w-5 h-4 sm:h-5 text-gray-500" />
                       </div>
                       <div className="ml-2 sm:ml-4 min-w-0">
-                        <div className="text-xs sm:text-sm font-medium text-gray-900 truncate">{website.name}</div>
-                        <div className="text-xs sm:text-sm text-gray-500 truncate">{website.url}</div>
+                        <div className="text-xs sm:text-sm font-medium text-gray-900 truncate">
+                          {website.name}
+                        </div>
+                        <div className="text-xs sm:text-sm text-gray-500 truncate">
+                          {website.url}
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -185,10 +214,12 @@ export default function WebsitesTable() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
-                      <div className="text-sm font-medium text-gray-900">{website.seoScore}</div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {website.seoScore}
+                      </div>
                       <div className="ml-2 w-16 bg-gray-200 rounded-full h-2">
-                        <div 
-                          className={`${seoScoreColor} h-2 rounded-full`} 
+                        <div
+                          className={`${seoScoreColor} h-2 rounded-full`}
                           style={{ width: `${website.seoScore}%` }}
                         />
                       </div>
@@ -198,7 +229,9 @@ export default function WebsitesTable() {
                     {website.contentCount} posts
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDistanceToNow(new Date(website.updatedAt), { addSuffix: true })}
+                    {formatDistanceToNow(new Date(website.updatedAt), {
+                      addSuffix: true,
+                    })}
                   </td>
                   <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex space-x-1 sm:space-x-2">
@@ -208,7 +241,7 @@ export default function WebsitesTable() {
                       <button className="text-gray-600 hover:text-gray-500 p-1">
                         <Edit className="w-4 h-4" />
                       </button>
-                      <button 
+                      <button
                         className="text-red-600 hover:text-red-500 p-1"
                         onClick={() => deleteWebsite.mutate(website.id)}
                         disabled={deleteWebsite.isPending}
@@ -222,16 +255,17 @@ export default function WebsitesTable() {
             })}
           </tbody>
         </table>
-        
+
         {filteredWebsites.length === 0 && (
           <div className="text-center py-12">
             <Globe className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No websites found</h3>
+            <h3 className="mt-2 text-sm font-medium text-gray-900">
+              No websites found
+            </h3>
             <p className="mt-1 text-sm text-gray-500">
-              {statusFilter === "all" 
+              {statusFilter === "all"
                 ? "Get started by adding your first WordPress website."
-                : `No websites with status "${statusFilter}" found.`
-              }
+                : `No websites with status "${statusFilter}" found.`}
             </p>
           </div>
         )}

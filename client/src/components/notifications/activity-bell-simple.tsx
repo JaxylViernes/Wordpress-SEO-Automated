@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bell } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
@@ -48,7 +52,12 @@ function normalizeActivityResponse(j: any): ActivityLog[] {
 
 async function fetchWithFallback(): Promise<ActivityLog[]> {
   // Try /api/user/activity-logs first (your logs show this endpoint returning real data)
-  const endpoints = ["/api/user/activity-logs?limit=20", "/api/activity-logs?limit=20", "/api/user/activity-logs", "/api/activity-logs"];
+  const endpoints = [
+    "/api/user/activity-logs?limit=20",
+    "/api/activity-logs?limit=20",
+    "/api/user/activity-logs",
+    "/api/activity-logs",
+  ];
 
   for (const url of endpoints) {
     try {
@@ -94,7 +103,7 @@ export default function ActivityBellSimple() {
   const unread = useMemo(() => {
     if (!lastSeenAt) return logs.length;
     const t = new Date(lastSeenAt).getTime();
-    return logs.filter(l => new Date(l.createdAt).getTime() > t).length;
+    return logs.filter((l) => new Date(l.createdAt).getTime() > t).length;
   }, [logs, lastSeenAt]);
 
   function markAllRead() {
@@ -123,7 +132,9 @@ export default function ActivityBellSimple() {
         <div className="flex items-center justify-between p-3 border-b">
           <div className="font-medium">Activity</div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={refresh}>Refresh</Button>
+            <Button variant="ghost" size="sm" onClick={refresh}>
+              Refresh
+            </Button>
             {unread > 0 && (
               <Button variant="ghost" size="sm" onClick={markAllRead}>
                 Mark all read
@@ -139,16 +150,23 @@ export default function ActivityBellSimple() {
             <ul className="divide-y">
               {logs.map((l) => {
                 const label = typeLabels[l.type] || l.type;
-                const isUnread = !lastSeenAt || new Date(l.createdAt) > new Date(lastSeenAt);
+                const isUnread =
+                  !lastSeenAt || new Date(l.createdAt) > new Date(lastSeenAt);
                 return (
                   <li key={l.id} className="p-3 hover:bg-gray-50">
                     <div className="flex items-start gap-2">
-                      <span className={`mt-1 h-2 w-2 rounded-full ${isUnread ? "bg-primary-500" : "bg-gray-300"}`} />
+                      <span
+                        className={`mt-1 h-2 w-2 rounded-full ${
+                          isUnread ? "bg-primary-500" : "bg-gray-300"
+                        }`}
+                      />
                       <div className="flex-1">
                         <div className="text-sm font-medium">{label}</div>
                         <div className="text-sm">{l.description}</div>
                         <div className="text-xs text-gray-500">
-                          {formatDistanceToNow(new Date(l.createdAt), { addSuffix: true })}
+                          {formatDistanceToNow(new Date(l.createdAt), {
+                            addSuffix: true,
+                          })}
                         </div>
                         {/* {l.metadata && Object.keys(l.metadata).length > 0 && (
                           <details className="mt-1 text-xs text-gray-600">

@@ -3,9 +3,21 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, Filter, Download, Search, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -50,11 +62,11 @@ const getActivityIcon = (type: string) => {
 // Function to format metadata keys into readable labels
 const formatMetadataKey = (key: string): string => {
   return key
-    .replace(/([A-Z])/g, ' $1') // Add space before capital letters
-    .replace(/[_-]/g, ' ') // Replace underscores and hyphens with spaces
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ');
+    .replace(/([A-Z])/g, " $1") // Add space before capital letters
+    .replace(/[_-]/g, " ") // Replace underscores and hyphens with spaces
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
 };
 
 // Function to format metadata values for better readability
@@ -62,16 +74,16 @@ const formatMetadataValue = (value: any): React.ReactNode => {
   if (value === null || value === undefined) {
     return <span className="text-gray-400 italic">None</span>;
   }
-  
-  if (typeof value === 'boolean') {
+
+  if (typeof value === "boolean") {
     return (
       <Badge variant={value ? "default" : "secondary"} className="text-xs">
         {value ? "Yes" : "No"}
       </Badge>
     );
   }
-  
-  if (typeof value === 'string') {
+
+  if (typeof value === "string") {
     // Check if it's a date string
     const dateMatch = value.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     if (dateMatch) {
@@ -82,13 +94,13 @@ const formatMetadataValue = (value: any): React.ReactNode => {
         return value;
       }
     }
-    
+
     // Check if it's a URL
-    if (value.startsWith('http://') || value.startsWith('https://')) {
+    if (value.startsWith("http://") || value.startsWith("https://")) {
       return (
-        <a 
-          href={value} 
-          target="_blank" 
+        <a
+          href={value}
+          target="_blank"
           rel="noopener noreferrer"
           className="text-blue-600 hover:text-blue-800 underline break-all"
         >
@@ -96,7 +108,7 @@ const formatMetadataValue = (value: any): React.ReactNode => {
         </a>
       );
     }
-    
+
     // Long text handling
     if (value.length > 100) {
       return (
@@ -111,25 +123,28 @@ const formatMetadataValue = (value: any): React.ReactNode => {
         </div>
       );
     }
-    
+
     return <span className="break-words">{value}</span>;
   }
-  
-  if (typeof value === 'number') {
+
+  if (typeof value === "number") {
     // Format large numbers with commas
     return value.toLocaleString();
   }
-  
+
   if (Array.isArray(value)) {
     if (value.length === 0) {
       return <span className="text-gray-400 italic">Empty list</span>;
     }
-    
+
     return (
       <div className="space-y-1">
         {value.slice(0, 3).map((item, index) => (
-          <div key={index} className="text-xs bg-gray-100 rounded px-2 py-1 inline-block mr-1">
-            {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+          <div
+            key={index}
+            className="text-xs bg-gray-100 rounded px-2 py-1 inline-block mr-1"
+          >
+            {typeof item === "object" ? JSON.stringify(item) : String(item)}
           </div>
         ))}
         {value.length > 3 && (
@@ -140,18 +155,18 @@ const formatMetadataValue = (value: any): React.ReactNode => {
       </div>
     );
   }
-  
-  if (typeof value === 'object') {
+
+  if (typeof value === "object") {
     const entries = Object.entries(value);
     if (entries.length === 0) {
       return <span className="text-gray-400 italic">Empty</span>;
     }
-    
+
     return (
       <div className="space-y-1">
         {entries.slice(0, 3).map(([key, val]) => (
           <div key={key} className="text-xs">
-            <span className="font-medium">{formatMetadataKey(key)}:</span>{' '}
+            <span className="font-medium">{formatMetadataKey(key)}:</span>{" "}
             <span>{String(val)}</span>
           </div>
         ))}
@@ -163,14 +178,14 @@ const formatMetadataValue = (value: any): React.ReactNode => {
       </div>
     );
   }
-  
+
   return <span>{String(value)}</span>;
 };
 
 // Component for rendering metadata in a user-friendly way
 const MetadataDisplay = ({ metadata }: { metadata: Record<string, any> }) => {
   const entries = Object.entries(metadata);
-  
+
   if (entries.length === 0) {
     return (
       <div className="text-xs text-gray-500 italic">
@@ -178,7 +193,7 @@ const MetadataDisplay = ({ metadata }: { metadata: Record<string, any> }) => {
       </div>
     );
   }
-  
+
   return (
     <div className="mt-2 border rounded-lg bg-gray-50 p-3">
       <div className="grid gap-3">
@@ -213,32 +228,41 @@ export default function ActivityLogs() {
   });
 
   const getWebsiteName = (websiteId: string | null) => {
-  if (!websiteId) return "System";
-  if (!Array.isArray(websites)) return "Unknown Website";
-  const website = websites.find(w => w.id === websiteId);
-  return website?.name || "Unknown Website";
-};
+    if (!websiteId) return "System";
+    if (!Array.isArray(websites)) return "Unknown Website";
+    const website = websites.find((w) => w.id === websiteId);
+    return website?.name || "Unknown Website";
+  };
 
   // Updated logic
-const filteredActivities = activities?.filter(activity => {
-  if (searchQuery && !activity.description.toLowerCase().includes(searchQuery.toLowerCase())) {
-    return false;
-  }
-  if (activityFilter && activityFilter !== "all" && activity.type !== activityFilter) {
-    return false;
-  }
-  return true;
-}) || [];
+  const filteredActivities =
+    activities?.filter((activity) => {
+      if (
+        searchQuery &&
+        !activity.description.toLowerCase().includes(searchQuery.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        activityFilter &&
+        activityFilter !== "all" &&
+        activity.type !== activityFilter
+      ) {
+        return false;
+      }
+      return true;
+    }) || [];
 
   const activityStats = {
     total: activities?.length || 0,
-    today: activities?.filter(a => {
-      const today = new Date();
-      const activityDate = new Date(a.createdAt);
-      return activityDate.toDateString() === today.toDateString();
-    }).length || 0,
-    content: activities?.filter(a => a.type.includes("content")).length || 0,
-    seo: activities?.filter(a => a.type.includes("seo")).length || 0,
+    today:
+      activities?.filter((a) => {
+        const today = new Date();
+        const activityDate = new Date(a.createdAt);
+        return activityDate.toDateString() === today.toDateString();
+      }).length || 0,
+    content: activities?.filter((a) => a.type.includes("content")).length || 0,
+    seo: activities?.filter((a) => a.type.includes("seo")).length || 0,
   };
 
   return (
@@ -270,41 +294,61 @@ const filteredActivities = activities?.filter(activity => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Total Activities</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Total Activities
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-gray-900">{activityStats.total}</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {activityStats.total}
+              </div>
               <p className="text-xs text-gray-500 mt-1">All time</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Today</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Today
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-600">{activityStats.today}</div>
+              <div className="text-2xl font-bold text-blue-600">
+                {activityStats.today}
+              </div>
               <p className="text-xs text-gray-500 mt-1">Activities today</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Content Actions</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Content Actions
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{activityStats.content}</div>
-              <p className="text-xs text-gray-500 mt-1">Generation & publishing</p>
+              <div className="text-2xl font-bold text-green-600">
+                {activityStats.content}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Generation & publishing
+              </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">SEO Actions</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                SEO Actions
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-purple-600">{activityStats.seo}</div>
-              <p className="text-xs text-gray-500 mt-1">Analysis & optimization</p>
+              <div className="text-2xl font-bold text-purple-600">
+                {activityStats.seo}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Analysis & optimization
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -325,14 +369,15 @@ const filteredActivities = activities?.filter(activity => {
             <SelectTrigger className="w-64">
               <SelectValue placeholder="All websites" />
             </SelectTrigger>
-          <SelectContent>
-  <SelectItem value="all">All websites</SelectItem>
-  {Array.isArray(websites) && websites.map((website) => (
-    <SelectItem key={website.id} value={website.id}>
-      {website.name}
-    </SelectItem>
-  ))}
-</SelectContent>
+            <SelectContent>
+              <SelectItem value="all">All websites</SelectItem>
+              {Array.isArray(websites) &&
+                websites.map((website) => (
+                  <SelectItem key={website.id} value={website.id}>
+                    {website.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
           </Select>
 
           <Select value={activityFilter} onValueChange={setActivityFilter}>
@@ -372,13 +417,13 @@ const filteredActivities = activities?.filter(activity => {
                     {index < filteredActivities.length - 1 && (
                       <div className="absolute left-4 top-8 w-0.5 h-8 bg-gray-200"></div>
                     )}
-                    
+
                     <div className="flex items-start space-x-4">
                       {/* Timeline dot */}
                       <div className="flex-shrink-0 w-8 h-8 bg-white border-2 border-gray-300 rounded-full flex items-center justify-center">
                         {getActivityIcon(activity.type)}
                       </div>
-                      
+
                       {/* Activity content */}
                       <div className="flex-1 min-w-0 pb-4">
                         <div className="flex items-start justify-between">
@@ -387,29 +432,54 @@ const filteredActivities = activities?.filter(activity => {
                               <p className="text-sm font-medium text-gray-900">
                                 {activity.description}
                               </p>
-                              <Badge className={activityTypeColors[activity.type as keyof typeof activityTypeColors] || "bg-gray-100 text-gray-800"}>
-                                {activityTypeLabels[activity.type as keyof typeof activityTypeLabels] || activity.type}
+                              <Badge
+                                className={
+                                  activityTypeColors[
+                                    activity.type as keyof typeof activityTypeColors
+                                  ] || "bg-gray-100 text-gray-800"
+                                }
+                              >
+                                {activityTypeLabels[
+                                  activity.type as keyof typeof activityTypeLabels
+                                ] || activity.type}
                               </Badge>
                             </div>
-                            
+
                             <div className="flex items-center space-x-4 text-xs text-gray-500">
                               <span>{getWebsiteName(activity.websiteId)}</span>
-                              <span>{format(new Date(activity.createdAt), "MMM dd, yyyy 'at' HH:mm")}</span>
-                              <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
+                              <span>
+                                {format(
+                                  new Date(activity.createdAt),
+                                  "MMM dd, yyyy 'at' HH:mm"
+                                )}
+                              </span>
+                              <span>
+                                {formatDistanceToNow(
+                                  new Date(activity.createdAt),
+                                  { addSuffix: true }
+                                )}
+                              </span>
                             </div>
-                            
+
                             {/* Improved Metadata Display */}
-                            {activity.metadata && Object.keys(activity.metadata).length > 0 && (
-                              <div className="mt-3">
-                                <details className="cursor-pointer group">
-                                  <summary className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                                    <span className="group-open:hidden">Show details</span>
-                                    <span className="hidden group-open:inline">Hide details</span>
-                                  </summary>
-                                  <MetadataDisplay metadata={activity.metadata} />
-                                </details>
-                              </div>
-                            )}
+                            {activity.metadata &&
+                              Object.keys(activity.metadata).length > 0 && (
+                                <div className="mt-3">
+                                  <details className="cursor-pointer group">
+                                    <summary className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                                      <span className="group-open:hidden">
+                                        Show details
+                                      </span>
+                                      <span className="hidden group-open:inline">
+                                        Hide details
+                                      </span>
+                                    </summary>
+                                    <MetadataDisplay
+                                      metadata={activity.metadata}
+                                    />
+                                  </details>
+                                </div>
+                              )}
                           </div>
                         </div>
                       </div>
@@ -420,14 +490,15 @@ const filteredActivities = activities?.filter(activity => {
             ) : (
               <div className="text-center py-12">
                 <Activity className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-sm font-medium text-gray-900">No activities found</h3>
+                <h3 className="mt-2 text-sm font-medium text-gray-900">
+                  No activities found
+                </h3>
                 <p className="mt-1 text-sm text-gray-500">
                   {searchQuery || activityFilter
                     ? "No activities match your current filters."
                     : selectedWebsite
                     ? "No activities recorded for this website yet."
-                    : "Activities will appear here as your automation runs."
-                  }
+                    : "Activities will appear here as your automation runs."}
                 </p>
                 {(searchQuery || activityFilter) && (
                   <div className="mt-6">
@@ -451,17 +522,18 @@ const filteredActivities = activities?.filter(activity => {
         <Card className="mt-8">
           <CardHeader>
             <CardTitle>Activity Summary</CardTitle>
-            <CardDescription>
-              Breakdown of activities by type
-            </CardDescription>
+            <CardDescription>Breakdown of activities by type</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {Object.entries(activityTypeLabels).map(([type, label]) => {
-                const count = activities?.filter(a => a.type === type).length || 0;
+                const count =
+                  activities?.filter((a) => a.type === type).length || 0;
                 return (
                   <div key={type} className="text-center p-4 border rounded-lg">
-                    <div className="text-2xl font-bold text-gray-900">{count}</div>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {count}
+                    </div>
                     <p className="text-sm text-gray-600 mt-1">{label}</p>
                   </div>
                 );

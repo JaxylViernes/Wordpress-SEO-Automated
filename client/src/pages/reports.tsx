@@ -1222,9 +1222,21 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { api } from "@/lib/api";
@@ -1512,7 +1524,9 @@ export default function Reports() {
       return;
     }
     if (reportType === "all") {
-      setMessage("Please select a specific report type before generating reports");
+      setMessage(
+        "Please select a specific report type before generating reports"
+      );
       return;
     }
 
@@ -1591,7 +1605,8 @@ export default function Reports() {
           <div className="flex-1 min-w-0">
             <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">Client Reports</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Comprehensive SEO and content performance reports for your websites
+              Comprehensive SEO and content performance reports for your
+              websites
             </p>
           </div>
           <div className="mt-4 flex gap-2 md:mt-0 md:ml-4">
@@ -1603,7 +1618,11 @@ export default function Reports() {
               onClick={handleBulkGenerate}
               disabled={isGenerateDisabled}
               className="bg-primary-500 hover:bg-primary-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              title={reportType === "all" ? "Please select a report type first" : "Generate reports"}
+              title={
+                reportType === "all"
+                  ? "Please select a report type first"
+                  : "Generate reports"
+              }
             >
               {isAnyGenerationInProgress ? (
                 <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -1683,37 +1702,53 @@ export default function Reports() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Total Reports</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Total Reports
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-gray-900">{filteredReports.length}</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {filteredReports.length}
+              </div>
               <p className="text-xs text-gray-500 mt-1">Generated reports</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Monthly Reports</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Monthly Reports
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-600">{monthlyReports}</div>
-              <p className="text-xs text-gray-500 mt-1">Comprehensive analysis</p>
+              <div className="text-2xl font-bold text-blue-600">
+                {monthlyReports}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Comprehensive analysis
+              </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Weekly Reports</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Weekly Reports
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{weeklyReports}</div>
+              <div className="text-2xl font-bold text-green-600">
+                {weeklyReports}
+              </div>
               <p className="text-xs text-gray-500 mt-1">Quick updates</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Avg Performance</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Avg Performance
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className={`text-2xl font-bold ${getTrendColor(avgPerformance)}`}>
@@ -1757,7 +1792,11 @@ export default function Reports() {
                     <TabsContent value="overview" className="space-y-3 mt-4">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-500">SEO Score Change</span>
-                        <span className={`font-medium flex items-center ${getTrendColor(report.data?.seoScoreChange || 0)}`}>
+                        <span
+                          className={`font-medium flex items-center ${getTrendColor(
+                            report.data?.seoScoreChange || 0
+                          )}`}
+                        >
                           {getTrendIcon(report.data?.seoScoreChange || 0)}
                           <span className="ml-1">
                             {(report.data?.seoScoreChange || 0) > 0 ? "+" : ""}
@@ -1768,12 +1807,16 @@ export default function Reports() {
 
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-500">Content Published</span>
-                        <span className="font-medium">{report.data?.contentPublished || 0} posts</span>
+                        <span className="font-medium">
+                          {report.data?.contentPublished || 0} posts
+                        </span>
                       </div>
 
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-500">Avg SEO Score</span>
-                        <span className="font-medium">{report.data?.avgSeoScore || 0}%</span>
+                        <span className="font-medium">
+                          {report.data?.avgSeoScore || 0}%
+                        </span>
                       </div>
 
                       <div className="flex justify-between text-sm">
@@ -1792,27 +1835,37 @@ export default function Reports() {
                     <TabsContent value="details" className="space-y-3 mt-4">
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-500">Analytics Data</span>
-                        <span className="font-medium text-gray-400">Connect Analytics</span>
+                        <span className="font-medium text-gray-400">
+                          Connect Analytics
+                        </span>
                       </div>
 
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-500">Active Days</span>
-                        <span className="font-medium">{report.data?.activeDays || 0}</span>
+                        <span className="font-medium">
+                          {report.data?.activeDays || 0}
+                        </span>
                       </div>
 
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-500">Readability Score</span>
-                        <span className="font-medium">{report.data?.avgReadabilityScore || 0}%</span>
+                        <span className="font-medium">
+                          {report.data?.avgReadabilityScore || 0}%
+                        </span>
                       </div>
 
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-500">Brand Voice Score</span>
-                        <span className="font-medium">{report.data?.avgBrandVoiceScore || 0}%</span>
+                        <span className="font-medium">
+                          {report.data?.avgBrandVoiceScore || 0}%
+                        </span>
                       </div>
 
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-500">Tokens Used</span>
-                        <span className="font-medium">{(report.data?.totalTokens || 0).toLocaleString()}</span>
+                        <span className="font-medium">
+                          {(report.data?.totalTokens || 0).toLocaleString()}
+                        </span>
                       </div>
 
                       <div className="text-xs text-gray-400 italic mt-2">* Traffic data requires analytics integration</div>
@@ -1822,7 +1875,9 @@ export default function Reports() {
                   {/* Insights */}
                   {report.insights && report.insights.length > 0 && (
                     <div className="mt-4 pt-4 border-t">
-                      <h4 className="text-sm font-medium text-gray-900 mb-2">Key Insights</h4>
+                      <h4 className="text-sm font-medium text-gray-900 mb-2">
+                        Key Insights
+                      </h4>
                       <div className="space-y-1">
                         {report.insights.slice(0, 2).map((insight: string, index: number) => (
                           <p key={index} className="text-xs text-gray-600">
@@ -1871,13 +1926,13 @@ export default function Reports() {
                           </>
                         )}
                       </Button>
-
                       {/* PDF */}
                       <Button
                         size="sm"
                         variant="outline"
                         className="text-primary-600"
                         onClick={() => handleDownloadPDF(report)}
+
                       >
                         <Download className="w-3 h-3 mr-1" />
                         PDF
@@ -1895,7 +1950,9 @@ export default function Reports() {
           <Card>
             <CardContent className="text-center py-12">
               <FileText className="mx-auto h-12 w-12 text-gray-400" />
-              <h3 className="mt-2 text-sm font-medium text-gray-900">No reports found</h3>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">
+                No reports found
+              </h3>
               <p className="mt-1 text-sm text-gray-500">
                 {selectedWebsite !== "all" || reportType !== "all"
                   ? "No reports match your current filters."
@@ -1915,7 +1972,9 @@ export default function Reports() {
                   ) : (
                     <>
                       <BarChart3 className="w-4 h-4 mr-2" />
-                      {reportType === "all" ? "Select Report Type First" : "Generate Your First Report"}
+                      {reportType === "all"
+                        ? "Select Report Type First"
+                        : "Generate Your First Report"}
                     </>
                   )}
                 </Button>
@@ -1936,18 +1995,29 @@ export default function Reports() {
             <CardContent>
               <div className="space-y-4">
                 {websites.map((website) => (
-                  <div key={website.id} className="flex items-center justify-between p-4 border rounded-lg">
+                  <div
+                    key={website.id}
+                    className="flex items-center justify-between p-4 border rounded-lg"
+                  >
                     <div>
-                      <h4 className="font-medium text-gray-900">{website.name}</h4>
+                      <h4 className="font-medium text-gray-900">
+                        {website.name}
+                      </h4>
                       <p className="text-sm text-gray-500">{website.url}</p>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         variant="outline"
-                        onClick={() => handleGenerateReport(website.id, 'weekly')}
+                        onClick={() =>
+                          handleGenerateReport(website.id, "weekly")
+                        }
                         disabled={isAnyGenerationInProgress}
-                        title={isAnyGenerationInProgress ? "Generation in progress..." : "Generate weekly report"}
+                        title={
+                          isAnyGenerationInProgress
+                            ? "Generation in progress..."
+                            : "Generate weekly report"
+                        }
                       >
                         {isAnyGenerationInProgress ? (
                           <RefreshCw className="w-3 h-3 animate-spin" />
@@ -1955,12 +2025,18 @@ export default function Reports() {
                           "Weekly"
                         )}
                       </Button>
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         variant="outline"
-                        onClick={() => handleGenerateReport(website.id, 'monthly')}
+                        onClick={() =>
+                          handleGenerateReport(website.id, "monthly")
+                        }
                         disabled={isAnyGenerationInProgress}
-                        title={isAnyGenerationInProgress ? "Generation in progress..." : "Generate monthly report"}
+                        title={
+                          isAnyGenerationInProgress
+                            ? "Generation in progress..."
+                            : "Generate monthly report"
+                        }
                       >
                         {isAnyGenerationInProgress ? (
                           <RefreshCw className="w-3 h-3 animate-spin" />

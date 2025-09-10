@@ -1,11 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Eye, EyeOff, Lock, User, Mail, LogOut } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Eye, EyeOff, Lock, User, Mail, LogOut } from "lucide-react";
 
 // Types
 interface User {
@@ -18,7 +24,12 @@ interface User {
 interface AuthContextType {
   user: User | null;
   login: (username: string, password: string) => Promise<void>;
-  signup: (username: string, password: string, email?: string, name?: string) => Promise<void>;
+  signup: (
+    username: string,
+    password: string,
+    email?: string,
+    name?: string
+  ) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
 }
@@ -37,11 +48,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuthStatus = async () => {
     try {
-      const response = await fetch('/api/auth/me', {
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/auth/me", {
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
       });
-      
+
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
@@ -56,56 +67,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (username: string, password: string) => {
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ username, password }),
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || 'Login failed');
+      throw new Error(data.message || "Login failed");
     }
 
     if (data.success && data.user) {
       setUser(data.user);
       // REMOVED: No forced redirect - let React handle navigation
     } else {
-      throw new Error('Login failed - invalid response');
+      throw new Error("Login failed - invalid response");
     }
   };
 
-  const signup = async (username: string, password: string, email?: string, name?: string) => {
-    const response = await fetch('/api/auth/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
+  const signup = async (
+    username: string,
+    password: string,
+    email?: string,
+    name?: string
+  ) => {
+    const response = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ username, password, email, name }),
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      const errorMessage = data.errors ? data.errors.join(', ') : data.message;
-      throw new Error(errorMessage || 'Signup failed');
+      const errorMessage = data.errors ? data.errors.join(", ") : data.message;
+      throw new Error(errorMessage || "Signup failed");
     }
 
     if (data.success && data.user) {
       setUser(data.user);
       // REMOVED: No forced redirect - let React handle navigation
     } else {
-      throw new Error('Signup failed - invalid response');
+      throw new Error("Signup failed - invalid response");
     }
   };
 
   const logout = async () => {
     try {
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
       // Ignore logout request errors
@@ -126,72 +142,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = React.useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
-  
+
   return {
     ...context,
     isAuthenticated: !!context.user, // ADD THIS
-    isLoading: context.loading        // ADD THIS (rename loading to isLoading)
+    isLoading: context.loading, // ADD THIS (rename loading to isLoading)
   };
 }
 // Login/Signup Component
 export function AuthPage() {
   const { login, signup } = useAuth();
-  const [activeTab, setActiveTab] = useState('login');
+  const [activeTab, setActiveTab] = useState("login");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   // Login state
   const [loginForm, setLoginForm] = useState({
-    username: '',
-    password: ''
+    username: "",
+    password: "",
   });
 
   // Signup state
   const [signupForm, setSignupForm] = useState({
-    username: '',
-    password: '',
-    confirmPassword: '',
-    email: '',
-    name: ''
+    username: "",
+    password: "",
+    confirmPassword: "",
+    email: "",
+    name: "",
   });
 
   const handleLogin = async () => {
     if (!loginForm.username || !loginForm.password) {
-      setError('Please fill in all required fields');
+      setError("Please fill in all required fields");
       return;
     }
 
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
       await login(loginForm.username, loginForm.password);
       // Success - user state will update and ProtectedRoute will re-render
     } catch (error: any) {
-      setError(error.message || 'Login failed');
+      setError(error.message || "Login failed");
     } finally {
       setLoading(false);
     }
   };
 
   const handleSignup = async () => {
-    setError('');
+    setError("");
 
     if (!signupForm.username || !signupForm.password) {
-      setError('Please fill in all required fields');
+      setError("Please fill in all required fields");
       return;
     }
 
     if (signupForm.password !== signupForm.confirmPassword) {
-      setError('Passwords do not match');
+      setError("Passwords do not match");
       return;
     }
 
     if (signupForm.password.length < 6) {
-      setError('Password must be at least 6 characters long');
+      setError("Password must be at least 6 characters long");
       return;
     }
 
@@ -199,14 +215,14 @@ export function AuthPage() {
 
     try {
       await signup(
-        signupForm.username, 
+        signupForm.username,
         signupForm.password,
         signupForm.email || undefined,
         signupForm.name || undefined
       );
       // Success - user state will update and ProtectedRoute will re-render
     } catch (error: any) {
-      setError(error.message || 'Signup failed');
+      setError(error.message || "Signup failed");
     } finally {
       setLoading(false);
     }
@@ -254,7 +270,12 @@ export function AuthPage() {
                         id="login-username"
                         type="text"
                         value={loginForm.username}
-                        onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
+                        onChange={(e) =>
+                          setLoginForm({
+                            ...loginForm,
+                            username: e.target.value,
+                          })
+                        }
                         className="pl-10"
                         placeholder="Enter your username"
                       />
@@ -269,7 +290,12 @@ export function AuthPage() {
                         id="login-password"
                         type={showPassword ? "text" : "password"}
                         value={loginForm.password}
-                        onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                        onChange={(e) =>
+                          setLoginForm({
+                            ...loginForm,
+                            password: e.target.value,
+                          })
+                        }
                         className="pl-10 pr-10"
                         placeholder="Enter your password"
                       />
@@ -281,7 +307,11 @@ export function AuthPage() {
                         className="absolute right-0 top-0 h-full px-3"
                         onClick={() => setShowPassword(!showPassword)}
                       >
-                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
                       </Button>
                     </div>
                   </div>
@@ -291,7 +321,7 @@ export function AuthPage() {
                     className="w-full"
                     disabled={loading}
                   >
-                    {loading ? 'Signing In...' : 'Sign In'}
+                    {loading ? "Signing In..." : "Sign In"}
                   </Button>
                 </div>
               </TabsContent>
@@ -305,7 +335,12 @@ export function AuthPage() {
                         id="signup-username"
                         type="text"
                         value={signupForm.username}
-                        onChange={(e) => setSignupForm({ ...signupForm, username: e.target.value })}
+                        onChange={(e) =>
+                          setSignupForm({
+                            ...signupForm,
+                            username: e.target.value,
+                          })
+                        }
                         className="pl-10"
                         placeholder="Choose a username"
                       />
@@ -320,7 +355,12 @@ export function AuthPage() {
                         id="signup-email"
                         type="email"
                         value={signupForm.email}
-                        onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
+                        onChange={(e) =>
+                          setSignupForm({
+                            ...signupForm,
+                            email: e.target.value,
+                          })
+                        }
                         className="pl-10"
                         placeholder="your@email.com (optional)"
                       />
@@ -334,7 +374,9 @@ export function AuthPage() {
                       id="signup-name"
                       type="text"
                       value={signupForm.name}
-                      onChange={(e) => setSignupForm({ ...signupForm, name: e.target.value })}
+                      onChange={(e) =>
+                        setSignupForm({ ...signupForm, name: e.target.value })
+                      }
                       placeholder="Your full name (optional)"
                     />
                   </div>
@@ -346,7 +388,12 @@ export function AuthPage() {
                         id="signup-password"
                         type={showPassword ? "text" : "password"}
                         value={signupForm.password}
-                        onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
+                        onChange={(e) =>
+                          setSignupForm({
+                            ...signupForm,
+                            password: e.target.value,
+                          })
+                        }
                         className="pl-10 pr-10"
                         placeholder="At least 6 characters"
                       />
@@ -358,7 +405,11 @@ export function AuthPage() {
                         className="absolute right-0 top-0 h-full px-3"
                         onClick={() => setShowPassword(!showPassword)}
                       >
-                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
                       </Button>
                     </div>
                   </div>
@@ -369,7 +420,12 @@ export function AuthPage() {
                       id="signup-confirm"
                       type="password"
                       value={signupForm.confirmPassword}
-                      onChange={(e) => setSignupForm({ ...signupForm, confirmPassword: e.target.value })}
+                      onChange={(e) =>
+                        setSignupForm({
+                          ...signupForm,
+                          confirmPassword: e.target.value,
+                        })
+                      }
                       placeholder="Confirm your password"
                     />
                   </div>
@@ -379,7 +435,7 @@ export function AuthPage() {
                     className="w-full"
                     disabled={loading}
                   >
-                    {loading ? 'Creating Account...' : 'Create Account'}
+                    {loading ? "Creating Account..." : "Create Account"}
                   </Button>
                 </div>
               </TabsContent>
@@ -401,9 +457,9 @@ export function CompactSidebarUserMenu() {
 
   const getInitials = (name: string) => {
     return name
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase())
-      .join('')
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase())
+      .join("")
       .slice(0, 2);
   };
 
@@ -418,7 +474,7 @@ export function CompactSidebarUserMenu() {
       await logout();
       // No forced redirect - React will handle the state change
     } catch (error) {
-      console.error('Logout failed:', error);
+      console.error("Logout failed:", error);
     } finally {
       setIsLoggingOut(false);
     }
@@ -442,11 +498,13 @@ export function CompactSidebarUserMenu() {
               <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 border border-white rounded-full"></div>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="font-medium text-gray-900 text-xs truncate">{displayName}</div>
+              <div className="font-medium text-gray-900 text-xs truncate">
+                {displayName}
+              </div>
               <div className="text-xs text-gray-500">Pro Plan</div>
             </div>
           </div>
-          
+
           <button
             onClick={handleLogoutClick}
             disabled={isLoggingOut}
@@ -471,11 +529,15 @@ export function CompactSidebarUserMenu() {
                 <LogOut className="w-5 h-5 text-red-600" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Sign Out</h3>
-                <p className="text-sm text-gray-500">Are you sure you want to sign out?</p>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Sign Out
+                </h3>
+                <p className="text-sm text-gray-500">
+                  Are you sure you want to sign out?
+                </p>
               </div>
             </div>
-            
+
             <div className="flex space-x-3">
               <button
                 onClick={handleCancelLogout}
@@ -516,4 +578,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export default { AuthProvider, useAuth, AuthPage, CompactSidebarUserMenu, ProtectedRoute };
+export default {
+  AuthProvider,
+  useAuth,
+  AuthPage,
+  CompactSidebarUserMenu,
+  ProtectedRoute,
+};

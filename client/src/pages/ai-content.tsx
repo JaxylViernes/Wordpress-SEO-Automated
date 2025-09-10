@@ -1,78 +1,101 @@
 import { useState, useEffect } from "react";
 // PROGRESS BAR ADDITION: Added Loader2 for spinning animation in progress indicator
-import { Bot, Plus, Sparkles, Clock, CheckCircle, Play, Edit, Trash2, X, BarChart3, Target, Zap, Shield, DollarSign, RefreshCw, Save, AlertTriangle, Cpu, Brain, Loader2 } from "lucide-react";
+import {
+  Bot,
+  Plus,
+  Sparkles,
+  Clock,
+  CheckCircle,
+  Play,
+  Edit,
+  Trash2,
+  X,
+  BarChart3,
+  Target,
+  Zap,
+  Shield,
+  DollarSign,
+  RefreshCw,
+  Save,
+  AlertTriangle,
+  Cpu,
+  Brain,
+  Loader2,
+} from "lucide-react";
 //nadagdag
-import AutoContentScheduler from './auto-content-scheduler';
-
-
+import AutoContentScheduler from "./auto-content-scheduler";
 
 // API utility functions
 const api = {
   async getWebsites() {
-    const response = await fetch('/api/user/websites');
-    if (!response.ok) throw new Error('Failed to fetch websites');
+    const response = await fetch("/api/user/websites");
+    if (!response.ok) throw new Error("Failed to fetch websites");
     return response.json();
   },
 
   async getWebsiteContent(websiteId) {
     const response = await fetch(`/api/user/websites/${websiteId}/content`);
-    if (!response.ok) throw new Error('Failed to fetch content');
+    if (!response.ok) throw new Error("Failed to fetch content");
     return response.json();
   },
 
   async generateContent(data) {
-    const response = await fetch('/api/user/content/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
+    const response = await fetch("/api/user/content/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
     });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.message || 'Failed to generate content');
+      throw new Error(error.message || "Failed to generate content");
     }
     return response.json();
   },
 
   async updateContent(contentId, data) {
     const response = await fetch(`/api/user/content/${contentId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
     });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.message || 'Failed to update content');
+      throw new Error(error.message || "Failed to update content");
     }
     return response.json();
   },
 
   async publishContent(contentId) {
     const response = await fetch(`/api/user/content/${contentId}/publish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
     });
-    
+
     if (!response.ok) {
       const responseText = await response.text();
-      console.error('Publish API Error Response:', responseText);
-      
+      console.error("Publish API Error Response:", responseText);
+
       try {
         const errorData = JSON.parse(responseText);
-        throw new Error(errorData.message || 'Failed to publish content');
+        throw new Error(errorData.message || "Failed to publish content");
       } catch (parseError) {
-        throw new Error(`Server returned HTML error (Status: ${response.status}). Check server logs.`);
+        throw new Error(
+          `Server returned HTML error (Status: ${response.status}). Check server logs.`
+        );
       }
     }
-    
+
     return response.json();
   },
 
   async getActivityLogs(websiteId) {
-    const url = websiteId ? `/api/user/activity-logs?websiteId=${websiteId}` : '/api/user/activity-logs';
+    const url = websiteId
+      ? `/api/user/activity-logs?websiteId=${websiteId}`
+      : "/api/user/activity-logs";
     const response = await fetch(url);
-    if (!response.ok) throw new Error('Failed to fetch activity logs');
+    if (!response.ok) throw new Error("Failed to fetch activity logs");
     return response.json();
-  }
+  },
 };
 
 const getStatusColor = (status) => {
@@ -123,11 +146,11 @@ const getScoreColor = (score) => {
 
 const getProviderIcon = (provider) => {
   switch (provider) {
-    case 'openai':
+    case "openai":
       return <Cpu className="w-4 h-4 text-green-600" />;
-    case 'anthropic':
+    case "anthropic":
       return <Bot className="w-4 h-4 text-purple-600" />;
-    case 'gemini':
+    case "gemini":
       return <Sparkles className="w-4 h-4 text-blue-600" />;
     default:
       return <Cpu className="w-4 h-4 text-gray-600" />;
@@ -136,14 +159,14 @@ const getProviderIcon = (provider) => {
 
 const getProviderName = (provider) => {
   switch (provider) {
-    case 'openai':
-      return 'OpenAI GPT-4O';
-    case 'anthropic':
-      return 'Anthropic Claude';
-    case 'gemini':
-      return 'Google Gemini';
+    case "openai":
+      return "OpenAI GPT-4O";
+    case "anthropic":
+      return "Anthropic Claude";
+    case "gemini":
+      return "Google Gemini";
     default:
-      return provider || 'Unknown';
+      return provider || "Unknown";
   }
 };
 
@@ -152,7 +175,7 @@ const formatDistanceToNow = (dateString) => {
   const date = new Date(dateString);
   const diffInMs = now - date;
   const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
-  
+
   if (diffInHours < 1) {
     return "Less than an hour ago";
   } else if (diffInHours < 24) {
@@ -164,17 +187,17 @@ const formatDistanceToNow = (dateString) => {
 };
 
 const getErrorType = (error) => {
-  if (error.message.includes('OpenAI Error:')) return 'openai';
-  if (error.message.includes('Anthropic Error:')) return 'anthropic';
-  if (error.message.includes('PageSpeed API Error:')) return 'pagespeed';
-  if (error.message.includes('Analysis Error:')) return 'analysis';
-  return 'general';
+  if (error.message.includes("OpenAI Error:")) return "openai";
+  if (error.message.includes("Anthropic Error:")) return "anthropic";
+  if (error.message.includes("PageSpeed API Error:")) return "pagespeed";
+  if (error.message.includes("Analysis Error:")) return "analysis";
+  return "general";
 };
 
 const getErrorSeverity = (error) => {
   const type = getErrorType(error);
-  if (type === 'pagespeed' || type === 'analysis') return 'warning';
-  return 'error';
+  if (type === "pagespeed" || type === "analysis") return "warning";
+  return "error";
 };
 
 export default function AIContent() {
@@ -187,13 +210,13 @@ export default function AIContent() {
   const [content, setContent] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isRegenerating, setIsRegenerating] = useState(false)
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isLoadingWebsites, setIsLoadingWebsites] = useState(true);
   const [isLoadingContent, setIsLoadingContent] = useState(false);
   const [toast, setToast] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  
+
   // PROGRESS BAR ADDITION: State for tracking generation progress percentage
   const [generationProgress, setGenerationProgress] = useState(0);
   // PROGRESS BAR ADDITION: State for showing current generation phase/step
@@ -215,7 +238,7 @@ export default function AIContent() {
     aiProvider: "openai",
     includeImages: false,
     imageCount: 1,
-    imageStyle: "natural"
+    imageStyle: "natural",
   });
 
   // ENHANCED: Edit form state with image regeneration options
@@ -233,7 +256,7 @@ export default function AIContent() {
     regenerateImages: false,
     includeImages: false,
     imageCount: 1,
-    imageStyle: "natural"
+    imageStyle: "natural",
   });
 
   const [formErrors, setFormErrors] = useState({});
@@ -271,7 +294,7 @@ export default function AIContent() {
 
   const loadContent = async () => {
     if (!selectedWebsite) return;
-    
+
     try {
       setIsLoadingContent(true);
       const contentData = await api.getWebsiteContent(selectedWebsite);
@@ -289,7 +312,12 @@ export default function AIContent() {
   };
 
   // Enhanced toast notification with error types
-  const showToast = (title, description, variant = "default", errorType = null) => {
+  const showToast = (
+    title,
+    description,
+    variant = "default",
+    errorType = null
+  ) => {
     setToast({ title, description, variant, errorType });
     setTimeout(() => setToast(null), 6000);
   };
@@ -297,13 +325,16 @@ export default function AIContent() {
   // UPDATED: Remove OpenAI requirement for images
   const validateForm = () => {
     const errors = {};
-    
+
     if (!formData.websiteId) errors.websiteId = "Please select a website";
     if (!formData.topic.trim()) errors.topic = "Topic is required";
     if (formData.wordCount < 100 || formData.wordCount > 5000) {
       errors.wordCount = "Word count must be between 100 and 5000";
     }
-    if (!formData.aiProvider || !['openai', 'anthropic', 'gemini'].includes(formData.aiProvider)) {
+    if (
+      !formData.aiProvider ||
+      !["openai", "anthropic", "gemini"].includes(formData.aiProvider)
+    ) {
       errors.aiProvider = "Please select a valid AI provider";
     }
 
@@ -311,8 +342,13 @@ export default function AIContent() {
       if (formData.imageCount < 1 || formData.imageCount > 3) {
         errors.imageCount = "Image count must be between 1 and 3";
       }
-      
-      const validStyles = ['natural', 'digital_art', 'photographic', 'cinematic'];
+
+      const validStyles = [
+        "natural",
+        "digital_art",
+        "photographic",
+        "cinematic",
+      ];
       if (!validStyles.includes(formData.imageStyle)) {
         errors.imageStyle = "Please select a valid image style";
       }
@@ -332,8 +368,10 @@ export default function AIContent() {
     }
 
     // NEW: Image regeneration validation (no OpenAI requirement)
-    if ((editFormData.regenerateImages || editFormData.includeImages) && 
-        (editFormData.imageCount < 1 || editFormData.imageCount > 3)) {
+    if (
+      (editFormData.regenerateImages || editFormData.includeImages) &&
+      (editFormData.imageCount < 1 || editFormData.imageCount > 3)
+    ) {
       errors.imageCount = "Image count must be between 1 and 3";
     }
 
@@ -355,7 +393,7 @@ export default function AIContent() {
       aiProvider: "openai",
       includeImages: false,
       imageCount: 1,
-      imageStyle: "natural"
+      imageStyle: "natural",
     });
     setFormErrors({});
   };
@@ -369,20 +407,20 @@ export default function AIContent() {
     setGenerationProgress(0);
     // PROGRESS BAR ADDITION: Set initial phase message
     setGenerationPhase("Initializing AI...");
-    
+
     // PROGRESS BAR ADDITION: Start interval to simulate progress
     const progressInterval = setInterval(() => {
-      setGenerationProgress(prev => {
+      setGenerationProgress((prev) => {
         // PROGRESS BAR ADDITION: Stop at 90% until API completes
         if (prev >= 90) {
           clearInterval(progressInterval);
           return 90;
         }
-        
+
         // PROGRESS BAR ADDITION: Variable speed based on current progress
         const increment = prev < 20 ? 3 : prev < 50 ? 2 : prev < 80 ? 1.5 : 0.5;
         const newProgress = Math.min(prev + increment, 90);
-        
+
         // PROGRESS BAR ADDITION: Update phase messages based on progress
         if (newProgress < 15) {
           setGenerationPhase("Initializing AI...");
@@ -391,7 +429,11 @@ export default function AIContent() {
           setGenerationPhase("Analyzing topic and keywords...");
           setEstimatedTimeRemaining(20);
         } else if (newProgress < 45) {
-          setGenerationPhase("Generating content with " + getProviderName(formData.aiProvider) + "...");
+          setGenerationPhase(
+            "Generating content with " +
+              getProviderName(formData.aiProvider) +
+              "..."
+          );
           setEstimatedTimeRemaining(15);
         } else if (newProgress < 60) {
           setGenerationPhase("Optimizing for SEO...");
@@ -400,20 +442,27 @@ export default function AIContent() {
           setGenerationPhase("Analyzing readability and brand voice...");
           setEstimatedTimeRemaining(5);
         } else if (newProgress < 85) {
-          setGenerationPhase(formData.includeImages ? "Generating AI images..." : "Finalizing content...");
+          setGenerationPhase(
+            formData.includeImages
+              ? "Generating AI images..."
+              : "Finalizing content..."
+          );
           setEstimatedTimeRemaining(3);
         } else {
           setGenerationPhase("Almost done...");
           setEstimatedTimeRemaining(1);
         }
-        
+
         return newProgress;
       });
     }, 300); // Update every 300ms
-    
+
     try {
-      const keywords = formData.keywords.split(",").map(k => k.trim()).filter(k => k);
-      
+      const keywords = formData.keywords
+        .split(",")
+        .map((k) => k.trim())
+        .filter((k) => k);
+
       const result = await api.generateContent({
         websiteId: formData.websiteId,
         topic: formData.topic,
@@ -426,88 +475,105 @@ export default function AIContent() {
         aiProvider: formData.aiProvider,
         includeImages: formData.includeImages,
         imageCount: formData.imageCount,
-        imageStyle: formData.imageStyle
+        imageStyle: formData.imageStyle,
       });
 
       // PROGRESS BAR ADDITION: Clear interval and set to 100% on success
       clearInterval(progressInterval);
       setGenerationProgress(100);
       setGenerationPhase("Content generated successfully!");
-      
+
       // PROGRESS BAR ADDITION: Brief pause to show completion
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       const aiResult = result.aiResult;
-      
-      const imageInfo = aiResult.images?.length > 0 
-        ? ` + ${aiResult.images.length} images ($${aiResult.totalImageCost?.toFixed(4)})`
-        : '';
-      
+
+      const imageInfo =
+        aiResult.images?.length > 0
+          ? ` + ${
+              aiResult.images.length
+            } images ($${aiResult.totalImageCost?.toFixed(4)})`
+          : "";
+
       showToast(
         "Content Generated Successfully",
-        `${getProviderName(aiResult.aiProvider)} generated content with SEO: ${aiResult.seoScore}%, Readability: ${aiResult.readabilityScore}%, Brand Voice: ${aiResult.brandVoiceScore}%. Cost: $${(aiResult.costUsd / 100).toFixed(4)}${imageInfo}`
+        `${getProviderName(aiResult.aiProvider)} generated content with SEO: ${
+          aiResult.seoScore
+        }%, Readability: ${aiResult.readabilityScore}%, Brand Voice: ${
+          aiResult.brandVoiceScore
+        }%. Cost: $${(aiResult.costUsd / 100).toFixed(4)}${imageInfo}`
       );
 
       setIsGenerateDialogOpen(false);
-      setFormData(prev => ({ 
-        ...prev, 
-        websiteId: "", 
-        topic: "", 
+      setFormData((prev) => ({
+        ...prev,
+        websiteId: "",
+        topic: "",
         keywords: "",
         includeImages: false,
-        imageCount: 1 
+        imageCount: 1,
       }));
       setFormErrors({});
-      
+
       // PROGRESS BAR ADDITION: Reset all progress states
       setGenerationProgress(0);
       setGenerationPhase("");
       setEstimatedTimeRemaining(0);
 
       await loadContent();
-
     } catch (error) {
       // PROGRESS BAR ADDITION: Clear interval on error
       clearInterval(progressInterval);
       // PROGRESS BAR ADDITION: Reset progress states on error
       setGenerationProgress(0);
       setGenerationPhase("");
-      
+
       const errorType = getErrorType(error);
       const severity = getErrorSeverity(error);
-      
+
       let errorTitle = "Content Generation Failed";
       let errorDescription = error.message;
 
-      if (error.message.includes('Image generation failed')) {
+      if (error.message.includes("Image generation failed")) {
         errorTitle = "Image Generation Failed";
-        errorDescription = "Content generated successfully, but image generation failed. " + error.message;
+        errorDescription =
+          "Content generated successfully, but image generation failed. " +
+          error.message;
       }
 
       switch (errorType) {
-        case 'openai':
+        case "openai":
           errorTitle = "OpenAI API Error";
-          errorDescription += " Please check your OpenAI API key configuration.";
+          errorDescription +=
+            " Please check your OpenAI API key configuration.";
           break;
-        case 'anthropic':
+        case "anthropic":
           errorTitle = "Anthropic API Error";
-          errorDescription += " Please check your Anthropic API key configuration.";
+          errorDescription +=
+            " Please check your Anthropic API key configuration.";
           break;
-        case 'gemini':
+        case "gemini":
           errorTitle = "Gemini API Error";
-          errorDescription += " Please check your Google Gemini API key configuration.";
+          errorDescription +=
+            " Please check your Google Gemini API key configuration.";
           break;
-        case 'pagespeed':
+        case "pagespeed":
           errorTitle = "PageSpeed API Error";
-          errorDescription += " SEO scores may be incomplete due to PageSpeed API issues.";
+          errorDescription +=
+            " SEO scores may be incomplete due to PageSpeed API issues.";
           break;
-        case 'analysis':
+        case "analysis":
           errorTitle = "Content Analysis Error";
           errorDescription += " Content was generated but analysis failed.";
           break;
       }
 
-      showToast(errorTitle, errorDescription, severity === 'error' ? "destructive" : "warning", errorType);
+      showToast(
+        errorTitle,
+        errorDescription,
+        severity === "error" ? "destructive" : "warning",
+        errorType
+      );
     } finally {
       setIsGenerating(false);
     }
@@ -520,7 +586,9 @@ export default function AIContent() {
       title: contentItem.title || "",
       body: contentItem.body || "",
       excerpt: contentItem.excerpt || "",
-      keywords: Array.isArray(contentItem.seoKeywords) ? contentItem.seoKeywords.join(", ") : "",
+      keywords: Array.isArray(contentItem.seoKeywords)
+        ? contentItem.seoKeywords.join(", ")
+        : "",
       tone: contentItem.tone || "professional",
       brandVoice: contentItem.brandVoice || "",
       targetAudience: contentItem.targetAudience || "",
@@ -530,7 +598,7 @@ export default function AIContent() {
       regenerateImages: false,
       includeImages: contentItem.hasImages || false,
       imageCount: contentItem.imageCount || 1,
-      imageStyle: "natural"
+      imageStyle: "natural",
     });
     setEditFormErrors({});
     setIsEditDialogOpen(true);
@@ -553,7 +621,7 @@ export default function AIContent() {
       regenerateImages: false,
       includeImages: false,
       imageCount: 1,
-      imageStyle: "natural"
+      imageStyle: "natural",
     });
     setEditFormErrors({});
   };
@@ -563,10 +631,13 @@ export default function AIContent() {
     if (!validateEditForm() || !editingContent) return;
 
     setIsSaving(true);
-    
+
     try {
-      const keywords = editFormData.keywords.split(",").map(k => k.trim()).filter(k => k);
-      
+      const keywords = editFormData.keywords
+        .split(",")
+        .map((k) => k.trim())
+        .filter((k) => k);
+
       // Save without AI analysis - just update the content
       const updatedContent = await api.updateContent(editingContent.id, {
         title: editFormData.title,
@@ -578,7 +649,7 @@ export default function AIContent() {
         targetAudience: editFormData.targetAudience || undefined,
         eatCompliance: editFormData.eatCompliance,
         // Don't include aiProvider to avoid re-analysis
-        websiteId: selectedWebsite
+        websiteId: selectedWebsite,
       });
 
       await loadContent();
@@ -590,7 +661,7 @@ export default function AIContent() {
       );
     } catch (error) {
       showToast(
-        "Save Failed", 
+        "Save Failed",
         error.message || "Failed to save content changes",
         "destructive"
       );
@@ -604,23 +675,34 @@ export default function AIContent() {
     if (!validateEditForm() || !editingContent) return;
 
     // Validate AI provider for regeneration
-    if (!editFormData.aiProvider || !['openai', 'anthropic', 'gemini'].includes(editFormData.aiProvider)) {
-      setEditFormErrors({ aiProvider: "Please select a valid AI provider for content regeneration" });
+    if (
+      !editFormData.aiProvider ||
+      !["openai", "anthropic", "gemini"].includes(editFormData.aiProvider)
+    ) {
+      setEditFormErrors({
+        aiProvider:
+          "Please select a valid AI provider for content regeneration",
+      });
       return;
     }
 
     // Validate image regeneration settings
-    if ((editFormData.regenerateImages || editFormData.includeImages) && 
-        (editFormData.imageCount < 1 || editFormData.imageCount > 3)) {
+    if (
+      (editFormData.regenerateImages || editFormData.includeImages) &&
+      (editFormData.imageCount < 1 || editFormData.imageCount > 3)
+    ) {
       setEditFormErrors({ imageCount: "Image count must be between 1 and 3" });
       return;
     }
 
     setIsRegenerating(true);
-    
+
     try {
-      const keywords = editFormData.keywords.split(",").map(k => k.trim()).filter(k => k);
-      
+      const keywords = editFormData.keywords
+        .split(",")
+        .map((k) => k.trim())
+        .filter((k) => k);
+
       // Regenerate with AI - this will create completely new content
       const result = await api.updateContent(editingContent.id, {
         title: editFormData.title,
@@ -637,7 +719,7 @@ export default function AIContent() {
         regenerateImages: editFormData.regenerateImages,
         includeImages: editFormData.includeImages,
         imageCount: editFormData.imageCount,
-        imageStyle: editFormData.imageStyle
+        imageStyle: editFormData.imageStyle,
       });
 
       await loadContent();
@@ -645,46 +727,67 @@ export default function AIContent() {
 
       if (result.regeneration && result.regeneration.success) {
         const regen = result.regeneration;
-        let successMessage = `${getProviderName(regen.contentAiProvider)} created new content - SEO: ${regen.seoScore}%, Readability: ${regen.readabilityScore}%, Brand Voice: ${regen.brandVoiceScore}%. Text cost: $${(regen.costUsd).toFixed(4)}`;
-        
+        let successMessage = `${getProviderName(
+          regen.contentAiProvider
+        )} created new content - SEO: ${regen.seoScore}%, Readability: ${
+          regen.readabilityScore
+        }%, Brand Voice: ${
+          regen.brandVoiceScore
+        }%. Text cost: $${regen.costUsd.toFixed(4)}`;
+
         if (regen.imagesRegenerated && regen.newImageCount > 0) {
-          successMessage += `. Generated ${regen.newImageCount} new image${regen.newImageCount > 1 ? 's' : ''} with DALL-E for $${(regen.imageCostUsd).toFixed(4)}`;
+          successMessage += `. Generated ${regen.newImageCount} new image${
+            regen.newImageCount > 1 ? "s" : ""
+          } with DALL-E for $${regen.imageCostUsd.toFixed(4)}`;
         } else if (editingContent.hasImages && !regen.imagesRegenerated) {
           successMessage += `. Kept existing images`;
         }
-        
+
         showToast("Content Regenerated Successfully", successMessage);
       } else {
-        showToast("Content Saved Successfully", "Your content has been updated and saved.");
+        showToast(
+          "Content Saved Successfully",
+          "Your content has been updated and saved."
+        );
       }
     } catch (error) {
       const errorType = getErrorType(error);
       const severity = getErrorSeverity(error);
-      
+
       let errorTitle = "Regeneration Failed";
       let errorDescription = error.message;
 
-      if (error.message.includes('Image generation failed')) {
+      if (error.message.includes("Image generation failed")) {
         errorTitle = "Image Regeneration Failed";
-        errorDescription = "Content regenerated successfully, but image generation failed. " + error.message;
+        errorDescription =
+          "Content regenerated successfully, but image generation failed. " +
+          error.message;
       }
 
       switch (errorType) {
-        case 'openai':
+        case "openai":
           errorTitle = "OpenAI API Error";
-          errorDescription += " Please check your OpenAI API key configuration.";
+          errorDescription +=
+            " Please check your OpenAI API key configuration.";
           break;
-        case 'anthropic':
+        case "anthropic":
           errorTitle = "Anthropic API Error";
-          errorDescription += " Please check your Anthropic API key configuration.";
+          errorDescription +=
+            " Please check your Anthropic API key configuration.";
           break;
-        case 'gemini':
+        case "gemini":
           errorTitle = "Gemini API Error";
-          errorDescription += " Please check your Google Gemini API key configuration.";
+          errorDescription +=
+            " Please check your Google Gemini API key configuration.";
           break;
       }
 
-      showToast(errorTitle, errorDescription, severity === 'error' ? "destructive" : "warning", errorType);
+      showToast(
+        errorTitle,
+        errorDescription,
+        severity === "error" ? "destructive" : "warning",
+        errorType
+      );
     } finally {
       setIsRegenerating(false);
     }
@@ -692,11 +795,11 @@ export default function AIContent() {
 
   const publishContent = async (contentId) => {
     setIsPublishing(true);
-    
+
     try {
       await api.publishContent(contentId);
       await loadContent();
-      
+
       showToast(
         "Content Published",
         "Content has been published to your WordPress site."
@@ -713,34 +816,46 @@ export default function AIContent() {
   };
 
   const getWebsiteName = (websiteId) => {
-    const website = websites.find(w => w.id === websiteId);
+    const website = websites.find((w) => w.id === websiteId);
     return website?.name || "Unknown Website";
   };
 
   const getWebsiteBrandVoice = (websiteId) => {
-    const website = websites.find(w => w.id === websiteId);
+    const website = websites.find((w) => w.id === websiteId);
     return website?.brandVoice || "";
   };
 
   // Calculate metrics from real data
   const filteredContent = selectedWebsite ? content : [];
   const totalCost = filteredContent.reduce((sum, item) => {
-    const cost = typeof item.costUsd === 'number' ? item.costUsd : 0;
+    const cost = typeof item.costUsd === "number" ? item.costUsd : 0;
     return sum + cost;
   }, 0);
-  
-  const validScores = filteredContent.filter(item => typeof item.seoScore === 'number' && item.seoScore > 0);
-  const avgSeoScore = validScores.length > 0 
-    ? Math.round(validScores.reduce((sum, item) => sum + item.seoScore, 0) / validScores.length)
-    : null;
+
+  const validScores = filteredContent.filter(
+    (item) => typeof item.seoScore === "number" && item.seoScore > 0
+  );
+  const avgSeoScore =
+    validScores.length > 0
+      ? Math.round(
+          validScores.reduce((sum, item) => sum + item.seoScore, 0) /
+            validScores.length
+        )
+      : null;
 
   return (
     <div className="py-6 bg-gray-50 min-h-screen">
       {/* PROGRESS BAR ADDITION: Add CSS for animated stripes inline */}
+
       <style>{`
+
         @keyframes stripes {
-          0% { background-position: 0 0; }
-          100% { background-position: 40px 0; }
+          0% {
+            background-position: 0 0;
+          }
+          100% {
+            background-position: 40px 0;
+          }
         }
         .bg-stripes {
           background-image: linear-gradient(
@@ -756,25 +871,33 @@ export default function AIContent() {
           background-size: 40px 40px;
           animation: stripes 1s linear infinite;
         }
-      `}</style>
-      
+      `}</style> */}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
         {/* Enhanced Toast Notification */}
         {toast && (
-          <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg border max-w-md ${
-            toast.variant === "destructive" 
-              ? "bg-red-50 border-red-200 text-red-800" 
-              : toast.variant === "warning"
-              ? "bg-yellow-50 border-yellow-200 text-yellow-800"
-              : "bg-green-50 border-green-200 text-green-800"
-          }`}>
+          <div
+            className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg border max-w-md ${
+              toast.variant === "destructive"
+                ? "bg-red-50 border-red-200 text-red-800"
+                : toast.variant === "warning"
+                ? "bg-yellow-50 border-yellow-200 text-yellow-800"
+                : "bg-green-50 border-green-200 text-green-800"
+            }`}
+          >
             <div className="flex items-start justify-between">
               <div className="flex items-start flex-1">
-                {toast.variant === "destructive" && <AlertTriangle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />}
-                {toast.variant === "warning" && <AlertTriangle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />}
+                {toast.variant === "destructive" && (
+                  <AlertTriangle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
+                )}
+                {toast.variant === "warning" && (
+                  <AlertTriangle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
+                )}
                 <div className="flex-1">
                   <div className="font-medium text-sm">{toast.title}</div>
-                  <div className="text-xs opacity-90 mt-1">{toast.description}</div>
+                  <div className="text-xs opacity-90 mt-1">
+                    {toast.description}
+                  </div>
                   {toast.errorType && (
                     <div className="text-xs mt-1 opacity-75">
                       Error Type: {toast.errorType.toUpperCase()}
@@ -782,7 +905,10 @@ export default function AIContent() {
                   )}
                 </div>
               </div>
-              <button onClick={() => setToast(null)} className="ml-3 opacity-70 hover:opacity-100 flex-shrink-0">
+              <button
+                onClick={() => setToast(null)}
+                className="ml-3 opacity-70 hover:opacity-100 flex-shrink-0"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -796,7 +922,8 @@ export default function AIContent() {
               AI Content Generation
             </h2>
             <p className="mt-1 text-sm text-gray-500">
-              Create high-quality, SEO-optimized content with OpenAI GPT-4O, Anthropic Claude, or Google Gemini
+              Create high-quality, SEO-optimized content with OpenAI GPT-4O,
+              Anthropic Claude, or Google Gemini
             </p>
           </div>
           <div className="mt-4 flex space-x-3 md:mt-0 md:ml-4">
@@ -805,7 +932,11 @@ export default function AIContent() {
               disabled={isLoadingWebsites}
               className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingWebsites ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-4 h-4 mr-2 ${
+                  isLoadingWebsites ? "animate-spin" : ""
+                }`}
+              />
               Refresh
             </button>
             <button
@@ -824,90 +955,145 @@ export default function AIContent() {
           <div className="fixed inset-0 z-50 overflow-y-auto">
             <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
               {/* PROGRESS BAR ADDITION: Disable backdrop click when generating */}
-              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => !isGenerating && setIsGenerateDialogOpen(false)}></div>
+              <div
+                className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+                onClick={() => !isGenerating && setIsGenerateDialogOpen(false)}
+              ></div>
               <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
                 <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                   <div className="mb-4">
-                    <h3 className="text-lg leading-6 font-medium text-gray-900">Generate AI Content</h3>
-                    <p className="mt-1 text-sm text-gray-500">Create SEO-optimized content with your preferred AI provider</p>
+                    <h3 className="text-lg leading-6 font-medium text-gray-900">
+                      Generate AI Content
+                    </h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Create SEO-optimized content with your preferred AI
+                      provider
+                    </p>
                   </div>
-                  
+
                   <div className="space-y-4 max-h-96 overflow-y-auto">
                     {/* AI Provider Selection */}
                     <div className="border border-blue-200 bg-blue-50 rounded-lg p-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">AI Provider for Content *</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        AI Provider for Content *
+                      </label>
                       <p className="text-xs text-gray-600 mb-3">
-                        Select AI provider for content generation. Images will always use DALL-E 3 when enabled.
+                        Select AI provider for content generation. Images will
+                        always use DALL-E 3 when enabled.
                       </p>
                       <div className="grid grid-cols-3 gap-3">
                         <button
                           type="button"
-                          onClick={() => setFormData(prev => ({...prev, aiProvider: "openai"}))}
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              aiProvider: "openai",
+                            }))
+                          }
                           className={`p-3 border-2 rounded-lg text-left transition-all ${
-                            formData.aiProvider === "openai" 
-                              ? "border-green-500 bg-green-50" 
+                            formData.aiProvider === "openai"
+                              ? "border-green-500 bg-green-50"
                               : "border-gray-200 bg-white hover:border-gray-300"
                           }`}
                         >
                           <div className="flex items-center mb-1">
                             <Cpu className="w-4 h-4 text-green-600 mr-2" />
-                            <span className="font-medium text-sm">OpenAI GPT-4O</span>
+                            <span className="font-medium text-sm">
+                              OpenAI GPT-4O
+                            </span>
                           </div>
-                          <p className="text-xs text-gray-600">Advanced language model with excellent content generation</p>
-                          <p className="text-xs text-green-600 mt-1">$0.005/$0.015 per 1K tokens</p>
+                          <p className="text-xs text-gray-600">
+                            Advanced language model with excellent content
+                            generation
+                          </p>
+                          <p className="text-xs text-green-600 mt-1">
+                            $0.005/$0.015 per 1K tokens
+                          </p>
                         </button>
-                        
+
                         <button
                           type="button"
-                          onClick={() => setFormData(prev => ({...prev, aiProvider: "anthropic"}))}
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              aiProvider: "anthropic",
+                            }))
+                          }
                           className={`p-3 border-2 rounded-lg text-left transition-all ${
-                            formData.aiProvider === "anthropic" 
-                              ? "border-purple-500 bg-purple-50" 
+                            formData.aiProvider === "anthropic"
+                              ? "border-purple-500 bg-purple-50"
                               : "border-gray-200 bg-white hover:border-gray-300"
                           }`}
                         >
                           <div className="flex items-center mb-1">
                             <Bot className="w-4 h-4 text-purple-600 mr-2" />
-                            <span className="font-medium text-sm">Anthropic Claude</span>
+                            <span className="font-medium text-sm">
+                              Anthropic Claude
+                            </span>
                           </div>
-                          <p className="text-xs text-gray-600">Thoughtful AI with strong analytical capabilities</p>
-                          <p className="text-xs text-purple-600 mt-1">$0.003/$0.015 per 1K tokens</p>
-                          <p className="text-xs text-orange-600 mt-1">Can generate images via DALL-E 3</p>
+                          <p className="text-xs text-gray-600">
+                            Thoughtful AI with strong analytical capabilities
+                          </p>
+                          <p className="text-xs text-purple-600 mt-1">
+                            $0.003/$0.015 per 1K tokens
+                          </p>
+                          <p className="text-xs text-orange-600 mt-1">
+                            Can generate images via DALL-E 3
+                          </p>
                         </button>
 
                         <button
                           type="button"
-                          onClick={() => setFormData(prev => ({...prev, aiProvider: "gemini"}))}
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              aiProvider: "gemini",
+                            }))
+                          }
                           className={`p-3 border-2 rounded-lg text-left transition-all ${
-                            formData.aiProvider === "gemini" 
-                              ? "border-blue-500 bg-blue-50" 
+                            formData.aiProvider === "gemini"
+                              ? "border-blue-500 bg-blue-50"
                               : "border-gray-200 bg-white hover:border-gray-300"
                           }`}
                         >
                           <div className="flex items-center mb-1">
                             <Sparkles className="w-4 h-4 text-blue-600 mr-2" />
-                            <span className="font-medium text-sm">Google Gemini</span>
+                            <span className="font-medium text-sm">
+                              Google Gemini
+                            </span>
                           </div>
-                          <p className="text-xs text-gray-600">Google's multimodal AI with strong reasoning</p>
-                          <p className="text-xs text-blue-600 mt-1">$0.0025/$0.0075 per 1K tokens</p>
-                          <p className="text-xs text-orange-600 mt-1">Can generate images via DALL-E 3</p>
+                          <p className="text-xs text-gray-600">
+                            Google's multimodal AI with strong reasoning
+                          </p>
+                          <p className="text-xs text-blue-600 mt-1">
+                            $0.0025/$0.0075 per 1K tokens
+                          </p>
+                          <p className="text-xs text-orange-600 mt-1">
+                            Can generate images via DALL-E 3
+                          </p>
                         </button>
                       </div>
                       {formErrors.aiProvider && (
-                        <p className="text-sm text-red-600 mt-1">{formErrors.aiProvider}</p>
+                        <p className="text-sm text-red-600 mt-1">
+                          {formErrors.aiProvider}
+                        </p>
                       )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Target Website *</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Target Website *
+                        </label>
                         <select
                           value={formData.websiteId}
-                          onChange={(e) => setFormData(prev => ({
-                            ...prev, 
-                            websiteId: e.target.value,
-                            brandVoice: getWebsiteBrandVoice(e.target.value)
-                          }))}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              websiteId: e.target.value,
+                              brandVoice: getWebsiteBrandVoice(e.target.value),
+                            }))
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                         >
                           <option value="">Select website</option>
@@ -918,15 +1104,24 @@ export default function AIContent() {
                           ))}
                         </select>
                         {formErrors.websiteId && (
-                          <p className="text-sm text-red-600 mt-1">{formErrors.websiteId}</p>
+                          <p className="text-sm text-red-600 mt-1">
+                            {formErrors.websiteId}
+                          </p>
                         )}
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Content Tone</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Content Tone
+                        </label>
                         <select
                           value={formData.tone}
-                          onChange={(e) => setFormData(prev => ({...prev, tone: e.target.value}))}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              tone: e.target.value,
+                            }))
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                         >
                           <option value="professional">Professional</option>
@@ -940,44 +1135,71 @@ export default function AIContent() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Content Topic *</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Content Topic *
+                      </label>
                       <input
                         type="text"
                         value={formData.topic}
-                        onChange={(e) => setFormData(prev => ({...prev, topic: e.target.value}))}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            topic: e.target.value,
+                          }))
+                        }
                         placeholder="e.g., Latest WordPress Security Tips"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       />
                       {formErrors.topic && (
-                        <p className="text-sm text-red-600 mt-1">{formErrors.topic}</p>
+                        <p className="text-sm text-red-600 mt-1">
+                          {formErrors.topic}
+                        </p>
                       )}
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">SEO Keywords</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        SEO Keywords
+                      </label>
                       <input
                         type="text"
                         value={formData.keywords}
-                        onChange={(e) => setFormData(prev => ({...prev, keywords: e.target.value}))}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            keywords: e.target.value,
+                          }))
+                        }
                         placeholder="wordpress, security, tips, 2024"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       />
-                      <p className="text-xs text-gray-500 mt-1">Separate keywords with commas</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Separate keywords with commas
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Word Count</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Word Count
+                        </label>
                         <input
                           type="number"
                           value={formData.wordCount}
-                          onChange={(e) => setFormData(prev => ({...prev, wordCount: parseInt(e.target.value) || 0}))}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              wordCount: parseInt(e.target.value) || 0,
+                            }))
+                          }
                           min="100"
                           max="5000"
                           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                         />
                         {formErrors.wordCount && (
-                          <p className="text-sm text-red-600 mt-1">{formErrors.wordCount}</p>
+                          <p className="text-sm text-red-600 mt-1">
+                            {formErrors.wordCount}
+                          </p>
                         )}
                       </div>
 
@@ -986,10 +1208,17 @@ export default function AIContent() {
                           <input
                             type="checkbox"
                             checked={formData.seoOptimized}
-                            onChange={(e) => setFormData(prev => ({...prev, seoOptimized: e.target.checked}))}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                seoOptimized: e.target.checked,
+                              }))
+                            }
                             className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                           />
-                          <span className="ml-2 text-sm text-gray-700">SEO Optimized</span>
+                          <span className="ml-2 text-sm text-gray-700">
+                            SEO Optimized
+                          </span>
                         </label>
                       </div>
                     </div>
@@ -1004,26 +1233,40 @@ export default function AIContent() {
                         <Zap className="w-4 h-4 mr-1" />
                         Advanced Options
                       </button>
-                      
+
                       {showAdvanced && (
                         <div className="mt-3 space-y-4 pl-5 border-l-2 border-blue-100">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Target Audience
+                            </label>
                             <input
                               type="text"
                               value={formData.targetAudience}
-                              onChange={(e) => setFormData(prev => ({...prev, targetAudience: e.target.value}))}
+                              onChange={(e) =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  targetAudience: e.target.value,
+                                }))
+                              }
                               placeholder="e.g., Small business owners, Developers"
                               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                             />
                           </div>
 
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Brand Voice Override</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Brand Voice Override
+                            </label>
                             <input
                               type="text"
                               value={formData.brandVoice}
-                              onChange={(e) => setFormData(prev => ({...prev, brandVoice: e.target.value}))}
+                              onChange={(e) =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  brandVoice: e.target.value,
+                                }))
+                              }
                               placeholder="Leave empty to use website's brand voice"
                               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                             />
@@ -1034,10 +1277,17 @@ export default function AIContent() {
                               <input
                                 type="checkbox"
                                 checked={formData.eatCompliance}
-                                onChange={(e) => setFormData(prev => ({...prev, eatCompliance: e.target.checked}))}
+                                onChange={(e) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    eatCompliance: e.target.checked,
+                                  }))
+                                }
                                 className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                               />
-                              <span className="ml-2 text-sm text-gray-700">E-E-A-T Compliance (YMYL Content)</span>
+                              <span className="ml-2 text-sm text-gray-700">
+                                E-E-A-T Compliance (YMYL Content)
+                              </span>
                             </label>
                           </div>
 
@@ -1049,68 +1299,114 @@ export default function AIContent() {
                                   type="checkbox"
                                   checked={formData.includeImages}
                                   onChange={(e) => {
-                                    setFormData(prev => ({
-                                      ...prev, 
-                                      includeImages: e.target.checked
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      includeImages: e.target.checked,
                                     }));
                                   }}
                                   className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                                 />
-                                <span className="ml-2 text-sm font-medium text-gray-700">Generate Images with DALL-E 3</span>
+                                <span className="ml-2 text-sm font-medium text-gray-700">
+                                  Generate Images with DALL-E 3
+                                </span>
                               </label>
-                              <span className="text-xs text-orange-600">$0.04-$0.12 per image</span>
+                              <span className="text-xs text-orange-600">
+                                $0.04-$0.12 per image
+                              </span>
                             </div>
-                            
+
                             <p className="text-xs text-gray-600 mb-3">
-                              Images are generated using OpenAI's DALL-E 3 regardless of your content AI provider choice.
+                              Images are generated using OpenAI's DALL-E 3
+                              regardless of your content AI provider choice.
                             </p>
-                            
+
                             {formData.includeImages && (
                               <div className="space-y-3 pl-6 border-l-2 border-orange-100 bg-orange-50 p-3 rounded">
                                 <div className="grid grid-cols-2 gap-3">
                                   <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Number of Images</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Number of Images
+                                    </label>
                                     <select
                                       value={formData.imageCount}
-                                      onChange={(e) => setFormData(prev => ({...prev, imageCount: parseInt(e.target.value)}))}
+                                      onChange={(e) =>
+                                        setFormData((prev) => ({
+                                          ...prev,
+                                          imageCount: parseInt(e.target.value),
+                                        }))
+                                      }
                                       className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                                     >
                                       <option value={1}>1 Image (Hero)</option>
-                                      <option value={2}>2 Images (Hero + Support)</option>
-                                      <option value={3}>3 Images (Full Set)</option>
+                                      <option value={2}>
+                                        2 Images (Hero + Support)
+                                      </option>
+                                      <option value={3}>
+                                        3 Images (Full Set)
+                                      </option>
                                     </select>
                                   </div>
-                                  
+
                                   <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Image Style</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Image Style
+                                    </label>
                                     <select
                                       value={formData.imageStyle}
-                                      onChange={(e) => setFormData(prev => ({...prev, imageStyle: e.target.value}))}
+                                      onChange={(e) =>
+                                        setFormData((prev) => ({
+                                          ...prev,
+                                          imageStyle: e.target.value,
+                                        }))
+                                      }
                                       className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                                     >
-                                      <option value="natural">Natural/Photorealistic</option>
-                                      <option value="digital_art">Digital Art</option>
-                                      <option value="photographic">Professional Photography</option>
-                                      <option value="cinematic">Cinematic</option>
+                                      <option value="natural">
+                                        Natural/Photorealistic
+                                      </option>
+                                      <option value="digital_art">
+                                        Digital Art
+                                      </option>
+                                      <option value="photographic">
+                                        Professional Photography
+                                      </option>
+                                      <option value="cinematic">
+                                        Cinematic
+                                      </option>
                                     </select>
                                   </div>
                                 </div>
-                                
+
                                 <div className="text-xs text-gray-600 bg-white p-2 rounded border">
-                                  <strong>Content AI:</strong> {getProviderName(formData.aiProvider)} (Est: $0.001-$0.005)
+                                  <strong>Content AI:</strong>{" "}
+                                  {getProviderName(formData.aiProvider)} (Est:
+                                  $0.001-$0.005)
                                   <br />
-                                  <strong>Image AI:</strong> DALL-E 3 (${(formData.imageCount * 0.04).toFixed(2)} - ${(formData.imageCount * 0.12).toFixed(2)})
+                                  <strong>Image AI:</strong> DALL-E 3 ($
+                                  {(formData.imageCount * 0.04).toFixed(2)} - $
+                                  {(formData.imageCount * 0.12).toFixed(2)})
                                   <br />
-                                  <strong>Total Estimated Cost:</strong> ${(0.001 + formData.imageCount * 0.04).toFixed(3)} - ${(0.005 + formData.imageCount * 0.12).toFixed(3)}
+                                  <strong>Total Estimated Cost:</strong> $
+                                  {(0.001 + formData.imageCount * 0.04).toFixed(
+                                    3
+                                  )}{" "}
+                                  - $
+                                  {(0.005 + formData.imageCount * 0.12).toFixed(
+                                    3
+                                  )}
                                 </div>
                               </div>
                             )}
-                            
+
                             {formErrors.imageCount && (
-                              <p className="text-sm text-red-600 mt-1">{formErrors.imageCount}</p>
+                              <p className="text-sm text-red-600 mt-1">
+                                {formErrors.imageCount}
+                              </p>
                             )}
                             {formErrors.imageStyle && (
-                              <p className="text-sm text-red-600 mt-1">{formErrors.imageStyle}</p>
+                              <p className="text-sm text-red-600 mt-1">
+                                {formErrors.imageStyle}
+                              </p>
                             )}
                           </div>
                         </div>
@@ -1118,7 +1414,7 @@ export default function AIContent() {
                     </div>
                   </div>
                 </div>
-                
+
                 {/* PROGRESS BAR ADDITION: Enhanced footer with progress bar */}
                 <div className="bg-gray-50 px-4 py-3 sm:px-6">
                   {/* PROGRESS BAR ADDITION: Progress section only visible when generating */}
@@ -1138,11 +1434,11 @@ export default function AIContent() {
                             </span>
                           </div>
                         </div>
-                        
+
                         {/* PROGRESS BAR ADDITION: Progress bar container */}
                         <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-100">
                           {/* PROGRESS BAR ADDITION: Animated progress bar fill */}
-                          <div 
+                          <div
                             style={{ width: `${generationProgress}%` }}
                             className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300 ease-out relative"
                           >
@@ -1150,33 +1446,41 @@ export default function AIContent() {
                             <div className="absolute inset-0 bg-stripes opacity-20"></div>
                           </div>
                         </div>
-                        
+
                         {/* PROGRESS BAR ADDITION: Status text and time remaining */}
                         <div className="flex items-center justify-between text-sm">
                           <div className="flex items-center">
                             {/* PROGRESS BAR ADDITION: Spinning loader icon */}
                             <Loader2 className="w-4 h-4 mr-2 animate-spin text-blue-600" />
-                            <span className="text-gray-700">{generationPhase}</span>
+                            <span className="text-gray-700">
+                              {generationPhase}
+                            </span>
                           </div>
                           {/* PROGRESS BAR ADDITION: Time remaining display */}
                           {estimatedTimeRemaining > 0 && (
                             <div className="flex items-center text-gray-500">
                               <Clock className="w-4 h-4 mr-1" />
-                              <span className="text-xs">~{estimatedTimeRemaining}s remaining</span>
+                              <span className="text-xs">
+                                ~{estimatedTimeRemaining}s remaining
+                              </span>
                             </div>
                           )}
                         </div>
-                        
+
                         {/* PROGRESS BAR ADDITION: Special notice for image generation */}
                         {formData.includeImages && generationProgress > 70 && (
                           <div className="mt-2 text-xs text-orange-600 bg-orange-50 p-2 rounded">
-                            <span className="font-medium">Generating {formData.imageCount} image{formData.imageCount > 1 ? 's' : ''} with DALL-E 3...</span>
+                            <span className="font-medium">
+                              Generating {formData.imageCount} image
+                              {formData.imageCount > 1 ? "s" : ""} with DALL-E
+                              3...
+                            </span>
                           </div>
                         )}
                       </div>
                     </div>
                   )}
-                  
+
                   {/* Action buttons */}
                   <div className="sm:flex sm:flex-row-reverse">
                     <button
@@ -1205,12 +1509,14 @@ export default function AIContent() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => !isGenerating && setIsGenerateDialogOpen(false)}
+                      onClick={() =>
+                        !isGenerating && setIsGenerateDialogOpen(false)
+                      }
                       disabled={isGenerating}
                       className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {/* PROGRESS BAR ADDITION: Change cancel text when generating */}
-                      {isGenerating ? 'Please wait...' : 'Cancel'}
+                      {isGenerating ? "Please wait..." : "Cancel"}
                     </button>
                   </div>
                 </div>
@@ -1223,14 +1529,22 @@ export default function AIContent() {
         {isEditDialogOpen && editingContent && (
           <div className="fixed inset-0 z-50 overflow-y-auto">
             <div className="flex items-start justify-center min-h-screen pt-4 px-4 pb-20">
-              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={closeEditDialog}></div>
+              <div
+                className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+                onClick={closeEditDialog}
+              ></div>
               <div className="relative bg-white rounded-lg shadow-xl transform transition-all w-full max-w-7xl mx-auto my-8">
                 {/* Header */}
                 <div className="bg-white px-6 py-4 border-b border-gray-200">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="text-lg leading-6 font-medium text-gray-900">Edit Content</h3>
-                      <p className="mt-1 text-sm text-gray-500">Edit content with live preview - Save changes or regenerate with AI</p>
+                      <h3 className="text-lg leading-6 font-medium text-gray-900">
+                        Edit Content
+                      </h3>
+                      <p className="mt-1 text-sm text-gray-500">
+                        Edit content with live preview - Save changes or
+                        regenerate with AI
+                      </p>
                     </div>
                     <button
                       onClick={closeEditDialog}
@@ -1265,29 +1579,37 @@ export default function AIContent() {
                           </div>
                           {editFormData.excerpt && (
                             <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
-                              <p className="text-blue-800 italic">{editFormData.excerpt}</p>
+                              <p className="text-blue-800 italic">
+                                {editFormData.excerpt}
+                              </p>
                             </div>
                           )}
                         </div>
 
                         {/* WordPress Post Content */}
                         <div className="prose prose-lg max-w-none">
-                          <div 
+                          <div
                             className="wordpress-content"
-                            dangerouslySetInnerHTML={{ 
-                              __html: editFormData.body || "<p>Start typing your content...</p>" 
+                            dangerouslySetInnerHTML={{
+                              __html:
+                                editFormData.body ||
+                                "<p>Start typing your content...</p>",
                             }}
                             style={{
-                              lineHeight: '1.7',
-                              fontSize: '16px'
+                              lineHeight: "1.7",
+                              fontSize: "16px",
                             }}
                           />
                         </div>
 
                         {/* Meta Information */}
-                        {(editFormData.targetAudience || editFormData.brandVoice || editFormData.eatCompliance) && (
+                        {(editFormData.targetAudience ||
+                          editFormData.brandVoice ||
+                          editFormData.eatCompliance) && (
                           <div className="mt-8 pt-6 border-t border-gray-200">
-                            <h4 className="text-sm font-medium text-gray-900 mb-3">Content Metadata</h4>
+                            <h4 className="text-sm font-medium text-gray-900 mb-3">
+                              Content Metadata
+                            </h4>
                             <div className="flex flex-wrap gap-2">
                               {editFormData.targetAudience && (
                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -1320,48 +1642,72 @@ export default function AIContent() {
                     <div className="space-y-6">
                       {/* Enhanced AI Provider Selection for Re-analysis */}
                       <div className="border border-purple-200 bg-purple-50 rounded-lg p-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-3">AI Provider for Regeneration</label>
-                        <p className="text-xs text-gray-600 mb-3">Select an AI provider to completely regenerate this content with new AI-generated text</p>
-                        
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                          AI Provider for Regeneration
+                        </label>
+                        <p className="text-xs text-gray-600 mb-3">
+                          Select an AI provider to completely regenerate this
+                          content with new AI-generated text
+                        </p>
+
                         <div className="space-y-2">
                           <button
                             type="button"
-                            onClick={() => setEditFormData(prev => ({...prev, aiProvider: "openai"}))}
+                            onClick={() =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                aiProvider: "openai",
+                              }))
+                            }
                             className={`w-full p-3 border rounded-lg text-left text-sm transition-all ${
-                              editFormData.aiProvider === "openai" 
-                                ? "border-green-500 bg-green-50" 
+                              editFormData.aiProvider === "openai"
+                                ? "border-green-500 bg-green-50"
                                 : "border-gray-200 bg-white hover:border-gray-300"
                             }`}
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center">
                                 <Cpu className="w-4 h-4 text-green-600 mr-2" />
-                                <span className="font-medium">OpenAI GPT-4O</span>
+                                <span className="font-medium">
+                                  OpenAI GPT-4O
+                                </span>
                               </div>
-                            </div>
-                          </button>
-                          
-                          <button
-                            type="button"
-                            onClick={() => setEditFormData(prev => ({...prev, aiProvider: "anthropic"}))}
-                            className={`w-full p-3 border rounded-lg text-left text-sm transition-all ${
-                              editFormData.aiProvider === "anthropic" 
-                                ? "border-purple-500 bg-purple-50" 
-                                : "border-gray-200 bg-white hover:border-gray-300"
-                            }`}
-                          >
-                            <div className="flex items-center">
-                              <Bot className="w-4 h-4 text-purple-600 mr-2" />
-                              <span className="font-medium">Anthropic Claude</span>
                             </div>
                           </button>
 
                           <button
                             type="button"
-                            onClick={() => setEditFormData(prev => ({...prev, aiProvider: "gemini"}))}
+                            onClick={() =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                aiProvider: "anthropic",
+                              }))
+                            }
                             className={`w-full p-3 border rounded-lg text-left text-sm transition-all ${
-                              editFormData.aiProvider === "gemini" 
-                                ? "border-blue-500 bg-blue-50" 
+                              editFormData.aiProvider === "anthropic"
+                                ? "border-purple-500 bg-purple-50"
+                                : "border-gray-200 bg-white hover:border-gray-300"
+                            }`}
+                          >
+                            <div className="flex items-center">
+                              <Bot className="w-4 h-4 text-purple-600 mr-2" />
+                              <span className="font-medium">
+                                Anthropic Claude
+                              </span>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                aiProvider: "gemini",
+                              }))
+                            }
+                            className={`w-full p-3 border rounded-lg text-left text-sm transition-all ${
+                              editFormData.aiProvider === "gemini"
+                                ? "border-blue-500 bg-blue-50"
                                 : "border-gray-200 bg-white hover:border-gray-300"
                             }`}
                           >
@@ -1371,77 +1717,111 @@ export default function AIContent() {
                             </div>
                           </button>
                         </div>
-                        
+
                         {editFormErrors.aiProvider && (
-                          <p className="text-sm text-red-600 mt-2">{editFormErrors.aiProvider}</p>
+                          <p className="text-sm text-red-600 mt-2">
+                            {editFormErrors.aiProvider}
+                          </p>
                         )}
                       </div>
 
                       {/* Current Image Information */}
-                      {editingContent && (editingContent.hasImages || editingContent.imageCount > 0) && (
-                        <div className="border border-blue-200 bg-blue-50 rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-sm font-medium text-gray-700">Current Images</h4>
-                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                              {editingContent.imageCount || 0} image{(editingContent.imageCount || 0) !== 1 ? 's' : ''}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-600 mb-3">
-                            This content currently has {editingContent.imageCount || 0} AI-generated image{(editingContent.imageCount || 0) !== 1 ? 's' : ''}
-                            {editingContent.imageCostCents && ` (Cost: $${(editingContent.imageCostCents / 100).toFixed(4)})`}
-                          </p>
-                          
-                          <div className="flex items-center space-x-2 text-xs">
-                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded">
-                              Images Available
-                            </span>
-                            {editingContent.imageCostCents > 0 && (
-                              <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded">
-                                Previous Cost: ${(editingContent.imageCostCents / 100).toFixed(4)}
+                      {editingContent &&
+                        (editingContent.hasImages ||
+                          editingContent.imageCount > 0) && (
+                          <div className="border border-blue-200 bg-blue-50 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="text-sm font-medium text-gray-700">
+                                Current Images
+                              </h4>
+                              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                {editingContent.imageCount || 0} image
+                                {(editingContent.imageCount || 0) !== 1
+                                  ? "s"
+                                  : ""}
                               </span>
-                            )}
+                            </div>
+                            <p className="text-xs text-gray-600 mb-3">
+                              This content currently has{" "}
+                              {editingContent.imageCount || 0} AI-generated
+                              image
+                              {(editingContent.imageCount || 0) !== 1
+                                ? "s"
+                                : ""}
+                              {editingContent.imageCostCents &&
+                                ` (Cost: $${(
+                                  editingContent.imageCostCents / 100
+                                ).toFixed(4)})`}
+                            </p>
+
+                            <div className="flex items-center space-x-2 text-xs">
+                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded">
+                                Images Available
+                              </span>
+                              {editingContent.imageCostCents > 0 && (
+                                <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded">
+                                  Previous Cost: $
+                                  {(
+                                    editingContent.imageCostCents / 100
+                                  ).toFixed(4)}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
                       {/* UPDATED: Image Regeneration Options - Available for all providers */}
                       <div className="border border-orange-200 bg-orange-50 rounded-lg p-4">
                         <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-medium text-gray-700">Image Options</h4>
-                          <span className="text-xs text-orange-600">DALL-E 3 Only</span>
+                          <h4 className="text-sm font-medium text-gray-700">
+                            Image Options
+                          </h4>
+                          <span className="text-xs text-orange-600">
+                            DALL-E 3 Only
+                          </span>
                         </div>
-                        
+
                         <p className="text-xs text-gray-600 mb-3">
-                          Images are always generated with DALL-E 3, regardless of your content AI provider choice.
+                          Images are always generated with DALL-E 3, regardless
+                          of your content AI provider choice.
                         </p>
-                        
+
                         {/* Option 1: Keep existing images */}
                         <div className="space-y-3">
                           <label className="flex items-start">
                             <input
                               type="radio"
                               name="imageRegenOption"
-                              checked={!editFormData.regenerateImages && !editFormData.includeImages}
-                              onChange={() => setEditFormData(prev => ({
-                                ...prev, 
-                                regenerateImages: false,
-                                includeImages: false
-                              }))}
+                              checked={
+                                !editFormData.regenerateImages &&
+                                !editFormData.includeImages
+                              }
+                              onChange={() =>
+                                setEditFormData((prev) => ({
+                                  ...prev,
+                                  regenerateImages: false,
+                                  includeImages: false,
+                                }))
+                              }
                               className="mt-1 rounded border-gray-300 text-orange-600 shadow-sm focus:border-orange-300 focus:ring focus:ring-orange-200 focus:ring-opacity-50"
                             />
                             <div className="ml-3">
-                              <span className="text-sm font-medium text-gray-700">Keep Current Setup</span>
+                              <span className="text-sm font-medium text-gray-700">
+                                Keep Current Setup
+                              </span>
                               <p className="text-xs text-gray-600">
-                                {editingContent && editingContent.hasImages 
-                                  ? `Keep existing ${editingContent.imageCount || 0} images` 
-                                  : 'No images (text content only)'}
+                                {editingContent && editingContent.hasImages
+                                  ? `Keep existing ${
+                                      editingContent.imageCount || 0
+                                    } images`
+                                  : "No images (text content only)"}
                               </p>
                               <span className="inline-block mt-1 text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
                                 No additional cost
                               </span>
                             </div>
                           </label>
-                          
+
                           {/* Option 2: Regenerate images */}
                           {editingContent && editingContent.hasImages && (
                             <label className="flex items-start">
@@ -1449,89 +1829,142 @@ export default function AIContent() {
                                 type="radio"
                                 name="imageRegenOption"
                                 checked={editFormData.regenerateImages}
-                                onChange={() => setEditFormData(prev => ({
-                                  ...prev, 
-                                  regenerateImages: true,
-                                  includeImages: true
-                                }))}
+                                onChange={() =>
+                                  setEditFormData((prev) => ({
+                                    ...prev,
+                                    regenerateImages: true,
+                                    includeImages: true,
+                                  }))
+                                }
                                 className="mt-1 rounded border-gray-300 text-orange-600 shadow-sm focus:border-orange-300 focus:ring focus:ring-orange-200 focus:ring-opacity-50"
                               />
                               <div className="ml-3">
-                                <span className="text-sm font-medium text-gray-700">Regenerate Images</span>
-                                <p className="text-xs text-gray-600">Create completely new AI-generated images for this content</p>
+                                <span className="text-sm font-medium text-gray-700">
+                                  Regenerate Images
+                                </span>
+                                <p className="text-xs text-gray-600">
+                                  Create completely new AI-generated images for
+                                  this content
+                                </p>
                                 <span className="inline-block mt-1 text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">
                                   $0.04 per image
                                 </span>
                               </div>
                             </label>
                           )}
-                          
+
                           {/* Option 3: Add images if none exist */}
                           {(!editingContent || !editingContent.hasImages) && (
                             <label className="flex items-start">
                               <input
                                 type="radio"
                                 name="imageRegenOption"
-                                checked={!editFormData.regenerateImages && editFormData.includeImages}
-                                onChange={() => setEditFormData(prev => ({
-                                  ...prev, 
-                                  regenerateImages: false,
-                                  includeImages: true
-                                }))}
+                                checked={
+                                  !editFormData.regenerateImages &&
+                                  editFormData.includeImages
+                                }
+                                onChange={() =>
+                                  setEditFormData((prev) => ({
+                                    ...prev,
+                                    regenerateImages: false,
+                                    includeImages: true,
+                                  }))
+                                }
                                 className="mt-1 rounded border-gray-300 text-orange-600 shadow-sm focus:border-orange-300 focus:ring focus:ring-orange-200 focus:ring-opacity-50"
                               />
                               <div className="ml-3">
-                                <span className="text-sm font-medium text-gray-700">Add New Images</span>
-                                <p className="text-xs text-gray-600">Generate images for content that doesn't currently have any</p>
+                                <span className="text-sm font-medium text-gray-700">
+                                  Add New Images
+                                </span>
+                                <p className="text-xs text-gray-600">
+                                  Generate images for content that doesn't
+                                  currently have any
+                                </p>
                                 <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
                                   $0.04 per image
                                 </span>
                               </div>
                             </label>
                           )}
-                          
+
                           {/* Image settings when regenerating or adding */}
-                          {(editFormData.regenerateImages || editFormData.includeImages) && (
+                          {(editFormData.regenerateImages ||
+                            editFormData.includeImages) && (
                             <div className="ml-6 pl-4 border-l-2 border-orange-200 space-y-3 bg-white p-3 rounded">
                               <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">Number of Images</label>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                                    Number of Images
+                                  </label>
                                   <select
                                     value={editFormData.imageCount}
-                                    onChange={(e) => setEditFormData(prev => ({...prev, imageCount: parseInt(e.target.value)}))}
+                                    onChange={(e) =>
+                                      setEditFormData((prev) => ({
+                                        ...prev,
+                                        imageCount: parseInt(e.target.value),
+                                      }))
+                                    }
                                     className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
                                   >
                                     <option value={1}>1 Image (Hero)</option>
-                                    <option value={2}>2 Images (Hero + Support)</option>
-                                    <option value={3}>3 Images (Full Set)</option>
+                                    <option value={2}>
+                                      2 Images (Hero + Support)
+                                    </option>
+                                    <option value={3}>
+                                      3 Images (Full Set)
+                                    </option>
                                   </select>
                                   {editFormErrors.imageCount && (
-                                    <p className="text-xs text-red-600 mt-1">{editFormErrors.imageCount}</p>
+                                    <p className="text-xs text-red-600 mt-1">
+                                      {editFormErrors.imageCount}
+                                    </p>
                                   )}
                                 </div>
-                                
+
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">Image Style</label>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                                    Image Style
+                                  </label>
                                   <select
                                     value={editFormData.imageStyle}
-                                    onChange={(e) => setEditFormData(prev => ({...prev, imageStyle: e.target.value}))}
+                                    onChange={(e) =>
+                                      setEditFormData((prev) => ({
+                                        ...prev,
+                                        imageStyle: e.target.value,
+                                      }))
+                                    }
                                     className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
                                   >
-                                    <option value="natural">Natural/Photorealistic</option>
-                                    <option value="digital_art">Digital Art</option>
-                                    <option value="photographic">Professional Photography</option>
+                                    <option value="natural">
+                                      Natural/Photorealistic
+                                    </option>
+                                    <option value="digital_art">
+                                      Digital Art
+                                    </option>
+                                    <option value="photographic">
+                                      Professional Photography
+                                    </option>
                                     <option value="cinematic">Cinematic</option>
                                   </select>
                                 </div>
                               </div>
-                              
+
                               <div className="text-xs bg-orange-100 border border-orange-200 rounded p-2">
                                 <div className="flex items-center justify-between">
-                                  <span className="font-medium text-orange-800">Cost Estimate:</span>
-                                  <span className="text-orange-700">${(editFormData.imageCount * 0.04).toFixed(2)}</span>
+                                  <span className="font-medium text-orange-800">
+                                    Cost Estimate:
+                                  </span>
+                                  <span className="text-orange-700">
+                                    $
+                                    {(editFormData.imageCount * 0.04).toFixed(
+                                      2
+                                    )}
+                                  </span>
                                 </div>
                                 <p className="text-orange-700 mt-1">
-                                  {editFormData.imageCount} new image{editFormData.imageCount > 1 ? 's' : ''} will be generated and embedded in your content
+                                  {editFormData.imageCount} new image
+                                  {editFormData.imageCount > 1 ? "s" : ""} will
+                                  be generated and embedded in your content
                                 </p>
                               </div>
                             </div>
@@ -1541,44 +1974,70 @@ export default function AIContent() {
 
                       {/* Title */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Title *
+                        </label>
                         <input
                           type="text"
                           value={editFormData.title}
-                          onChange={(e) => setEditFormData(prev => ({...prev, title: e.target.value}))}
+                          onChange={(e) =>
+                            setEditFormData((prev) => ({
+                              ...prev,
+                              title: e.target.value,
+                            }))
+                          }
                           placeholder="Enter content title"
                           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                         />
                         {editFormErrors.title && (
-                          <p className="text-sm text-red-600 mt-1">{editFormErrors.title}</p>
+                          <p className="text-sm text-red-600 mt-1">
+                            {editFormErrors.title}
+                          </p>
                         )}
                       </div>
 
                       {/* Content Body */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Content Body *</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Content Body *
+                        </label>
                         <textarea
                           value={editFormData.body}
-                          onChange={(e) => setEditFormData(prev => ({...prev, body: e.target.value}))}
+                          onChange={(e) =>
+                            setEditFormData((prev) => ({
+                              ...prev,
+                              body: e.target.value,
+                            }))
+                          }
                           placeholder="Enter the main content..."
                           rows={12}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 resize-none text-sm font-mono"
-                          style={{ fontSize: '13px', lineHeight: '1.4' }}
+                          style={{ fontSize: "13px", lineHeight: "1.4" }}
                         />
                         {editFormErrors.body && (
-                          <p className="text-sm text-red-600 mt-1">{editFormErrors.body}</p>
+                          <p className="text-sm text-red-600 mt-1">
+                            {editFormErrors.body}
+                          </p>
                         )}
                         <p className="text-xs text-gray-500 mt-1">
-                          {editFormData.body.length} characters • You can use HTML tags for formatting
+                          {editFormData.body.length} characters • You can use
+                          HTML tags for formatting
                         </p>
                       </div>
 
                       {/* Excerpt */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Excerpt</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Excerpt
+                        </label>
                         <textarea
                           value={editFormData.excerpt}
-                          onChange={(e) => setEditFormData(prev => ({...prev, excerpt: e.target.value}))}
+                          onChange={(e) =>
+                            setEditFormData((prev) => ({
+                              ...prev,
+                              excerpt: e.target.value,
+                            }))
+                          }
                           placeholder="Brief description or summary..."
                           rows={3}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 resize-none text-sm"
@@ -1588,22 +2047,38 @@ export default function AIContent() {
                       {/* SEO Keywords and Tone */}
                       <div className="grid grid-cols-1 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">SEO Keywords</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            SEO Keywords
+                          </label>
                           <input
                             type="text"
                             value={editFormData.keywords}
-                            onChange={(e) => setEditFormData(prev => ({...prev, keywords: e.target.value}))}
+                            onChange={(e) =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                keywords: e.target.value,
+                              }))
+                            }
                             placeholder="wordpress, security, tips"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                           />
-                          <p className="text-xs text-gray-500 mt-1">Separate keywords with commas</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Separate keywords with commas
+                          </p>
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Content Tone</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Content Tone
+                          </label>
                           <select
                             value={editFormData.tone}
-                            onChange={(e) => setEditFormData(prev => ({...prev, tone: e.target.value}))}
+                            onChange={(e) =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                tone: e.target.value,
+                              }))
+                            }
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                           >
                             <option value="professional">Professional</option>
@@ -1619,22 +2094,36 @@ export default function AIContent() {
                       {/* Target Audience and Brand Voice */}
                       <div className="grid grid-cols-1 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Target Audience</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Target Audience
+                          </label>
                           <input
                             type="text"
                             value={editFormData.targetAudience}
-                            onChange={(e) => setEditFormData(prev => ({...prev, targetAudience: e.target.value}))}
+                            onChange={(e) =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                targetAudience: e.target.value,
+                              }))
+                            }
                             placeholder="e.g., Small business owners"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Brand Voice</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Brand Voice
+                          </label>
                           <input
                             type="text"
                             value={editFormData.brandVoice}
-                            onChange={(e) => setEditFormData(prev => ({...prev, brandVoice: e.target.value}))}
+                            onChange={(e) =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                brandVoice: e.target.value,
+                              }))
+                            }
                             placeholder="Brand voice description"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                           />
@@ -1647,10 +2136,17 @@ export default function AIContent() {
                           <input
                             type="checkbox"
                             checked={editFormData.eatCompliance}
-                            onChange={(e) => setEditFormData(prev => ({...prev, eatCompliance: e.target.checked}))}
+                            onChange={(e) =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                eatCompliance: e.target.checked,
+                              }))
+                            }
                             className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                           />
-                          <span className="ml-2 text-sm text-gray-700">E-E-A-T Compliance (YMYL Content)</span>
+                          <span className="ml-2 text-sm text-gray-700">
+                            E-E-A-T Compliance (YMYL Content)
+                          </span>
                         </label>
                       </div>
                     </div>
@@ -1661,7 +2157,9 @@ export default function AIContent() {
                 <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex items-center justify-between">
                   <div className="flex items-center text-sm text-gray-500">
                     <Edit className="w-4 h-4 mr-2" />
-                    <span>Choose: Save your edits OR regenerate completely with AI</span>
+                    <span>
+                      Choose: Save your edits OR regenerate completely with AI
+                    </span>
                   </div>
                   <div className="flex items-center space-x-3">
                     <button
@@ -1671,7 +2169,7 @@ export default function AIContent() {
                     >
                       Cancel
                     </button>
-                    
+
                     {/* Save button - for manual edits */}
                     <button
                       type="button"
@@ -1691,7 +2189,7 @@ export default function AIContent() {
                         </>
                       )}
                     </button>
-                    
+
                     {/* Regenerate button - with cost info */}
                     <button
                       type="button"
@@ -1702,13 +2200,20 @@ export default function AIContent() {
                       {isRegenerating ? (
                         <>
                           <Brain className="w-4 h-4 mr-2 animate-spin" />
-                          Regenerating{(editFormData.regenerateImages || editFormData.includeImages) ? ' + Images' : ''}...
+                          Regenerating
+                          {editFormData.regenerateImages ||
+                          editFormData.includeImages
+                            ? " + Images"
+                            : ""}
+                          ...
                         </>
                       ) : (
                         <>
                           <RefreshCw className="w-4 h-4 mr-2" />
-                          Regenerate with {getProviderName(editFormData.aiProvider)}
-                          {(editFormData.regenerateImages || editFormData.includeImages) && (
+                          Regenerate with{" "}
+                          {getProviderName(editFormData.aiProvider)}
+                          {(editFormData.regenerateImages ||
+                            editFormData.includeImages) && (
                             <span className="ml-1 text-xs bg-orange-500 px-1 rounded">
                               +${(editFormData.imageCount * 0.04).toFixed(2)}
                             </span>
@@ -1757,7 +2262,9 @@ export default function AIContent() {
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">Total Content</dt>
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        Total Content
+                      </dt>
                       <dd className="text-2xl font-bold text-gray-900">
                         {isLoadingContent ? "..." : filteredContent.length}
                       </dd>
@@ -1766,7 +2273,7 @@ export default function AIContent() {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white overflow-hidden shadow rounded-lg">
               <div className="p-5">
                 <div className="flex items-center">
@@ -1775,9 +2282,15 @@ export default function AIContent() {
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">Published</dt>
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        Published
+                      </dt>
                       <dd className="text-2xl font-bold text-green-600">
-                        {isLoadingContent ? "..." : filteredContent.filter(c => c.status === "published").length}
+                        {isLoadingContent
+                          ? "..."
+                          : filteredContent.filter(
+                              (c) => c.status === "published"
+                            ).length}
                       </dd>
                     </dl>
                   </div>
@@ -1793,9 +2306,21 @@ export default function AIContent() {
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">Avg SEO Score</dt>
-                      <dd className={`text-2xl font-bold ${avgSeoScore !== null ? getScoreColor(avgSeoScore) : 'text-gray-400'}`}>
-                        {isLoadingContent ? "..." : (avgSeoScore !== null ? `${avgSeoScore}%` : "N/A")}
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        Avg SEO Score
+                      </dt>
+                      <dd
+                        className={`text-2xl font-bold ${
+                          avgSeoScore !== null
+                            ? getScoreColor(avgSeoScore)
+                            : "text-gray-400"
+                        }`}
+                      >
+                        {isLoadingContent
+                          ? "..."
+                          : avgSeoScore !== null
+                          ? `${avgSeoScore}%`
+                          : "N/A"}
                       </dd>
                     </dl>
                   </div>
@@ -1811,9 +2336,14 @@ export default function AIContent() {
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">E-E-A-T Compliant</dt>
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        E-E-A-T Compliant
+                      </dt>
                       <dd className="text-2xl font-bold text-purple-600">
-                        {isLoadingContent ? "..." : filteredContent.filter(c => c.eatCompliance).length}
+                        {isLoadingContent
+                          ? "..."
+                          : filteredContent.filter((c) => c.eatCompliance)
+                              .length}
                       </dd>
                     </dl>
                   </div>
@@ -1829,9 +2359,13 @@ export default function AIContent() {
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">Total Cost</dt>
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        Total Cost
+                      </dt>
                       <dd className="text-2xl font-bold text-yellow-600">
-                        {isLoadingContent ? "..." : `$${(totalCost / 100).toFixed(3)}`}
+                        {isLoadingContent
+                          ? "..."
+                          : `$${(totalCost / 100).toFixed(3)}`}
                       </dd>
                     </dl>
                   </div>
@@ -1847,9 +2381,12 @@ export default function AIContent() {
             <div className="px-4 py-5 sm:p-6">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Generated Content</h3>
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">
+                    Generated Content
+                  </h3>
                   <p className="text-sm text-gray-500">
-                    Manage AI-generated content for {getWebsiteName(selectedWebsite)}
+                    Manage AI-generated content for{" "}
+                    {getWebsiteName(selectedWebsite)}
                   </p>
                 </div>
                 <button
@@ -1857,15 +2394,22 @@ export default function AIContent() {
                   disabled={isLoadingContent}
                   className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
                 >
-                  <RefreshCw className={`w-3 h-3 mr-1 ${isLoadingContent ? 'animate-spin' : ''}`} />
+                  <RefreshCw
+                    className={`w-3 h-3 mr-1 ${
+                      isLoadingContent ? "animate-spin" : ""
+                    }`}
+                  />
                   Refresh
                 </button>
               </div>
-              
+
               {isLoadingContent ? (
                 <div className="space-y-4">
                   {[1, 2, 3].map((i) => (
-                    <div key={i} className="border rounded-lg p-6 animate-pulse">
+                    <div
+                      key={i}
+                      className="border rounded-lg p-6 animate-pulse"
+                    >
                       <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
                       <div className="h-3 bg-gray-200 rounded w-full mb-4"></div>
                       <div className="h-3 bg-gray-200 rounded w-2/3"></div>
@@ -1875,34 +2419,53 @@ export default function AIContent() {
               ) : filteredContent.length > 0 ? (
                 <div className="space-y-6">
                   {filteredContent.map((item) => (
-                    <div key={item.id} className="border rounded-lg p-6 hover:shadow-sm transition-shadow">
+                    <div
+                      key={item.id}
+                      className="border rounded-lg p-6 hover:shadow-sm transition-shadow"
+                    >
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex-1">
                           <div className="flex items-center space-x-3 mb-2">
-                            <h4 className="font-medium text-gray-900 text-lg">{item.title}</h4>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(item.status)}`}>
+                            <h4 className="font-medium text-gray-900 text-lg">
+                              {item.title}
+                            </h4>
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(
+                                item.status
+                              )}`}
+                            >
                               {getStatusIcon(item.status)}
-                              <span className="ml-1 capitalize">{item.status.replace('_', ' ')}</span>
+                              <span className="ml-1 capitalize">
+                                {item.status.replace("_", " ")}
+                              </span>
                             </span>
                             {item.aiProvider && (
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
                                 {getProviderIcon(item.aiProvider)}
-                                <span className="ml-1">{getProviderName(item.aiProvider)}</span>
+                                <span className="ml-1">
+                                  {getProviderName(item.aiProvider)}
+                                </span>
                               </span>
                             )}
                             {/* Image indicator */}
                             {item.hasImages && item.imageCount > 0 && (
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
-                                🖼️ {item.imageCount} image{item.imageCount > 1 ? 's' : ''}
+                                🖼️ {item.imageCount} image
+                                {item.imageCount > 1 ? "s" : ""}
                               </span>
                             )}
                           </div>
                           <p className="text-sm text-gray-600 mb-3 leading-relaxed">
-                            {item.excerpt || (item.body && item.body.substring(0, 200) + "...")}
+                            {item.excerpt ||
+                              (item.body &&
+                                item.body.substring(0, 200) + "...")}
                           </p>
                         </div>
                         <div className="flex items-center space-x-2 ml-4">
-                          {(item.status === "draft" || item.status === "pending_approval" || item.status === "approved" || item.status === "publish_failed") && (
+                          {(item.status === "draft" ||
+                            item.status === "pending_approval" ||
+                            item.status === "approved" ||
+                            item.status === "publish_failed") && (
                             <button
                               onClick={() => publishContent(item.id)}
                               disabled={isPublishing}
@@ -1913,10 +2476,12 @@ export default function AIContent() {
                               }`}
                             >
                               <Play className="w-3 h-3 mr-1" />
-                              {item.status === "publish_failed" ? "Retry Publish" : "Publish"}
+                              {item.status === "publish_failed"
+                                ? "Retry Publish"
+                                : "Publish"}
                             </button>
                           )}
-                          <button 
+                          <button
                             onClick={() => openEditDialog(item)}
                             className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                           >
@@ -1929,69 +2494,95 @@ export default function AIContent() {
                       {/* Enhanced Metrics to include image cost */}
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                         <div className="text-center">
-                          <div className={`text-lg font-bold ${
-                            typeof item.seoScore === 'number' && item.seoScore > 0 
-                              ? getScoreColor(item.seoScore) 
-                              : 'text-red-500'
-                          }`}>
-                            {typeof item.seoScore === 'number' && item.seoScore > 0 
-                              ? `${item.seoScore}%` 
-                              : 'Error'
-                            }
+                          <div
+                            className={`text-lg font-bold ${
+                              typeof item.seoScore === "number" &&
+                              item.seoScore > 0
+                                ? getScoreColor(item.seoScore)
+                                : "text-red-500"
+                            }`}
+                          >
+                            {typeof item.seoScore === "number" &&
+                            item.seoScore > 0
+                              ? `${item.seoScore}%`
+                              : "Error"}
                           </div>
                           <div className="text-xs text-gray-500">SEO Score</div>
                         </div>
                         <div className="text-center">
-                          <div className={`text-lg font-bold ${
-                            typeof item.readabilityScore === 'number' && item.readabilityScore > 0 
-                              ? getScoreColor(item.readabilityScore) 
-                              : 'text-red-500'
-                          }`}>
-                            {typeof item.readabilityScore === 'number' && item.readabilityScore > 0 
-                              ? `${item.readabilityScore}%` 
-                              : 'Error'
-                            }
+                          <div
+                            className={`text-lg font-bold ${
+                              typeof item.readabilityScore === "number" &&
+                              item.readabilityScore > 0
+                                ? getScoreColor(item.readabilityScore)
+                                : "text-red-500"
+                            }`}
+                          >
+                            {typeof item.readabilityScore === "number" &&
+                            item.readabilityScore > 0
+                              ? `${item.readabilityScore}%`
+                              : "Error"}
                           </div>
-                          <div className="text-xs text-gray-500">Readability</div>
+                          <div className="text-xs text-gray-500">
+                            Readability
+                          </div>
                         </div>
                         <div className="text-center">
-                          <div className={`text-lg font-bold ${
-                            typeof item.brandVoiceScore === 'number' && item.brandVoiceScore > 0 
-                              ? getScoreColor(item.brandVoiceScore) 
-                              : 'text-red-500'
-                          }`}>
-                            {typeof item.brandVoiceScore === 'number' && item.brandVoiceScore > 0 
-                              ? `${item.brandVoiceScore}%` 
-                              : 'Error'
-                            }
+                          <div
+                            className={`text-lg font-bold ${
+                              typeof item.brandVoiceScore === "number" &&
+                              item.brandVoiceScore > 0
+                                ? getScoreColor(item.brandVoiceScore)
+                                : "text-red-500"
+                            }`}
+                          >
+                            {typeof item.brandVoiceScore === "number" &&
+                            item.brandVoiceScore > 0
+                              ? `${item.brandVoiceScore}%`
+                              : "Error"}
                           </div>
-                          <div className="text-xs text-gray-500">Brand Voice</div>
+                          <div className="text-xs text-gray-500">
+                            Brand Voice
+                          </div>
                         </div>
                         <div className="text-center">
                           <div className="text-lg font-bold text-blue-600">
-                            {item.wordpressPostId ? `#${item.wordpressPostId}` : "-"}
+                            {item.wordpressPostId
+                              ? `#${item.wordpressPostId}`
+                              : "-"}
                           </div>
-                          <div className="text-xs text-gray-500">WP Post ID</div>
+                          <div className="text-xs text-gray-500">
+                            WP Post ID
+                          </div>
                         </div>
                         {/* Image cost column */}
                         <div className="text-center">
                           <div className="text-lg font-bold text-orange-600">
-                            {item.hasImages && item.imageCostCents 
-                              ? `$${(item.imageCostCents / 100).toFixed(3)}` 
-                              : "-"
-                            }
+                            {item.hasImages && item.imageCostCents
+                              ? `$${(item.imageCostCents / 100).toFixed(3)}`
+                              : "-"}
                           </div>
-                          <div className="text-xs text-gray-500">Image Cost</div>
+                          <div className="text-xs text-gray-500">
+                            Image Cost
+                          </div>
                         </div>
                       </div>
 
                       {/* Enhanced Cost and Token Information */}
                       <div className="flex items-center justify-between text-xs text-gray-500 border-t pt-3">
                         <div className="flex items-center space-x-4">
-                          <span>Tokens: {item.tokensUsed || 'N/A'}</span>
-                          <span>Text Cost: ${typeof item.costUsd === 'number' ? (item.costUsd / 100).toFixed(4) : 'N/A'}</span>
+                          <span>Tokens: {item.tokensUsed || "N/A"}</span>
+                          <span>
+                            Text Cost: $
+                            {typeof item.costUsd === "number"
+                              ? (item.costUsd / 100).toFixed(4)
+                              : "N/A"}
+                          </span>
                           {item.hasImages && item.imageCostCents && (
-                            <span>Image Cost: ${(item.imageCostCents / 100).toFixed(4)}</span>
+                            <span>
+                              Image Cost: $
+                              {(item.imageCostCents / 100).toFixed(4)}
+                            </span>
                           )}
                           {item.seoKeywords && item.seoKeywords.length > 0 && (
                             <span>Keywords: {item.seoKeywords.join(", ")}</span>
@@ -2004,7 +2595,9 @@ export default function AIContent() {
                           )}
                         </div>
                         <div>
-                          <span>Created: {formatDistanceToNow(item.createdAt)}</span>
+                          <span>
+                            Created: {formatDistanceToNow(item.createdAt)}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -2013,9 +2606,12 @@ export default function AIContent() {
               ) : (
                 <div className="text-center py-12">
                   <Bot className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No content generated yet</h3>
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">
+                    No content generated yet
+                  </h3>
                   <p className="mt-1 text-sm text-gray-500">
-                    Start by generating your first AI-powered content piece with real-time analysis and scoring.
+                    Start by generating your first AI-powered content piece with
+                    real-time analysis and scoring.
                   </p>
                   <div className="mt-6">
                     <button
@@ -2038,21 +2634,19 @@ export default function AIContent() {
                 {isLoadingWebsites ? "Loading websites..." : "Select a website"}
               </h3>
               <p className="mt-1 text-sm text-gray-500">
-                {isLoadingWebsites 
+                {isLoadingWebsites
                   ? "Please wait while we fetch your websites from the database."
-                  : "Choose a website to view and manage its AI-generated content with real-time analytics and error reporting."
-                }
+                  : "Choose a website to view and manage its AI-generated content with real-time analytics and error reporting."}
               </p>
             </div>
           </div>
         )}
 
-        
         {/* Auto Content Scheduler Section */}
         {/*nadagdag*/}
         {selectedWebsite && (
           <div className="mt-8">
-            <AutoContentScheduler 
+            <AutoContentScheduler
               websites={websites}
               selectedWebsite={selectedWebsite}
               onScheduleCreated={loadContent}
@@ -2061,6 +2655,5 @@ export default function AIContent() {
         )}
       </div>
     </div>
-  );  
+  );
 }
-
