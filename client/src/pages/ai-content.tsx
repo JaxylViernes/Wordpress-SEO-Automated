@@ -871,7 +871,7 @@ export default function AIContent() {
           background-size: 40px 40px;
           animation: stripes 1s linear infinite;
         }
-      `}</style> */}
+      `}</style>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
         {/* Enhanced Toast Notification */}
