@@ -1253,6 +1253,15 @@ app.get("/api/user/content/:id", requireAuth, async (req: Request, res: Response
 
 
 
+
+
+
+
+
+
+
+
+
 //nadagdag
 
 // Enhanced version with better date handling
@@ -1293,6 +1302,22 @@ const generatePeriodString = (reportType: "weekly" | "monthly" | "quarterly", da
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // Helper function to generate report data from existing data
 async function generateReportData(websiteId: string, reportType: string, userId: string) {
   console.log(`📊 Generating report data for website: ${websiteId}, type: ${reportType}`);
@@ -1301,10 +1326,18 @@ async function generateReportData(websiteId: string, reportType: string, userId:
   let startDate: Date;
   let period: string;
   
-  // Calculate date range based on report type
-  if (reportType === 'weekly') {
+
+
+
+//nadagdag
+if (reportType === 'weekly') {
+    // Match the frontend's week calculation exactly
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+    const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+    
     startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    period = `Week ${Math.ceil(now.getDate() / 7)}, ${now.getFullYear()}`;
+    period = `Week ${weekNumber}, ${now.getFullYear()}`;
   } else if (reportType === 'monthly') {
     startDate = new Date(now.getFullYear(), now.getMonth(), 1);
     period = `${now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`;
@@ -1313,7 +1346,42 @@ async function generateReportData(websiteId: string, reportType: string, userId:
     startDate = new Date(now.getFullYear(), (quarter - 1) * 3, 1);
     period = `Q${quarter} ${now.getFullYear()}`;
   }
+
+
+
+
+
+
+
+
+
+
+
+
+
+  //wag alisin
+  // Calculate date range based on report type
+  // if (reportType === 'weekly') {
+  //   startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  //   period = `Week ${Math.ceil(now.getDate() / 7)}, ${now.getFullYear()}`;
+  // } else if (reportType === 'monthly') {
+  //   startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  //   period = `${now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`;
+  // } else { // quarterly
+  //   const quarter = Math.floor(now.getMonth() / 3) + 1;
+  //   startDate = new Date(now.getFullYear(), (quarter - 1) * 3, 1);
+  //   period = `Q${quarter} ${now.getFullYear()}`;
+  // }
   
+
+
+
+
+
+
+
+
+
   console.log(`📅 Report period: ${period} (from ${startDate.toISOString()})`);
   
   try {
@@ -1524,7 +1592,10 @@ app.post("/api/user/websites/:id/reports/generate", requireAuth, async (req: Req
     let targetPeriod: string;
     
     if (reportType === 'weekly') {
-      const weekNumber = Math.ceil(now.getDate() / 7);
+      // Match the frontend's week calculation exactly
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+      const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+      const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
       targetPeriod = `Week ${weekNumber}, ${now.getFullYear()}`;
     } else if (reportType === 'monthly') {
       targetPeriod = `${now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`;
@@ -1614,6 +1685,29 @@ app.post("/api/user/websites/:id/reports/generate", requireAuth, async (req: Req
     });
   }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
