@@ -847,8 +847,6 @@ export default function AIContent() {
     <div className="py-6 bg-gray-50 min-h-screen">
       {/* PROGRESS BAR ADDITION: Add CSS for animated stripes inline */}
 
-     
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
         {/* Enhanced Toast Notification */}
         {toast && (

@@ -55,7 +55,6 @@ import { autoSchedules, type AutoSchedule, type InsertAutoSchedule } from "@shar
 import { randomUUID } from 'crypto';
 
 
-
 export interface IStorage {
   // Users (Required for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
@@ -526,16 +525,17 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(contentSchedule.scheduledDate));
   }
 
-  async createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule> {
-    const [scheduleRecord] = await db
-      .insert(contentSchedule)
-      .values({
-        ...schedule,
-        userId: schedule.userId
-      })
-      .returning();
-    return scheduleRecord;
-  }
+
+  // async createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule> {
+  //   const [scheduleRecord] = await db
+  //     .insert(contentSchedule)
+  //     .values({
+  //       ...schedule,
+  //       userId: schedule.userId
+  //     })
+  //     .returning();
+  //   return scheduleRecord;
+  // }
 
   async createBackup(backup: InsertBackup & { userId: string }): Promise<Backup> {
     const [backupRecord] = await db
@@ -829,17 +829,266 @@ async isContentScheduled(contentId: string): Promise<boolean> {
   return !!schedule;
 }
 
-// Update the existing createContentSchedule method to work with contentId
-async createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule> {
-  const [scheduleRecord] = await db
-    .insert(contentSchedule)
-    .values({
-      ...schedule,
-      userId: schedule.userId
-    })
-    .returning();
-  return scheduleRecord;
+
+
+
+
+
+
+
+
+
+// Final working version with required topic field
+// Place this in your DatabaseStorage class in storage.ts
+
+async createContentSchedule(data: {
+  contentId?: string;
+  content_id?: string;
+  userId?: string;
+  user_id?: string;
+  websiteId?: string;
+  website_id?: string;
+  scheduled_date?: Date | string | null;
+  scheduledDate?: Date | string | null;
+  scheduledFor?: Date | string | null;
+  status?: string;
+  title?: string | null;
+  topic?: string | null;  //nadagdag - Add topic to parameters
+  metadata?: any;
+}) {
+  //nadagdag - Step 1: Handle field name variations (camelCase vs snake_case)
+  const contentId = data.contentId || data.content_id;
+  const userId = data.userId || data.user_id;
+  const websiteId = data.websiteId || data.website_id;
+  
+  //nadagdag - Step 2: CRITICAL - Ensure scheduled_date is NEVER null
+  let scheduledDate: Date;
+  
+  // Try all possible date field variations
+  const possibleDate = data.scheduled_date || data.scheduledDate || data.scheduledFor;
+  
+  if (possibleDate instanceof Date) {
+    scheduledDate = possibleDate;
+  } else if (possibleDate && typeof possibleDate === 'string') {
+    // Try to parse string date
+    const parsed = new Date(possibleDate);
+    if (!isNaN(parsed.getTime())) {
+      scheduledDate = parsed;
+    } else {
+      console.warn('⚠️ Invalid date string provided:', possibleDate);
+      scheduledDate = new Date();
+    }
+  } else {
+    // No valid date provided - use current time
+    console.warn('⚠️ No valid scheduled_date provided, using current time');
+    scheduledDate = new Date();
+  }
+  
+  //nadagdag - Step 3: Ensure title is NEVER null
+  let title = data.title;
+  if (!title || title.trim() === '') {
+    title = `Content scheduled on ${scheduledDate.toLocaleDateString()}`;
+    console.warn('⚠️ No title provided, using default:', title);
+  }
+  
+  //nadagdag - Step 4: Extract and ensure topic is NEVER null
+  // Try to get topic from direct field or from metadata
+  let topic = data.topic || data.metadata?.topic;
+  if (!topic || topic.trim() === '') {
+    topic = 'General Content';  // Default topic
+    console.warn('⚠️ No topic provided, using default:', topic);
+  }
+  
+  //nadagdag - Step 5: Validate required fields
+  if (!contentId) {
+    throw new Error('contentId is required for createContentSchedule');
+  }
+  if (!userId) {
+    throw new Error('userId is required for createContentSchedule');
+  }
+  if (!websiteId) {
+    throw new Error('websiteId is required for createContentSchedule');
+  }
+  
+  //nadagdag - Step 6: Debug logging
+  console.log('📋 Creating content_schedule entry:', {
+    contentId: contentId,
+    userId: userId,
+    websiteId: websiteId,
+    scheduled_date: scheduledDate.toISOString(),
+    title: title,
+    topic: topic,  //nadagdag - Log topic
+    status: data.status || 'scheduled',
+  });
+  
+  try {
+    //nadagdag - Step 7: Insert using Drizzle ORM with all required fields
+    const [schedule] = await db
+      .insert(contentSchedule)  // Make sure this table is imported
+      .values({
+        contentId: contentId,      
+        userId: userId,            
+        websiteId: websiteId,      
+        scheduledDate: scheduledDate,  
+        title: title,
+        topic: topic,  //nadagdag - CRITICAL: Include topic as direct field
+        status: data.status || 'scheduled',
+        metadata: data.metadata || {},
+        publishedAt: null,
+      })
+      .returning();
+    
+    console.log('✅ Content schedule created successfully:', {
+      id: schedule.id,
+      scheduledDate: schedule.scheduledDate || schedule.scheduled_date,
+      title: schedule.title,
+      topic: schedule.topic,
+    });
+    
+    return schedule;
+    
+  } catch (error: any) {
+    //nadagdag - Enhanced error logging
+    console.error('❌ Database error in createContentSchedule:', error);
+    console.error('Failed data:', {
+      contentId,
+      userId,
+      websiteId,
+      scheduled_date: scheduledDate?.toISOString(),
+      title,
+      topic,  //nadagdag - Log topic in error
+      status: data.status,
+    });
+    
+    // If the error mentions null constraint
+    if (error.message?.includes('null value in column')) {
+      const columnMatch = error.message.match(/column "([^"]+)"/);
+      if (columnMatch) {
+        console.error(`📌 Required field '${columnMatch[1]}' is null or missing`);
+        console.error(`Add this field to the values object in createContentSchedule`);
+      }
+    }
+    
+    throw error;
+  }
 }
+
+
+
+async updateContentScheduleByContentId(contentId: string, updates: {
+  status?: string;
+  published_at?: Date;
+  error?: string;
+  metadata?: any;
+}) {
+  const updateData: any = {};
+  
+  if (updates.status !== undefined) updateData.status = updates.status;
+  if (updates.published_at !== undefined) updateData.publishedAt = updates.published_at;
+  if (updates.error !== undefined) {
+    updateData.metadata = {
+      ...(updateData.metadata || {}),
+      error: updates.error,
+      errorAt: new Date().toISOString()
+    };
+  }
+  if (updates.metadata !== undefined) {
+    updateData.metadata = {
+      ...(updateData.metadata || {}),
+      ...updates.metadata
+    };
+  }
+  
+  updateData.updatedAt = new Date();
+  
+  const result = await db
+    .update(contentSchedule)
+    .set(updateData)
+    .where(eq(contentSchedule.contentId, contentId))
+    .returning();
+  
+  return result[0] || null;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//WAG ALISIN
+// // Update the existing createContentSchedule method to work with contentId
+// async createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule> {
+//   const [scheduleRecord] = await db
+//     .insert(contentSchedule)
+//     .values({
+//       ...schedule,
+//       userId: schedule.userId
+//     })
+//     .returning();
+//   return scheduleRecord;
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // Update client report methods - ADD THIS METHOD TO SUPPORT REPORT UPDATES
 async updateClientReport(id: string, updates: Partial<{
@@ -1245,9 +1494,8 @@ async getUserApiKeys(userId: string): Promise<UserApiKey[]> {
     }
   }
 
-// In storage/index.ts, update the updateAutoSchedule method (around line 1263)
 
-  //nadagdag - Fixed to ensure numeric values are properly handled
+  
 //nadagdag - Fixed to ensure numeric values are properly handled
   async updateAutoSchedule(scheduleId: string, updates: any): Promise<void> {
     try {
