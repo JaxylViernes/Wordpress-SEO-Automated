@@ -8,7 +8,7 @@ import pgSession from "connect-pg-simple";
 import 'dotenv/config'; // must come before importing encryption-service
 //nadagdag
 import { schedulerService } from './services/scheduler-service';
-
+import autoSchedulesRouter from "./api/user/auto-schedules";
 // =============================================================================
 // TYPE DECLARATIONS (moved to top)
 // =============================================================================
@@ -244,6 +244,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }
 })();
 
+
+app.use("/api/user/auto-schedules", autoSchedulesRouter);
 // =============================================================================
 // GRACEFUL SHUTDOWN
 // =============================================================================

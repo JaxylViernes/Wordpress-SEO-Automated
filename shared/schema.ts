@@ -1,5 +1,16 @@
+
+//shared/schema.ts
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, uuid, boolean, jsonb, index,numeric } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  varchar,
+  timestamp,
+  integer,
+  boolean,
+  jsonb,
+  index,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -886,6 +897,97 @@ export type InsertSeoIssueStatus = z.infer<typeof insertSeoIssueStatusSchema>;
 export type SeoIssueStatus = typeof seoIssueStatuses.$inferSelect;
 
 
+// Add this at the bottom of your schema.ts file
+// Make sure you have imported 'numeric' from "drizzle-orm/pg-core" at the top
+
+//nadagdag
+// Auto-Schedules table for automated content generation
+export const autoSchedules = pgTable("auto_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
+  
+  // Schedule configuration
+  name: text("name").notNull(),
+  frequency: text("frequency").notNull(), // 'daily', 'twice_weekly', 'weekly', 'biweekly', 'monthly', 'custom'
+  timeOfDay: text("time_of_day").notNull(), // Format: 'HH:MM'
+  customDays: text("custom_days").array().default([]), // For custom frequency
+  
+  // Content generation settings
+  topics: text("topics").array().default([]),
+  keywords: text("keywords"),
+  tone: text("tone"),
+  wordCount: integer("word_count").default(1000),
+  brandVoice: text("brand_voice"),
+  targetAudience: text("target_audience"),
+  eatCompliance: boolean("eat_compliance").default(false),
+  
+  // AI and image settings
+  aiProvider: text("ai_provider").default("openai"),
+  includeImages: boolean("include_images").default(false),
+  imageCount: integer("image_count").default(1),
+  imageStyle: text("image_style"),
+  seoOptimized: boolean("seo_optimized").default(true),
+  
+  // Publishing settings
+  autoPublish: boolean("auto_publish").default(false),
+  publishDelay: integer("publish_delay").default(0), // Hours to wait before publishing
+  
+  // Topic rotation settings
+  topicRotation: text("topic_rotation").default("sequential"), // 'sequential' or 'random'
+  nextTopicIndex: integer("next_topic_index").default(0),
+  
+  // Cost and limit controls - FIXED: Using numeric instead of real
+  maxDailyCost: numeric("max_daily_cost", { precision: 10, scale: 2 }).default("10.00"),
+  maxMonthlyPosts: integer("max_monthly_posts").default(30),
+  costToday: numeric("cost_today", { precision: 10, scale: 2 }).default("0.00"),
+  postsThisMonth: integer("posts_this_month").default(0),
+  
+  // Tracking
+  lastRun: timestamp("last_run"),
+  isActive: boolean("is_active").default(true),
+  
+  // Timestamps
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+}, (table) => [
+  index("idx_auto_schedules_user_id").on(table.userId),
+  index("idx_auto_schedules_website_id").on(table.websiteId),
+  index("idx_auto_schedules_active").on(table.isActive),
+  index("idx_auto_schedules_last_run").on(table.lastRun),
+]);
+
+// Insert schema for auto schedules
+export const insertAutoScheduleSchema = createInsertSchema(autoSchedules).pick({
+  websiteId: true,
+  name: true,
+  frequency: true,
+  timeOfDay: true,
+  customDays: true,
+  topics: true,
+  keywords: true,
+  tone: true,
+  wordCount: true,
+  brandVoice: true,
+  targetAudience: true,
+  eatCompliance: true,
+  aiProvider: true,
+  includeImages: true,
+  imageCount: true,
+  imageStyle: true,
+  seoOptimized: true,
+  autoPublish: true,
+  publishDelay: true,
+  topicRotation: true,
+  maxDailyCost: true,
+  maxMonthlyPosts: true,
+  // userId will be added automatically in the backend
+});
+
+// Types for auto schedules
+export type InsertAutoSchedule = z.infer<typeof insertAutoScheduleSchema>;
+export type AutoSchedule = typeof autoSchedules.$inferSelect;
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
