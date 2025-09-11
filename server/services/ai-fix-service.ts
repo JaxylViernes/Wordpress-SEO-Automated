@@ -98,183 +98,407 @@ class AIFixService {
     console.log(logMessage);
   }
 
-  async analyzeAndFixWebsite(
-    websiteId: string,
-    userId: string,
-    dryRun: boolean = true,
-    options: {
-      fixTypes?: string[];
-      maxChanges?: number;
-      skipBackup?: boolean;
-    } = {}
-  ): Promise<AIFixResult> {
-    this.log = []; // Reset log for this operation
-
+  private async performReanalysis(
+  website: any,
+  userId: string,
+  websiteId: string,
+  initialScore: number,
+  delay: number = 3000 // Reduced default delay
+): Promise<{
+  enabled: boolean;
+  initialScore: number;
+  finalScore: number;
+  scoreImprovement: number;
+  analysisTime: number;
+  success: boolean;
+  error?: string;
+  simulated?: boolean;
+}> {
+  const reanalysisStartTime = Date.now();
+  
+  try {
+    if (delay > 0) {
+      this.addLog(`Waiting ${delay}ms for changes to propagate...`, "info");
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    
+    this.addLog("Running fresh SEO analysis to measure improvement...", "info");
+    
+    // Run fresh SEO analysis with enhanced error handling
+    let newAnalysis;
     try {
-      this.addLog(
-        `Starting AI fix analysis for website ${websiteId} (dry run: ${dryRun})`
-      );
+      newAnalysis = await seoService.analyzeWebsite(website.url, [], userId);
+    } catch (analysisError) {
+      this.addLog(`SEO analysis failed during reanalysis: ${analysisError.message}`, "error");
+      
+      // Fallback: try without user ID in case of API key issues
+      try {
+        newAnalysis = await seoService.analyzeWebsite(website.url, []);
+        this.addLog("Fallback analysis (without user API keys) succeeded", "warning");
+      } catch (fallbackError) {
+        throw new Error(`Both primary and fallback reanalysis failed: ${fallbackError.message}`);
+      }
+    }
+    
+    const finalScore = newAnalysis.score;
+    const scoreImprovement = finalScore - initialScore;
+    const analysisTime = Date.now() - reanalysisStartTime;
+    
+    // Save the new analysis to database
+    try {
+      await storage.createSeoReport({
+        userId,
+        websiteId,
+        score: newAnalysis.score,
+        issues: newAnalysis.issues,
+        recommendations: newAnalysis.recommendations,
+        pageSpeedScore: newAnalysis.pageSpeedScore,
+        metadata: {
+          postAIFix: true,
+          previousScore: initialScore,
+          scoreImprovement,
+          fixSession: new Date().toISOString(),
+          reanalysisTime: analysisTime,
+        },
+      });
+      
+      this.addLog("New SEO report saved to database", "success");
+    } catch (saveError) {
+      this.addLog(`Failed to save reanalysis report: ${saveError.message}`, "warning");
+    }
+    
+    // Update website with new score
+    try {
+      await storage.updateWebsite(websiteId, {
+        seoScore: finalScore,
+        lastAnalyzed: new Date(),
+      });
+      
+      this.addLog("Website score updated", "success");
+    } catch (updateError) {
+      this.addLog(`Failed to update website score: ${updateError.message}`, "warning");
+    }
+    
+    this.addLog(
+      `Reanalysis complete: ${initialScore} → ${finalScore} (${
+        scoreImprovement >= 0 ? "+" : ""
+      }${scoreImprovement.toFixed(1)})`,
+      scoreImprovement > 0 ? "success" : scoreImprovement === 0 ? "info" : "warning"
+    );
+    
+    return {
+      enabled: true,
+      initialScore,
+      finalScore,
+      scoreImprovement: Number(scoreImprovement.toFixed(1)),
+      analysisTime: Math.round(analysisTime / 1000), // Convert to seconds
+      success: true,
+    };
+  } catch (error) {
+    const errorMessage = `Reanalysis failed: ${
+      error instanceof Error ? error.message : "Unknown error"
+    }`;
+    
+    this.addLog(errorMessage, "error");
+    
+    return {
+      enabled: true,
+      initialScore,
+      finalScore: initialScore, // Fallback to initial score
+      scoreImprovement: 0,
+      analysisTime: Math.round((Date.now() - reanalysisStartTime) / 1000),
+      success: false,
+      error: errorMessage,
+    };
+  }
+}
 
-      // Get website details
-      const website = await storage.getUserWebsite(websiteId, userId);
-      if (!website) {
-        throw new Error("Website not found or access denied");
+// New method to estimate score improvement for dry runs
+private estimateScoreImprovement(fixes: AIFix[]): number {
+  let estimatedImprovement = 0;
+  
+  fixes.forEach(fix => {
+    if (!fix.success) return; // Only count successful fixes
+    
+    switch (fix.impact) {
+      case "high":
+        estimatedImprovement += 8; // High impact fixes contribute more
+        break;
+      case "medium":
+        estimatedImprovement += 4;
+        break;
+      case "low":
+        estimatedImprovement += 2;
+        break;
+    }
+    
+    // Bonus for specific fix types that typically have high impact
+    switch (fix.type) {
+      case "missing_meta_description":
+      case "poor_title_tag":
+        estimatedImprovement += 3;
+        break;
+      case "missing_alt_text":
+      case "heading_structure":
+        estimatedImprovement += 2;
+        break;
+    }
+  });
+  
+  // Cap the improvement to prevent unrealistic estimates
+  return Math.min(estimatedImprovement, 25);
+}
+
+  async analyzeAndFixWebsite(
+  websiteId: string,
+  userId: string,
+  dryRun: boolean = true,
+  options: {
+    fixTypes?: string[];
+    maxChanges?: number;
+    skipBackup?: boolean;
+    enableReanalysis?: boolean; // Now defaults to true for all operations
+    reanalysisDelay?: number;
+    forceReanalysis?: boolean; // New option to force reanalysis even if no fixes applied
+  } = {}
+): Promise<AIFixResult> {
+  this.log = []; // Reset log for this operation
+
+  try {
+    this.addLog(
+      `Starting AI fix analysis for website ${websiteId} (dry run: ${dryRun})`
+    );
+
+    // Get website details
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      throw new Error("Website not found or access denied");
+    }
+
+    this.addLog(`Loaded website: ${website.name} (${website.url})`);
+
+    // Get latest SEO report to identify issues
+    const seoReports = await storage.getSeoReportsByWebsite(websiteId);
+    const latestReport = seoReports[0];
+
+    if (!latestReport) {
+      throw new Error(
+        "No SEO analysis found. Please run SEO analysis first."
+      );
+    }
+
+    // Capture initial score for reanalysis
+    const initialScore = latestReport.score;
+    this.addLog(`Found SEO report with score: ${initialScore}/100`);
+    this.addLog(`Issues in report: ${latestReport.issues?.length || 0}`);
+
+    // Enhanced analysis with better error handling
+    const analysisResult = await this.analyzeWebsiteForAllFixes(
+      website.url,
+      latestReport
+    );
+
+    this.addLog(`Analysis found ${analysisResult.totalIssues} total issues`);
+    this.addLog(
+      `Fixable issues identified: ${analysisResult.fixableIssues.length}`
+    );
+
+    const maxChanges =
+      options.maxChanges || analysisResult.fixableIssues.length;
+    const fixesToApply = this.prioritizeAndFilterFixes(
+      analysisResult.fixableIssues,
+      options.fixTypes,
+      maxChanges
+    );
+
+    this.addLog(`Will attempt to fix ${fixesToApply.length} issues`);
+
+    let appliedFixes: AIFix[] = [];
+    let errors: string[] = [];
+    let reanalysisData: any = undefined;
+
+    if (!dryRun && fixesToApply.length > 0) {
+      // Create backup before making changes (unless skipped)
+      if (!options.skipBackup) {
+        await this.createWebsiteBackup(website, userId);
+        this.addLog("Website backup created", "success");
       }
 
-      this.addLog(`Loaded website: ${website.name} (${website.url})`);
-
-      // Get latest SEO report to identify issues
-      const seoReports = await storage.getSeoReportsByWebsite(websiteId);
-      const latestReport = seoReports[0];
-
-      if (!latestReport) {
-        throw new Error(
-          "No SEO analysis found. Please run SEO analysis first."
-        );
-      }
-
-      this.addLog(`Found SEO report with score: ${latestReport.score}/100`);
-      this.addLog(`Issues in report: ${latestReport.issues?.length || 0}`);
-
-      // Enhanced analysis with better error handling
-      const analysisResult = await this.analyzeWebsiteForAllFixes(
-        website.url,
-        latestReport
+      // Apply comprehensive fixes with enhanced error handling
+      const applyResult = await this.applyComprehensiveFixes(
+        website,
+        fixesToApply
       );
 
-      this.addLog(`Analysis found ${analysisResult.totalIssues} total issues`);
+      appliedFixes = applyResult.appliedFixes;
+      errors = applyResult.errors;
+
+      const successfulFixes = appliedFixes.filter((f) => f.success);
       this.addLog(
-        `Fixable issues identified: ${analysisResult.fixableIssues.length}`
+        `Applied ${successfulFixes.length}/${appliedFixes.length} fixes successfully`,
+        "success"
       );
 
-      const maxChanges =
-        options.maxChanges || analysisResult.fixableIssues.length;
-      const fixesToApply = this.prioritizeAndFilterFixes(
-        analysisResult.fixableIssues,
-        options.fixTypes,
-        maxChanges
-      );
-
-      this.addLog(`Will attempt to fix ${fixesToApply.length} issues`);
-
-      let appliedFixes: AIFix[] = [];
-      let errors: string[] = [];
-
-      if (!dryRun && fixesToApply.length > 0) {
-        // Create backup before making changes (unless skipped)
-        if (!options.skipBackup) {
-          await this.createWebsiteBackup(website, userId);
-          this.addLog("Website backup created", "success");
-        }
-
-        // Apply comprehensive fixes with enhanced error handling
-        const applyResult = await this.applyComprehensiveFixes(
+      // ENHANCED REANALYSIS LOGIC - Always run if not a dry run
+      const shouldReanalyze = options.enableReanalysis !== false; // Defaults to true
+      const forceReanalysis = options.forceReanalysis === true;
+      
+      if (shouldReanalyze && (!dryRun && (successfulFixes.length > 0 || forceReanalysis))) {
+        this.addLog("Starting post-fix reanalysis...", "info");
+        
+        reanalysisData = await this.performReanalysis(
           website,
-          fixesToApply
-        );
-
-        appliedFixes = applyResult.appliedFixes;
-        errors = applyResult.errors;
-
-        // Log the activity with detailed breakdown
-        const successfulFixes = appliedFixes.filter((f) => f.success);
-        await storage.createActivityLog({
           userId,
           websiteId,
-          type: "ai_fixes_applied",
-          description: `AI fixes applied: ${
-            successfulFixes.length
-          } successful, ${appliedFixes.length - successfulFixes.length} failed`,
-          metadata: {
-            fixesApplied: appliedFixes.length,
-            fixesSuccessful: successfulFixes.length,
-            fixesFailed: appliedFixes.length - successfulFixes.length,
-            fixTypes: [...new Set(appliedFixes.map((f) => f.type))],
-            detailedFixes: successfulFixes.map((f) => ({
-              type: f.type,
-              description: f.description,
-              element: f.element,
-            })),
-          },
-        });
-
-        this.addLog(
-          `Applied ${successfulFixes.length}/${appliedFixes.length} fixes successfully`,
-          "success"
+          initialScore,
+          options.reanalysisDelay || 3000 // Reduced default delay to 3 seconds
         );
+        
+        if (reanalysisData.success) {
+          this.addLog(
+            `Reanalysis completed: Score improved by ${reanalysisData.scoreImprovement} points`,
+            reanalysisData.scoreImprovement > 0 ? "success" : "info"
+          );
+        } else {
+          this.addLog(`Reanalysis failed: ${reanalysisData.error}`, "warning");
+        }
+      } else if (dryRun) {
+        this.addLog("Skipping reanalysis for dry run", "info");
       } else {
-        // Dry run - simulate fixes with detailed analysis
-        appliedFixes = fixesToApply.map((fix) => ({
-          ...fix,
-          success: true, // Assume success for dry run
-        }));
+        this.addLog("Reanalysis disabled or no successful fixes to measure", "info");
+      }
+
+      // Log the activity with detailed breakdown
+      await storage.createActivityLog({
+        userId,
+        websiteId,
+        type: "ai_fixes_applied",
+        description: `AI fixes applied: ${
+          successfulFixes.length
+        } successful, ${appliedFixes.length - successfulFixes.length} failed`,
+        metadata: {
+          fixesApplied: appliedFixes.length,
+          fixesSuccessful: successfulFixes.length,
+          fixesFailed: appliedFixes.length - successfulFixes.length,
+          fixTypes: [...new Set(appliedFixes.map((f) => f.type))],
+          detailedFixes: successfulFixes.map((f) => ({
+            type: f.type,
+            description: f.description,
+            element: f.element,
+          })),
+          reanalysis: reanalysisData || null,
+          reanalysisEnabled: shouldReanalyze,
+        },
+      });
+    } else {
+      // Dry run - simulate fixes with detailed analysis
+      appliedFixes = fixesToApply.map((fix) => ({
+        ...fix,
+        success: true, // Assume success for dry run
+      }));
+      this.addLog(
+        `Dry run complete - would apply ${appliedFixes.length} fixes`,
+        "info"
+      );
+      
+      // For dry runs, we can optionally run a "simulation" reanalysis
+      if (options.enableReanalysis !== false && fixesToApply.length > 0) {
+        this.addLog("Simulating post-fix score improvement for dry run...", "info");
+        
+        // Estimate score improvement based on fix types and impact
+        const estimatedImprovement = this.estimateScoreImprovement(appliedFixes);
+        const estimatedFinalScore = Math.min(100, initialScore + estimatedImprovement);
+        
+        reanalysisData = {
+          enabled: true,
+          initialScore,
+          finalScore: estimatedFinalScore,
+          scoreImprovement: estimatedImprovement,
+          analysisTime: 0,
+          success: true,
+          simulated: true, // Flag to indicate this is estimated
+        };
+        
         this.addLog(
-          `Dry run complete - would apply ${appliedFixes.length} fixes`,
+          `Estimated score improvement: +${estimatedImprovement} points (${initialScore} → ${estimatedFinalScore})`,
           "info"
         );
       }
-
-      const detailedBreakdown = this.calculateDetailedBreakdown(appliedFixes);
-      const stats = {
-        totalIssuesFound: analysisResult.totalIssues,
-        fixesAttempted: appliedFixes.length,
-        fixesSuccessful: appliedFixes.filter((f) => f.success).length,
-        fixesFailed: appliedFixes.filter((f) => !f.success).length,
-        estimatedImpact: this.calculateEstimatedImpact(appliedFixes),
-        detailedBreakdown,
-      };
-
-      this.addLog(
-        `Final stats: ${stats.fixesSuccessful}/${stats.fixesAttempted} fixes successful`,
-        stats.fixesSuccessful > 0 ? "success" : "warning"
-      );
-
-      return {
-        success: true,
-        dryRun,
-        fixesApplied: appliedFixes,
-        stats,
-        errors: errors.length > 0 ? errors : undefined,
-        message: dryRun
-          ? `Dry run complete. Found ${stats.fixesAttempted} fixable issues.`
-          : `Applied ${stats.fixesSuccessful} fixes successfully with ${stats.fixesFailed} failures.`,
-        detailedLog: [...this.log],
-      };
-    } catch (error) {
-      this.addLog(
-        `AI fix service error: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-        "error"
-      );
-      console.error("AI fix service error:", error);
-      return {
-        success: false,
-        dryRun,
-        fixesApplied: [],
-        stats: {
-          totalIssuesFound: 0,
-          fixesAttempted: 0,
-          fixesSuccessful: 0,
-          fixesFailed: 1,
-          estimatedImpact: "none",
-          detailedBreakdown: {
-            altTextFixed: 0,
-            metaDescriptionsUpdated: 0,
-            titleTagsImproved: 0,
-            headingStructureFixed: 0,
-            internalLinksAdded: 0,
-            imagesOptimized: 0,
-          },
-        },
-        errors: [error instanceof Error ? error.message : "Unknown error"],
-        message: `AI fix failed: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-        detailedLog: [...this.log],
-      };
     }
+
+    const detailedBreakdown = this.calculateDetailedBreakdown(appliedFixes);
+    const stats = {
+      totalIssuesFound: analysisResult.totalIssues,
+      fixesAttempted: appliedFixes.length,
+      fixesSuccessful: appliedFixes.filter((f) => f.success).length,
+      fixesFailed: appliedFixes.filter((f) => !f.success).length,
+      estimatedImpact: this.calculateEstimatedImpact(appliedFixes),
+      detailedBreakdown,
+    };
+
+    this.addLog(
+      `Final stats: ${stats.fixesSuccessful}/${stats.fixesAttempted} fixes successful`,
+      stats.fixesSuccessful > 0 ? "success" : "warning"
+    );
+
+    // Enhanced message with reanalysis info
+    let message = dryRun
+      ? `Dry run complete. Found ${stats.fixesAttempted} fixable issues.`
+      : `Applied ${stats.fixesSuccessful} fixes successfully with ${stats.fixesFailed} failures.`;
+
+    if (reanalysisData && reanalysisData.success) {
+      if (reanalysisData.simulated) {
+        message += ` Estimated SEO score improvement: +${reanalysisData.scoreImprovement} points`;
+      } else {
+        message += ` SEO score: ${reanalysisData.initialScore} → ${reanalysisData.finalScore} (+${reanalysisData.scoreImprovement})`;
+      }
+    }
+
+    return {
+      success: true,
+      dryRun,
+      fixesApplied: appliedFixes,
+      stats,
+      errors: errors.length > 0 ? errors : undefined,
+      message,
+      detailedLog: [...this.log],
+      reanalysis: reanalysisData,
+    };
+  } catch (error) {
+    this.addLog(
+      `AI fix service error: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`,
+      "error"
+    );
+    console.error("AI fix service error:", error);
+    return {
+      success: false,
+      dryRun,
+      fixesApplied: [],
+      stats: {
+        totalIssuesFound: 0,
+        fixesAttempted: 0,
+        fixesSuccessful: 0,
+        fixesFailed: 1,
+        estimatedImpact: "none",
+        detailedBreakdown: {
+          altTextFixed: 0,
+          metaDescriptionsUpdated: 0,
+          titleTagsImproved: 0,
+          headingStructureFixed: 0,
+          internalLinksAdded: 0,
+          imagesOptimized: 0,
+        },
+      },
+      errors: [error instanceof Error ? error.message : "Unknown error"],
+      message: `AI fix failed: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`,
+      detailedLog: [...this.log],
+    };
   }
+}
 
   private async analyzeWebsiteForAllFixes(url: string, seoReport: any) {
     this.addLog(`Analyzing website content for ALL fixable issues: ${url}`);
@@ -1172,6 +1396,199 @@ Find the top 5 most important automated fixes. Return only JSON.`;
     return { appliedFixes, errors };
   }
 
+  private async fixMissingH1Tags(
+  creds: WordPressCredentials,
+  fixes: AIFix[]
+): Promise<{ applied: AIFix[]; errors: string[] }> {
+  this.addLog(`Fixing missing H1 tags for ${fixes.length} items`);
+
+  const applied: AIFix[] = [];
+  const errors: string[] = [];
+
+  try {
+    const [posts, pages] = await Promise.all([
+      this.getWordPressContentWithType(creds, "posts").catch(() => []),
+      this.getWordPressContentWithType(creds, "pages").catch(() => []),
+    ]);
+
+    const allContent = [...posts, ...pages];
+    this.addLog(`Found ${allContent.length} items to check for missing H1 tags`);
+
+    let processedCount = 0;
+    let fixedCount = 0;
+
+    for (const content of allContent) {
+      try {
+        processedCount++;
+        const contentHtml = content.content?.rendered || content.content || "";
+        
+        if (!contentHtml) {
+          this.addLog(`No content HTML found for "${content.title?.rendered || content.title}"`, "warning");
+          continue;
+        }
+
+        const $ = cheerio.load(contentHtml);
+        const h1s = $("h1");
+
+        this.addLog(`Checking for missing H1 in "${content.title?.rendered || content.title}": found ${h1s.length} H1 tags`);
+
+        // Only add H1 if completely missing
+        if (h1s.length === 0) {
+          try {
+            const title = content.title?.rendered || content.title || "Page Title";
+            
+            // Add H1 at the beginning of content
+            const updatedContent = `<h1>${title}</h1>\n${contentHtml}`;
+            
+            await this.updateWordPressContent(creds, content.id, {
+              content: updatedContent,
+            }, content.contentType);
+
+            applied.push({
+              type: "missing_h1",
+              description: `Added missing H1 tag: "${title}"`,
+              element: `${content.contentType}-${content.id}`,
+              before: "No H1 tag found",
+              after: `<h1>${title}</h1>`,
+              success: true,
+              impact: "high",
+              wordpressPostId: content.id,
+            });
+
+            fixedCount++;
+            this.addLog(`Added H1 tag to: ${content.title?.rendered || content.title} (${content.contentType} ${content.id})`, "success");
+          } catch (updateError) {
+            const errorMsg = `Failed to add H1 tag: ${updateError.message}`;
+            errors.push(errorMsg);
+            applied.push({
+              type: "missing_h1",
+              description: `Failed to add H1 tag for "${content.title?.rendered || content.title}"`,
+              element: `${content.contentType}-${content.id}`,
+              before: "No H1 tag",
+              after: "Failed to add H1",
+              success: false,
+              impact: "high",
+              error: errorMsg,
+              wordpressPostId: content.id,
+            });
+            this.addLog(errorMsg, "error");
+          }
+        } else {
+          this.addLog(`H1 tag already exists for "${content.title?.rendered || content.title}"`, "info");
+        }
+      } catch (contentError) {
+        this.addLog(`Error processing H1 for "${content.title?.rendered || content.title}": ${contentError.message}`, "warning");
+      }
+    }
+
+    this.addLog(`Processed ${processedCount} items, fixed ${fixedCount} missing H1 tags`, "success");
+  } catch (error) {
+    const errorMsg = `Missing H1 fix failed: ${error.message}`;
+    errors.push(errorMsg);
+    this.addLog(errorMsg, "error");
+  }
+
+  return { applied, errors };
+}
+
+
+private async fixLongMetaDescriptions(
+  creds: WordPressCredentials,
+  fixes: AIFix[]
+): Promise<{ applied: AIFix[]; errors: string[] }> {
+  this.addLog(`Fixing long meta descriptions for ${fixes.length} items`);
+
+  const applied: AIFix[] = [];
+  const errors: string[] = [];
+
+  try {
+    const [posts, pages] = await Promise.all([
+      this.getWordPressContentWithType(creds, "posts").catch(() => []),
+      this.getWordPressContentWithType(creds, "pages").catch(() => []),
+    ]);
+
+    const allContent = [...posts, ...pages].slice(0, 10);
+    this.addLog(`Found ${allContent.length} items to check for long meta descriptions`);
+
+    let processedCount = 0;
+    let fixedCount = 0;
+
+    for (const content of allContent) {
+      try {
+        processedCount++;
+        const excerpt = content.excerpt?.rendered || content.excerpt || "";
+
+        this.addLog(`Checking meta description for "${content.title?.rendered || content.title}": current length ${excerpt.length}`, "info");
+
+        // Only shorten if too long (over 160 characters)
+        if (excerpt && excerpt.length > 160) {
+          try {
+            // Shorten to 157 characters to leave room for "..."
+            let shortenedDescription = excerpt.substring(0, 157);
+            
+            // Try to end at a sentence boundary
+            const lastPeriod = shortenedDescription.lastIndexOf('.');
+            const lastSpace = shortenedDescription.lastIndexOf(' ');
+            
+            if (lastPeriod > 140) {
+              shortenedDescription = excerpt.substring(0, lastPeriod + 1);
+            } else if (lastSpace > 140) {
+              shortenedDescription = excerpt.substring(0, lastSpace) + "...";
+            } else {
+              shortenedDescription = shortenedDescription + "...";
+            }
+
+            await this.updateWordPressContent(creds, content.id, {
+              excerpt: shortenedDescription,
+            }, content.contentType);
+
+            applied.push({
+              type: "meta_description_too_long",
+              description: `Shortened meta description from ${excerpt.length} to ${shortenedDescription.length} characters`,
+              element: `${content.contentType}-${content.id}`,
+              before: excerpt.substring(0, 100) + "...",
+              after: shortenedDescription,
+              success: true,
+              impact: "medium",
+              wordpressPostId: content.id,
+            });
+
+            fixedCount++;
+            this.addLog(`Shortened meta description for: ${content.title?.rendered || content.title} (${excerpt.length} → ${shortenedDescription.length} chars)`, "success");
+          } catch (updateError) {
+            const errorMsg = `Failed to shorten meta description: ${updateError.message}`;
+            errors.push(errorMsg);
+            applied.push({
+              type: "meta_description_too_long",
+              description: `Failed to shorten meta description for "${content.title?.rendered || content.title}"`,
+              element: `${content.contentType}-${content.id}`,
+              before: excerpt.substring(0, 100) + "...",
+              after: "Failed to shorten",
+              success: false,
+              impact: "medium",
+              error: errorMsg,
+              wordpressPostId: content.id,
+            });
+            this.addLog(errorMsg, "error");
+          }
+        } else {
+          this.addLog(`Meta description length acceptable for "${content.title?.rendered || content.title}" (${excerpt.length} chars)`, "info");
+        }
+      } catch (contentError) {
+        this.addLog(`Error processing meta description for "${content.title?.rendered || content.title}": ${contentError.message}`, "warning");
+      }
+    }
+
+    this.addLog(`Processed ${processedCount} items, fixed ${fixedCount} long meta descriptions`, "success");
+  } catch (error) {
+    const errorMsg = `Long meta description fix failed: ${error.message}`;
+    errors.push(errorMsg);
+    this.addLog(errorMsg, "error");
+  }
+
+  return { applied, errors };
+}
+
   // Rest of the methods remain the same as in the original code...
   private groupFixesByType(fixes: AIFix[]): Record<string, AIFix[]> {
     return fixes.reduce((groups, fix) => {
@@ -1203,6 +1620,18 @@ Find the top 5 most important automated fixes. Return only JSON.`;
         applied.push(...metaResult.applied);
         errors.push(...metaResult.errors);
         break;
+
+      case "missing_h1":
+      const h1FixResult = await this.fixMissingH1Tags(creds, fixes);
+      applied.push(...h1FixResult.applied);
+      errors.push(...h1FixResult.errors);
+      break;
+
+    case "meta_description_too_long":
+      const metaTooLongResult = await this.fixLongMetaDescriptions(creds, fixes);
+      applied.push(...metaTooLongResult.applied);
+      errors.push(...metaTooLongResult.errors);
+      break;
 
       case "poor_title_tag":
         const titleResult = await this.fixTitleTagsComprehensive(creds, fixes);
@@ -1311,7 +1740,7 @@ Find the top 5 most important automated fixes. Return only JSON.`;
 
       let totalImagesFixed = 0;
 
-      for (const content of allContent.slice(0, 10)) {
+      for (const content of allContent) {
         // Limit to first 10 items
         try {
           const $ = cheerio.load(content.content.rendered || content.content);
@@ -1450,7 +1879,7 @@ Find the top 5 most important automated fixes. Return only JSON.`;
           this.addLog(`Checking meta description for "${content.title?.rendered || content.title}": current length ${excerpt.length}`, "info");
 
           // Generate meta description if missing or too short
-          if (!excerpt || excerpt.length < 120) {
+          if (!excerpt || excerpt.length < 120 || excerpt.length > 160) {
             try {
               const metaDescription = await this.generateMetaDescriptionWithFallback(
                 content.title?.rendered || content.title || "",
@@ -1656,14 +2085,14 @@ Find the top 5 most important automated fixes. Return only JSON.`;
           // Add H1 if missing
           if (h1s.length === 0) {
             const title = content.title?.rendered || content.title || "Page Title";
-            $("body").prepend(`<h1>${title}</h1>`);
+            $.root().prepend(`<h1>${title}</h1>`);
             changes.push(`Added missing H1: "${title}"`);
             needsUpdate = true;
           }
 
           if (needsUpdate) {
             try {
-              const updatedContent = $.html();
+              const updatedContent = $.root().html() || $.html();
               
               // Use the correct content type when updating
               await this.updateWordPressContent(creds, content.id, {

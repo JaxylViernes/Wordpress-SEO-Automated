@@ -1,14 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  pgTable,
-  text,
-  varchar,
-  timestamp,
-  integer,
-  boolean,
-  jsonb,
-  index,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, uuid, boolean, jsonb, index,numeric } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -634,6 +625,266 @@ export const insertUserApiKeySchema = createInsertSchema(userApiKeys).pick({
   usageCount: true,
   lastUsed: true,
 });
+
+export const appliedFixes = pgTable(
+  "applied_fixes",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Issue identification
+    issueType: text("issue_type").notNull(), // missing_alt_text, poor_title_tag, etc.
+    issueTitle: text("issue_title").notNull(),
+    issueDescription: text("issue_description"),
+    issueHash: text("issue_hash").notNull(), // Unique identifier for this specific issue
+    
+    // Fix details
+    fixType: text("fix_type").notNull(),
+    fixDescription: text("fix_description").notNull(),
+    fixSuccess: boolean("fix_success").notNull(),
+    fixError: text("fix_error"),
+    
+    // Content affected
+    wordpressPostId: integer("wordpress_post_id"),
+    elementPath: text("element_path"), // CSS selector or similar
+    beforeValue: text("before_value"),
+    afterValue: text("after_value"),
+    
+    // Fix context
+    fixBatchId: varchar("fix_batch_id"), // Groups fixes from the same AI fix run
+    aiModel: text("ai_model"),
+    scoreBefore: integer("score_before"),
+    scoreAfter: integer("score_after"),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_applied_fixes_user_website").on(table.userId, table.websiteId),
+    index("idx_applied_fixes_issue_hash").on(table.issueHash),
+    index("idx_applied_fixes_batch").on(table.fixBatchId),
+  ]
+);
+
+export const seoIssueStatuses = pgTable(
+  "seo_issue_statuses",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Issue identification
+    issueHash: text("issue_hash").notNull().unique(), // Consistent hash for the same issue
+    issueType: text("issue_type").notNull(), // missing_alt_text, poor_title_tag, etc.
+    issueTitle: text("issue_title").notNull(),
+    issueDescription: text("issue_description"),
+    issueSeverity: text("issue_severity").notNull(), // critical, warning, info
+    
+    // Status tracking
+    status: text("status").notNull().default("open"), // open, in_progress, fixed, ignored, cannot_fix
+    statusReason: text("status_reason"), // Why it's ignored/cannot be fixed
+    
+    // Fix attempts
+    fixAttempts: integer("fix_attempts").notNull().default(0),
+    lastFixAttempt: timestamp("last_fix_attempt"),
+    lastFixError: text("last_fix_error"),
+    
+    // Resolution details
+    resolvedAt: timestamp("resolved_at"),
+    resolvedBy: text("resolved_by"), // 'ai_fix', 'manual', 'auto_resolved'
+    resolutionNotes: text("resolution_notes"),
+    
+    // Context
+    firstDetected: timestamp("first_detected").notNull().defaultNow(),
+    lastDetected: timestamp("last_detected").notNull().defaultNow(),
+    detectionCount: integer("detection_count").notNull().default(1),
+    
+    // Associated data
+    wordpressPostId: integer("wordpress_post_id"),
+    elementPath: text("element_path"),
+    currentValue: text("current_value"),
+    recommendedValue: text("recommended_value"),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_seo_issue_statuses_user_website").on(table.userId, table.websiteId),
+    index("idx_seo_issue_statuses_hash").on(table.issueHash),
+    index("idx_seo_issue_statuses_status").on(table.status),
+    index("idx_seo_issue_statuses_type").on(table.issueType),
+  ]
+);
+
+// Add insert schema
+export const insertSeoIssueStatusSchema = createInsertSchema(seoIssueStatuses).pick({
+  websiteId: true,
+  issueHash: true,
+  issueType: true,
+  issueTitle: true,
+  issueDescription: true,
+  issueSeverity: true,
+  status: true,
+  statusReason: true,
+  fixAttempts: true,
+  lastFixAttempt: true,
+  lastFixError: true,
+  resolvedAt: true,
+  resolvedBy: true,
+  resolutionNotes: true,
+  firstDetected: true,
+  lastDetected: true,
+  detectionCount: true,
+  wordpressPostId: true,
+  elementPath: true,
+  currentValue: true,
+  recommendedValue: true,
+});
+
+
+// Auto-Schedules table for automated content generation
+export const autoSchedules = pgTable("auto_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
+  
+  // Schedule configuration
+  name: text("name").notNull(),
+  frequency: text("frequency").notNull(), // 'daily', 'twice_weekly', 'weekly', 'biweekly', 'monthly', 'custom'
+  timeOfDay: text("time_of_day").notNull(), // Format: 'HH:MM'
+  customDays: text("custom_days").array().default([]), // For custom frequency
+  
+  // Content generation settings
+  topics: text("topics").array().default([]),
+  keywords: text("keywords"),
+  tone: text("tone"),
+  wordCount: integer("word_count").default(1000),
+  brandVoice: text("brand_voice"),
+  targetAudience: text("target_audience"),
+  eatCompliance: boolean("eat_compliance").default(false),
+  
+  // AI and image settings
+  aiProvider: text("ai_provider").default("openai"),
+  includeImages: boolean("include_images").default(false),
+  imageCount: integer("image_count").default(1),
+  imageStyle: text("image_style"),
+  seoOptimized: boolean("seo_optimized").default(true),
+  
+  // Publishing settings
+  autoPublish: boolean("auto_publish").default(false),
+  publishDelay: integer("publish_delay").default(0), // Hours to wait before publishing
+  
+  // Topic rotation settings
+  topicRotation: text("topic_rotation").default("sequential"), // 'sequential' or 'random'
+  nextTopicIndex: integer("next_topic_index").default(0),
+  
+  // Cost and limit controls - FIXED: Using numeric instead of real
+  maxDailyCost: numeric("max_daily_cost", { precision: 10, scale: 2 }).default("10.00"),
+  maxMonthlyPosts: integer("max_monthly_posts").default(30),
+  costToday: numeric("cost_today", { precision: 10, scale: 2 }).default("0.00"),
+  postsThisMonth: integer("posts_this_month").default(0),
+  
+  // Tracking
+  lastRun: timestamp("last_run"),
+  isActive: boolean("is_active").default(true),
+  
+  // Timestamps
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+}, (table) => [
+  index("idx_auto_schedules_user_id").on(table.userId),
+  index("idx_auto_schedules_website_id").on(table.websiteId),
+  index("idx_auto_schedules_active").on(table.isActive),
+  index("idx_auto_schedules_last_run").on(table.lastRun),
+]);
+
+// Insert schema for auto schedules
+export const insertAutoScheduleSchema = createInsertSchema(autoSchedules).pick({
+  websiteId: true,
+  name: true,
+  frequency: true,
+  timeOfDay: true,
+  customDays: true,
+  topics: true,
+  keywords: true,
+  tone: true,
+  wordCount: true,
+  brandVoice: true,
+  targetAudience: true,
+  eatCompliance: true,
+  aiProvider: true,
+  includeImages: true,
+  imageCount: true,
+  imageStyle: true,
+  seoOptimized: true,
+  autoPublish: true,
+  publishDelay: true,
+  topicRotation: true,
+  maxDailyCost: true,
+  maxMonthlyPosts: true,
+  // userId will be added automatically in the backend
+});
+
+
+
+
+export const seoIssues = pgTable('seo_issues', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: text('user_id').notNull(),
+  websiteId: text('website_id').notNull(),
+  seoReportId: text('seo_report_id').notNull(),
+  
+  // Issue identification
+  issueType: text('issue_type').notNull(),
+  issueCategory: text('issue_category').notNull(),
+  severity: text('severity').notNull(), // 'critical', 'warning', 'info'
+  title: text('title').notNull(),
+  description: text('description').notNull(),
+  
+  // Tracking information
+  status: text('status').notNull().default('open'), // 'open', 'in_progress', 'fixed', 'ignored', 'needs_verification'
+  fixMethod: text('fix_method'), // 'manual', 'ai_auto', 'ai_assisted'
+  
+  // Fix details
+  fixedAt: timestamp('fixed_at'),
+  fixedBy: text('fixed_by'),
+  fixDescription: text('fix_description'),
+  verificationStatus: text('verification_status'), // 'pending', 'verified', 'failed'
+  verifiedAt: timestamp('verified_at'),
+  
+  // Technical details
+  affectedElement: text('affected_element'),
+  affectedPages: integer('affected_pages').default(1),
+  autoFixAvailable: boolean('auto_fix_available').default(false),
+  
+  // Metadata
+  metadata: jsonb('metadata'),
+  priority: integer('priority').default(5),
+  
+  // Audit trail
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  resolvedAt: timestamp('resolved_at'),
+  
+  // Re-occurrence tracking
+  firstDetected: timestamp('first_detected').defaultNow().notNull(),
+  lastDetected: timestamp('last_detected').defaultNow().notNull(),
+  occurrenceCount: integer('occurrence_count').default(1),
+});
+
+
+
+export type SeoIssue = typeof seoIssues.$inferSelect;
+export type InsertSeoIssue = typeof seoIssues.$inferInsert;
+
+// Types for auto schedules
+export type InsertAutoSchedule = z.infer<typeof insertAutoScheduleSchema>;
+export type AutoSchedule = typeof autoSchedules.$inferSelect;
+
+export type InsertSeoIssueStatus = z.infer<typeof insertSeoIssueStatusSchema>;
+export type SeoIssueStatus = typeof seoIssueStatuses.$inferSelect;
+
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;

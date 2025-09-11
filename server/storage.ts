@@ -1,4 +1,4 @@
-import {
+import { 
   users,
   websites,
   content,
@@ -12,10 +12,10 @@ import {
   contentSchedule,
   backups,
   userSettings,
-  type User,
+  type User, 
   type UpsertUser,
-  type InsertUser,
-  type Website,
+  type InsertUser, 
+  type Website, 
   type InsertWebsite,
   type Content,
   type InsertContent,
@@ -38,33 +38,22 @@ import {
   type Backup,
   type InsertBackup,
   type UserSettings, // Add this line
-  type InsertUserSettings, // Add this line
+  type InsertUserSettings // Add this line
 } from "@shared/schema";
-import {
+import { 
   userApiKeys,
   type UserApiKey,
-  type InsertUserApiKey,
+  type InsertUserApiKey
 } from "@shared/schema";
 import { apiKeyEncryptionService } from "./services/api-key-encryption";
 import { db } from "./db";
-import {
-  lte,
-  gte,
-  count,
-  eq,
-  desc,
-  and,
-  or,
-  isNull,
-  inArray,
-} from "drizzle-orm";
+import { lte, gte, count, eq, desc, and, or, isNull, inArray } from "drizzle-orm";
 import { wordPressAuthService } from "./services/wordpress-auth";
-import {
-  contentImages,
-  insertContentImageSchema,
-  type InsertContentImage,
-  type ContentImage,
-} from "@shared/schema";
+import { contentImages, insertContentImageSchema, type InsertContentImage, type ContentImage } from "@shared/schema";
+//nadagdag
+import { autoSchedules, type AutoSchedule, type InsertAutoSchedule } from "@shared/schema";
+import { randomUUID } from 'crypto';
+
 
 export interface IStorage {
   // Users (Required for Replit Auth)
@@ -77,10 +66,7 @@ export interface IStorage {
   getUserWebsites(userId: string): Promise<Website[]>;
   getUserWebsite(id: string, userId: string): Promise<Website | undefined>;
   createWebsite(website: InsertWebsite & { userId: string }): Promise<Website>;
-  updateWebsite(
-    id: string,
-    website: Partial<Website>
-  ): Promise<Website | undefined>;
+  updateWebsite(id: string, website: Partial<Website>): Promise<Website | undefined>;
   deleteWebsite(id: string): Promise<boolean>;
   validateWebsiteOwnership(websiteId: string, userId: string): Promise<boolean>;
 
@@ -89,10 +75,7 @@ export interface IStorage {
   getContentByWebsite(websiteId: string): Promise<Content[]>;
   getContent(id: string): Promise<Content | undefined>;
   createContent(content: InsertContent & { userId: string }): Promise<Content>;
-  updateContent(
-    id: string,
-    content: Partial<Content>
-  ): Promise<Content | undefined>;
+  updateContent(id: string, content: Partial<Content>): Promise<Content | undefined>;
   getPendingApprovalContent(): Promise<Content[]>;
   getUserPendingApprovalContent(userId: string): Promise<Content[]>;
 
@@ -100,41 +83,24 @@ export interface IStorage {
   getUserSeoReports(userId: string, websiteId?: string): Promise<SeoReport[]>;
   getSeoReportsByWebsite(websiteId: string): Promise<SeoReport[]>;
   getLatestSeoReport(websiteId: string): Promise<SeoReport | undefined>;
-  createSeoReport(
-    report: InsertSeoReport & { userId: string }
-  ): Promise<SeoReport>;
+  createSeoReport(report: InsertSeoReport & { userId: string }): Promise<SeoReport>;
 
   // User-scoped Activity Logs
-  getUserActivityLogs(
-    userId: string,
-    websiteId?: string
-  ): Promise<ActivityLog[]>;
+  getUserActivityLogs(userId: string, websiteId?: string): Promise<ActivityLog[]>;
   getActivityLogs(websiteId?: string): Promise<ActivityLog[]>;
-  createActivityLog(
-    log: InsertActivityLog & { userId: string }
-  ): Promise<ActivityLog>;
+  createActivityLog(log: InsertActivityLog & { userId: string }): Promise<ActivityLog>;
 
   // Client Reports
   getClientReports(websiteId: string): Promise<ClientReport[]>;
-  createClientReport(
-    report: InsertClientReport & { userId: string }
-  ): Promise<ClientReport>;
+  createClientReport(report: InsertClientReport & { userId: string }): Promise<ClientReport>;
 
   // Enhanced features
-  createContentApproval(
-    approval: InsertContentApproval & { userId: string }
-  ): Promise<ContentApproval>;
-  createSecurityAudit(
-    audit: InsertSecurityAudit & { userId?: string }
-  ): Promise<SecurityAudit>;
-  trackAiUsage(
-    usage: InsertAiUsageTracking & { userId: string }
-  ): Promise<AiUsageTracking>;
+  createContentApproval(approval: InsertContentApproval & { userId: string }): Promise<ContentApproval>;
+  createSecurityAudit(audit: InsertSecurityAudit & { userId?: string }): Promise<SecurityAudit>;
+  trackAiUsage(usage: InsertAiUsageTracking & { userId: string }): Promise<AiUsageTracking>;
   createSeoAudit(audit: InsertSeoAudit & { userId: string }): Promise<SeoAudit>;
   getContentSchedule(websiteId: string): Promise<ContentSchedule[]>;
-  createContentSchedule(
-    schedule: InsertContentSchedule & { userId: string }
-  ): Promise<ContentSchedule>;
+  createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule>;
   createBackup(backup: InsertBackup & { userId: string }): Promise<Backup>;
 
   // Dashboard stats
@@ -146,46 +112,32 @@ export interface IStorage {
   }>;
 
   getUserSettings(userId: string): Promise<UserSettings | undefined>;
-  createUserSettings(
-    userId: string,
-    settings: Partial<InsertUserSettings>
-  ): Promise<UserSettings>;
-  updateUserSettings(
-    userId: string,
-    settings: Partial<InsertUserSettings>
-  ): Promise<UserSettings | undefined>;
+  createUserSettings(userId: string, settings: Partial<InsertUserSettings>): Promise<UserSettings>;
+  updateUserSettings(userId: string, settings: Partial<InsertUserSettings>): Promise<UserSettings | undefined>;
   deleteUserSettings(userId: string): Promise<boolean>;
   getOrCreateUserSettings(userId: string): Promise<UserSettings>;
 
-  getUserApiKeys(userId: string): Promise<UserApiKey[]>;
+
+   getUserApiKeys(userId: string): Promise<UserApiKey[]>;
   getUserApiKey(userId: string, keyId: string): Promise<UserApiKey | undefined>;
-  createUserApiKey(
-    userId: string,
-    data: {
-      provider: string;
-      keyName: string;
-      apiKey: string;
-    }
-  ): Promise<UserApiKey>;
-  updateUserApiKey(
-    userId: string,
-    keyId: string,
-    updates: Partial<{
-      keyName: string;
-      isActive: boolean;
-      validationStatus: string;
-      lastValidated: Date;
-      validationError: string;
-      usageCount: number;
-      lastUsed: Date;
-    }>
-  ): Promise<UserApiKey | undefined>;
+  createUserApiKey(userId: string, data: {
+    provider: string;
+    keyName: string;
+    apiKey: string;
+  }): Promise<UserApiKey>;
+  updateUserApiKey(userId: string, keyId: string, updates: Partial<{
+    keyName: string;
+    isActive: boolean;
+    validationStatus: string;
+    lastValidated: Date;
+    validationError: string;
+    usageCount: number;
+    lastUsed: Date;
+  }>): Promise<UserApiKey | undefined>;
   deleteUserApiKey(userId: string, keyId: string): Promise<boolean>;
   getDecryptedApiKey(userId: string, keyId: string): Promise<string | null>;
-  validateUserApiKey(
-    userId: string,
-    keyId: string
-  ): Promise<{ valid: boolean; error?: string }>;
+  validateUserApiKey(userId: string, keyId: string): Promise<{ valid: boolean; error?: string }>;
+
 }
 
 export class DatabaseStorage implements IStorage {
@@ -200,11 +152,9 @@ export class DatabaseStorage implements IStorage {
       const existingWebsites = await db.select().from(websites).limit(1);
       if (existingWebsites.length > 0) return;
 
-      console.log(
-        "No existing websites found, sample data initialization skipped"
-      );
+      console.log('No existing websites found, sample data initialization skipped');
     } catch (error) {
-      console.error("Failed to initialize sample data:", error);
+      console.error('Failed to initialize sample data:', error);
     }
   }
 
@@ -215,10 +165,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.username, username));
+    const [user] = await db.select().from(users).where(eq(users.username, username));
     return user;
   }
 
@@ -235,7 +182,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
     return user;
   }
 
@@ -248,10 +198,7 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(websites.updatedAt));
   }
 
-  async getUserWebsite(
-    id: string,
-    userId: string
-  ): Promise<Website | undefined> {
+  async getUserWebsite(id: string, userId: string): Promise<Website | undefined> {
     const [website] = await db
       .select()
       .from(websites)
@@ -259,16 +206,14 @@ export class DatabaseStorage implements IStorage {
     return website;
   }
 
-  async createWebsite(
-    insertWebsite: InsertWebsite & { userId: string }
-  ): Promise<Website> {
+  async createWebsite(insertWebsite: InsertWebsite & { userId: string }): Promise<Website> {
     console.log("Creating website in database:", insertWebsite);
-
+    
     // Encrypt the application password before storing
     const encryptedPassword = wordPressAuthService.encryptCredentials({
       applicationName: insertWebsite.wpApplicationName,
       applicationPassword: insertWebsite.wpApplicationPassword,
-      username: insertWebsite.wpUsername || "admin",
+      username: insertWebsite.wpUsername || 'admin'
     });
 
     const [website] = await db
@@ -279,10 +224,10 @@ export class DatabaseStorage implements IStorage {
         status: "active",
         seoScore: 0,
         contentCount: 0,
-        userId: insertWebsite.userId, // Ensure userId is set
+        userId: insertWebsite.userId // Ensure userId is set
       })
       .returning();
-
+    
     console.log("Website created successfully:", website);
 
     // Log activity
@@ -300,19 +245,16 @@ export class DatabaseStorage implements IStorage {
       websiteId: website.id,
       action: "website_connection",
       success: true,
-      metadata: {
-        authType: "application_password",
-        applicationName: insertWebsite.wpApplicationName,
+      metadata: { 
+        authType: "application_password", 
+        applicationName: insertWebsite.wpApplicationName 
       },
     });
 
     return website;
   }
 
-  async updateWebsite(
-    id: string,
-    updates: Partial<Website>
-  ): Promise<Website | undefined> {
+  async updateWebsite(id: string, updates: Partial<Website>): Promise<Website | undefined> {
     const [website] = await db
       .update(websites)
       .set({ ...updates, updatedAt: new Date() })
@@ -326,10 +268,7 @@ export class DatabaseStorage implements IStorage {
     return (result.rowCount ?? 0) > 0;
   }
 
-  async validateWebsiteOwnership(
-    websiteId: string,
-    userId: string
-  ): Promise<boolean> {
+  async validateWebsiteOwnership(websiteId: string, userId: string): Promise<boolean> {
     const website = await this.getUserWebsite(websiteId, userId);
     return !!website;
   }
@@ -344,7 +283,7 @@ export class DatabaseStorage implements IStorage {
       }
       return await this.getContentByWebsite(websiteId);
     }
-
+    
     // Get all content for user's websites
     return await db
       .select()
@@ -362,10 +301,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getContent(id: string): Promise<Content | undefined> {
-    const [contentItem] = await db
-      .select()
-      .from(content)
-      .where(eq(content.id, id));
+    const [contentItem] = await db.select().from(content).where(eq(content.id, id));
     return contentItem;
   }
 
@@ -382,29 +318,27 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(content)
       .where(
-        and(eq(content.status, "pending_approval"), eq(content.userId, userId))
+        and(
+          eq(content.status, "pending_approval"),
+          eq(content.userId, userId)
+        )
       )
       .orderBy(desc(content.createdAt));
   }
 
-  async createContent(
-    insertContent: InsertContent & { userId: string }
-  ): Promise<Content> {
+  async createContent(insertContent: InsertContent & { userId: string }): Promise<Content> {
     const [contentItem] = await db
       .insert(content)
       .values({
         ...insertContent,
         status: "pending_approval", // Default to requiring approval
-        userId: insertContent.userId,
+        userId: insertContent.userId
       })
       .returning();
     return contentItem;
   }
 
-  async updateContent(
-    id: string,
-    updates: Partial<Content>
-  ): Promise<Content | undefined> {
+  async updateContent(id: string, updates: Partial<Content>): Promise<Content | undefined> {
     const [contentItem] = await db
       .update(content)
       .set({ ...updates, updatedAt: new Date() })
@@ -414,10 +348,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // User-scoped SEO Reports
-  async getUserSeoReports(
-    userId: string,
-    websiteId?: string
-  ): Promise<SeoReport[]> {
+  async getUserSeoReports(userId: string, websiteId?: string): Promise<SeoReport[]> {
     if (websiteId) {
       // Verify ownership first
       const website = await this.getUserWebsite(websiteId, userId);
@@ -426,7 +357,7 @@ export class DatabaseStorage implements IStorage {
       }
       return await this.getSeoReportsByWebsite(websiteId);
     }
-
+    
     // Get all SEO reports for user's websites
     return await db
       .select()
@@ -453,38 +384,33 @@ export class DatabaseStorage implements IStorage {
     return report;
   }
 
-  async createSeoReport(
-    insertReport: InsertSeoReport & { userId: string }
-  ): Promise<SeoReport> {
+  async createSeoReport(insertReport: InsertSeoReport & { userId: string }): Promise<SeoReport> {
     const [report] = await db
       .insert(seoReports)
       .values({
         ...insertReport,
-        userId: insertReport.userId,
+        userId: insertReport.userId
       })
       .returning();
     return report;
   }
 
   // User-scoped Activity Logs
-  async getUserActivityLogs(
-    userId: string,
-    websiteId?: string
-  ): Promise<ActivityLog[]> {
+  async getUserActivityLogs(userId: string, websiteId?: string): Promise<ActivityLog[]> {
     if (websiteId) {
       // First verify the website belongs to the user
       const website = await this.getUserWebsite(websiteId, userId);
       if (!website) {
         return []; // Return empty array if user doesn't own the website
       }
-
+      
       return await db
         .select()
         .from(activityLogs)
         .where(eq(activityLogs.websiteId, websiteId))
         .orderBy(desc(activityLogs.createdAt));
     }
-
+    
     // Get all activity logs for this user
     return await db
       .select()
@@ -506,21 +432,19 @@ export class DatabaseStorage implements IStorage {
         .where(eq(activityLogs.websiteId, websiteId))
         .orderBy(desc(activityLogs.createdAt));
     }
-
+    
     return await db
       .select()
       .from(activityLogs)
       .orderBy(desc(activityLogs.createdAt));
   }
 
-  async createActivityLog(
-    insertLog: InsertActivityLog & { userId: string }
-  ): Promise<ActivityLog> {
+  async createActivityLog(insertLog: InsertActivityLog & { userId: string }): Promise<ActivityLog> {
     const [log] = await db
       .insert(activityLogs)
       .values({
         ...insertLog,
-        userId: insertLog.userId,
+        userId: insertLog.userId
       })
       .returning();
     return log;
@@ -535,67 +459,59 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(clientReports.generatedAt));
   }
 
-  async createClientReport(
-    insertReport: InsertClientReport & { userId: string }
-  ): Promise<ClientReport> {
+  async createClientReport(insertReport: InsertClientReport & { userId: string }): Promise<ClientReport> {
     const [report] = await db
       .insert(clientReports)
       .values({
         ...insertReport,
-        userId: insertReport.userId,
+        userId: insertReport.userId
       })
       .returning();
     return report;
   }
 
   // Enhanced Security and Management Features
-  async createContentApproval(
-    approval: InsertContentApproval & { userId: string }
-  ): Promise<ContentApproval> {
+  async createContentApproval(approval: InsertContentApproval & { userId: string }): Promise<ContentApproval> {
     const [approvalRecord] = await db
       .insert(contentApprovals)
       .values({
         ...approval,
-        userId: approval.userId,
+        userId: approval.userId
       })
       .returning();
     return approvalRecord;
   }
 
-  async createSecurityAudit(
-    audit: InsertSecurityAudit & { userId?: string }
-  ): Promise<SecurityAudit> {
+  
+
+  async createSecurityAudit(audit: InsertSecurityAudit & { userId?: string }): Promise<SecurityAudit> {
     const [auditRecord] = await db
       .insert(securityAudits)
       .values({
         ...audit,
-        userId: audit.userId || null,
+        userId: audit.userId || null
       })
       .returning();
     return auditRecord;
   }
 
-  async trackAiUsage(
-    usage: InsertAiUsageTracking & { userId: string }
-  ): Promise<AiUsageTracking> {
+  async trackAiUsage(usage: InsertAiUsageTracking & { userId: string }): Promise<AiUsageTracking> {
     const [usageRecord] = await db
       .insert(aiUsageTracking)
       .values({
         ...usage,
-        userId: usage.userId,
+        userId: usage.userId
       })
       .returning();
     return usageRecord;
   }
 
-  async createSeoAudit(
-    audit: InsertSeoAudit & { userId: string }
-  ): Promise<SeoAudit> {
+  async createSeoAudit(audit: InsertSeoAudit & { userId: string }): Promise<SeoAudit> {
     const [auditRecord] = await db
       .insert(seoAudits)
       .values({
         ...audit,
-        userId: audit.userId,
+        userId: audit.userId
       })
       .returning();
     return auditRecord;
@@ -609,27 +525,23 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(contentSchedule.scheduledDate));
   }
 
-  async createContentSchedule(
-    schedule: InsertContentSchedule & { userId: string }
-  ): Promise<ContentSchedule> {
+  async createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule> {
     const [scheduleRecord] = await db
       .insert(contentSchedule)
       .values({
         ...schedule,
-        userId: schedule.userId,
+        userId: schedule.userId
       })
       .returning();
     return scheduleRecord;
   }
 
-  async createBackup(
-    backup: InsertBackup & { userId: string }
-  ): Promise<Backup> {
+  async createBackup(backup: InsertBackup & { userId: string }): Promise<Backup> {
     const [backupRecord] = await db
       .insert(backups)
       .values({
         ...backup,
-        userId: backup.userId,
+        userId: backup.userId
       })
       .returning();
     return backupRecord;
@@ -651,552 +563,501 @@ export class DatabaseStorage implements IStorage {
         and(
           eq(activityLogs.userId, userId),
           // Last 7 days
-          eq(
-            activityLogs.createdAt,
-            new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-          )
+          eq(activityLogs.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
         )
       );
 
     return {
       websiteCount: userWebsites.length,
       contentCount: userContent.length,
-      avgSeoScore:
-        userWebsites.length > 0
-          ? Math.round(
-              userWebsites.reduce((sum, w) => sum + w.seoScore, 0) /
-                userWebsites.length
-            )
-          : 0,
-      recentActivity: recentLogs.length,
+      avgSeoScore: userWebsites.length > 0 
+        ? Math.round(userWebsites.reduce((sum, w) => sum + w.seoScore, 0) / userWebsites.length)
+        : 0,
+      recentActivity: recentLogs.length
     };
   }
 
-  async createContentImage(
-    data: InsertContentImage & { userId: string }
-  ): Promise<ContentImage> {
-    const validatedData = insertContentImageSchema.parse(data);
-    const imageWithUserId = { ...validatedData, userId: data.userId };
+  async createContentImage(data: InsertContentImage & { userId: string }): Promise<ContentImage> {
+  const validatedData = insertContentImageSchema.parse(data);
+  const imageWithUserId = { ...validatedData, userId: data.userId };
+  
+  const [image] = await db.insert(contentImages).values(imageWithUserId).returning();
+  return image;
+}
 
-    const [image] = await db
-      .insert(contentImages)
-      .values(imageWithUserId)
-      .returning();
-    return image;
-  }
+// Get images for a specific content piece
+async getContentImages(contentId: string): Promise<ContentImage[]> {
+  return db
+    .select()
+    .from(contentImages)
+    .where(eq(contentImages.contentId, contentId))
+    .orderBy(contentImages.createdAt);
+}
 
-  // Get images for a specific content piece
-  async getContentImages(contentId: string): Promise<ContentImage[]> {
-    return db
-      .select()
-      .from(contentImages)
-      .where(eq(contentImages.contentId, contentId))
-      .orderBy(contentImages.createdAt);
-  }
+// Update content image (for WordPress upload info)
+async updateContentImage(imageId: string, updates: Partial<{
+  wordpressMediaId: number;
+  wordpressUrl: string;
+  status: string;
+  uploadError: string;
+}>): Promise<ContentImage | null> {
+  const [updated] = await db
+    .update(contentImages)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(eq(contentImages.id, imageId))
+    .returning();
+  
+  return updated || null;
+}
 
-  // Update content image (for WordPress upload info)
-  async updateContentImage(
-    imageId: string,
-    updates: Partial<{
-      wordpressMediaId: number;
-      wordpressUrl: string;
-      status: string;
-      uploadError: string;
-    }>
-  ): Promise<ContentImage | null> {
-    const [updated] = await db
-      .update(contentImages)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(contentImages.id, imageId))
-      .returning();
+// Get images by user (for dashboard/analytics)
+async getUserContentImages(userId: string, limit: number = 50): Promise<ContentImage[]> {
+  return db
+    .select()
+    .from(contentImages)
+    .where(eq(contentImages.userId, userId))
+    .orderBy(desc(contentImages.createdAt))
+    .limit(limit);
+}
 
-    return updated || null;
-  }
+// Delete content images (cascade when content is deleted)
+async deleteContentImages(contentId: string): Promise<void> {
+  await this.db.delete(contentImages).where(eq(contentImages.contentId, contentId));
+}
 
-  // Get images by user (for dashboard/analytics)
-  async getUserContentImages(
-    userId: string,
-    limit: number = 50
-  ): Promise<ContentImage[]> {
-    return db
-      .select()
-      .from(contentImages)
-      .where(eq(contentImages.userId, userId))
-      .orderBy(desc(contentImages.createdAt))
-      .limit(limit);
-  }
+// Get image usage statistics for a user
+async getUserImageStats(userId: string): Promise<{
+  totalImages: number;
+  totalCostCents: number;
+  imagesThisMonth: number;
+  costThisMonthCents: number;
+}> {
+  const thisMonth = new Date();
+  thisMonth.setDate(1);
+  thisMonth.setHours(0, 0, 0, 0);
 
-  // Delete content images (cascade when content is deleted)
-  async deleteContentImages(contentId: string): Promise<void> {
-    await this.db
-      .delete(contentImages)
-      .where(eq(contentImages.contentId, contentId));
-  }
+  const [allTimeStats] = await this.db
+    .select({
+      totalImages: count(),
+      totalCostCents: sum(contentImages.costCents)
+    })
+    .from(contentImages)
+    .where(eq(contentImages.userId, userId));
 
-  // Get image usage statistics for a user
-  async getUserImageStats(userId: string): Promise<{
-    totalImages: number;
-    totalCostCents: number;
-    imagesThisMonth: number;
-    costThisMonthCents: number;
-  }> {
-    const thisMonth = new Date();
-    thisMonth.setDate(1);
-    thisMonth.setHours(0, 0, 0, 0);
-
-    const [allTimeStats] = await this.db
-      .select({
-        totalImages: count(),
-        totalCostCents: sum(contentImages.costCents),
-      })
-      .from(contentImages)
-      .where(eq(contentImages.userId, userId));
-
-    const [monthlyStats] = await this.db
-      .select({
-        imagesThisMonth: count(),
-        costThisMonthCents: sum(contentImages.costCents),
-      })
-      .from(contentImages)
-      .where(
-        and(
-          eq(contentImages.userId, userId),
-          gte(contentImages.createdAt, thisMonth)
-        )
-      );
-
-    return {
-      totalImages: Number(allTimeStats.totalImages) || 0,
-      totalCostCents: Number(allTimeStats.totalCostCents) || 0,
-      imagesThisMonth: Number(monthlyStats.imagesThisMonth) || 0,
-      costThisMonthCents: Number(monthlyStats.costThisMonthCents) || 0,
-    };
-  }
-
-  async getContentScheduleByContentId(
-    contentId: string
-  ): Promise<ContentSchedule | undefined> {
-    const [schedule] = await db
-      .select()
-      .from(contentSchedule)
-      .where(eq(contentSchedule.contentId, contentId));
-    return schedule;
-  }
-
-  async getContentScheduleWithDetails(websiteId: string): Promise<
-    Array<
-      ContentSchedule & {
-        contentTitle: string;
-        contentExcerpt: string | null;
-        seoKeywords: string[];
-      }
-    >
-  > {
-    const schedules = await db
-      .select({
-        // Schedule fields
-        id: contentSchedule.id,
-        userId: contentSchedule.userId,
-        websiteId: contentSchedule.websiteId,
-        scheduledDate: contentSchedule.scheduledDate,
-        status: contentSchedule.status,
-        contentId: contentSchedule.contentId,
-        abTestVariant: contentSchedule.abTestVariant,
-        createdAt: contentSchedule.createdAt,
-        // Content fields
-        contentTitle: content.title,
-        contentExcerpt: content.excerpt,
-        seoKeywords: content.seoKeywords,
-      })
-      .from(contentSchedule)
-      .innerJoin(content, eq(contentSchedule.contentId, content.id))
-      .where(eq(contentSchedule.websiteId, websiteId))
-      .orderBy(desc(contentSchedule.scheduledDate));
-
-    return schedules.map((row) => ({
-      id: row.id,
-      userId: row.userId,
-      websiteId: row.websiteId,
-      scheduledDate: row.scheduledDate,
-      status: row.status,
-      contentId: row.contentId,
-      abTestVariant: row.abTestVariant,
-      createdAt: row.createdAt,
-      contentTitle: row.contentTitle,
-      contentExcerpt: row.contentExcerpt,
-      seoKeywords: row.seoKeywords || [],
-    }));
-  }
-
-  async updateContentSchedule(
-    id: string,
-    updates: Partial<{
-      scheduledDate: Date;
-      status: string;
-      contentId: string;
-      abTestVariant: string | null;
-    }>
-  ): Promise<ContentSchedule | undefined> {
-    const [schedule] = await db
-      .update(contentSchedule)
-      .set({ ...updates })
-      .where(eq(contentSchedule.id, id))
-      .returning();
-    return schedule;
-  }
-
-  async deleteContentSchedule(id: string): Promise<boolean> {
-    const result = await db
-      .delete(contentSchedule)
-      .where(eq(contentSchedule.id, id));
-    return (result.rowCount ?? 0) > 0;
-  }
-
-  async getContentScheduleById(
-    id: string
-  ): Promise<ContentSchedule | undefined> {
-    const [schedule] = await db
-      .select()
-      .from(contentSchedule)
-      .where(eq(contentSchedule.id, id));
-    return schedule;
-  }
-
-  async getUserContentSchedule(
-    userId: string,
-    websiteId?: string
-  ): Promise<ContentSchedule[]> {
-    if (websiteId) {
-      // Verify website ownership first
-      const website = await this.getUserWebsite(websiteId, userId);
-      if (!website) {
-        return [];
-      }
-      return await this.getContentSchedule(websiteId);
-    }
-
-    // Get all scheduled content for user's websites
-    return await db
-      .select()
-      .from(contentSchedule)
-      .where(eq(contentSchedule.userId, userId))
-      .orderBy(contentSchedule.scheduledDate);
-  }
-
-  // Get scheduled content that's ready to be published (for cron jobs)
-  async getPendingScheduledContent(): Promise<ContentSchedule[]> {
-    const now = new Date();
-    return await db
-      .select()
-      .from(contentSchedule)
-      .where(
-        and(
-          eq(contentSchedule.status, "scheduled"),
-          lte(contentSchedule.scheduledDate, now)
-        )
+  const [monthlyStats] = await this.db
+    .select({
+      imagesThisMonth: count(),
+      costThisMonthCents: sum(contentImages.costCents)
+    })
+    .from(contentImages)
+    .where(
+      and(
+        eq(contentImages.userId, userId),
+        gte(contentImages.createdAt, thisMonth)
       )
-      .orderBy(contentSchedule.scheduledDate);
-  }
+    );
 
-  // Get upcoming scheduled content (next 7 days)
-  async getUpcomingScheduledContent(
-    userId: string
-  ): Promise<ContentSchedule[]> {
-    const now = new Date();
-    const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  return {
+    totalImages: Number(allTimeStats.totalImages) || 0,
+    totalCostCents: Number(allTimeStats.totalCostCents) || 0,
+    imagesThisMonth: Number(monthlyStats.imagesThisMonth) || 0,
+    costThisMonthCents: Number(monthlyStats.costThisMonthCents) || 0
+  };
+}
 
-    return await db
-      .select()
-      .from(contentSchedule)
-      .where(
-        and(
-          eq(contentSchedule.userId, userId),
-          eq(contentSchedule.status, "scheduled"),
-          gte(contentSchedule.scheduledDate, now),
-          lte(contentSchedule.scheduledDate, nextWeek)
-        )
-      )
-      .orderBy(contentSchedule.scheduledDate);
-  }
 
-  // Get unpublished content for a website
-  async getUnpublishedContent(websiteId: string): Promise<Content[]> {
-    return await db
-      .select()
-      .from(content)
-      .where(
-        and(
-          eq(content.websiteId, websiteId),
-          or(
-            eq(content.status, "ready"),
-            eq(content.status, "pending_approval")
-          )
-        )
-      )
-      .orderBy(desc(content.createdAt));
-  }
+async getContentScheduleByContentId(contentId: string): Promise<ContentSchedule | undefined> {
+  const [schedule] = await db
+    .select()
+    .from(contentSchedule)
+    .where(eq(contentSchedule.contentId, contentId));
+  return schedule;
+}
 
-  // Check if content is already scheduled
-  async isContentScheduled(contentId: string): Promise<boolean> {
-    const [schedule] = await db
-      .select()
-      .from(contentSchedule)
-      .where(
-        and(
-          eq(contentSchedule.contentId, contentId),
-          or(
-            eq(contentSchedule.status, "scheduled"),
-            eq(contentSchedule.status, "publishing")
-          )
-        )
-      );
-    return !!schedule;
-  }
+async getContentScheduleWithDetails(websiteId: string): Promise<Array<ContentSchedule & {
+  contentTitle: string;
+  contentExcerpt: string | null;
+  seoKeywords: string[];
+}>> {
+  const schedules = await db
+    .select({
+      // Schedule fields
+      id: contentSchedule.id,
+      userId: contentSchedule.userId,
+      websiteId: contentSchedule.websiteId,
+      scheduledDate: contentSchedule.scheduledDate,
+      status: contentSchedule.status,
+      contentId: contentSchedule.contentId,
+      abTestVariant: contentSchedule.abTestVariant,
+      createdAt: contentSchedule.createdAt,
+      // Content fields
+      contentTitle: content.title,
+      contentExcerpt: content.excerpt,
+      seoKeywords: content.seoKeywords
+    })
+    .from(contentSchedule)
+    .innerJoin(content, eq(contentSchedule.contentId, content.id))
+    .where(eq(contentSchedule.websiteId, websiteId))
+    .orderBy(desc(contentSchedule.scheduledDate));
 
-  // Update the existing createContentSchedule method to work with contentId
-  async createContentSchedule(
-    schedule: InsertContentSchedule & { userId: string }
-  ): Promise<ContentSchedule> {
-    const [scheduleRecord] = await db
-      .insert(contentSchedule)
-      .values({
-        ...schedule,
-        userId: schedule.userId,
-      })
-      .returning();
-    return scheduleRecord;
-  }
+  return schedules.map(row => ({
+    id: row.id,
+    userId: row.userId,
+    websiteId: row.websiteId,
+    scheduledDate: row.scheduledDate,
+    status: row.status,
+    contentId: row.contentId,
+    abTestVariant: row.abTestVariant,
+    createdAt: row.createdAt,
+    contentTitle: row.contentTitle,
+    contentExcerpt: row.contentExcerpt,
+    seoKeywords: row.seoKeywords || []
+  }));
+}
 
-  // Update client report methods - ADD THIS METHOD TO SUPPORT REPORT UPDATES
-  async updateClientReport(
-    id: string,
-    updates: Partial<{
-      data: any;
-      insights: any[];
-      roiData: any;
-      generatedAt: Date;
-    }>
-  ): Promise<ClientReport | undefined> {
-    const [report] = await db
-      .update(clientReports)
-      .set({ ...updates })
-      .where(eq(clientReports.id, id))
-      .returning();
-    return report;
-  }
+async updateContentSchedule(id: string, updates: Partial<{
+  scheduledDate: Date;
+  status: string;
+  contentId: string;
+  abTestVariant: string | null;
+}>): Promise<ContentSchedule | undefined> {
+  const [schedule] = await db
+    .update(contentSchedule)
+    .set({ ...updates })
+    .where(eq(contentSchedule.id, id))
+    .returning();
+  return schedule;
+}
 
-  // Enhanced content methods
-  async getAvailableContentForScheduling(
-    websiteId: string,
-    userId: string
-  ): Promise<Content[]> {
+async deleteContentSchedule(id: string): Promise<boolean> {
+  const result = await db.delete(contentSchedule).where(eq(contentSchedule.id, id));
+  return (result.rowCount ?? 0) > 0;
+}
+
+async getContentScheduleById(id: string): Promise<ContentSchedule | undefined> {
+  const [schedule] = await db
+    .select()
+    .from(contentSchedule)
+    .where(eq(contentSchedule.id, id));
+  return schedule;
+}
+
+async getUserContentSchedule(userId: string, websiteId?: string): Promise<ContentSchedule[]> {
+  if (websiteId) {
     // Verify website ownership first
     const website = await this.getUserWebsite(websiteId, userId);
     if (!website) {
       return [];
     }
+    return await this.getContentSchedule(websiteId);
+  }
+  
+  // Get all scheduled content for user's websites
+  return await db
+    .select()
+    .from(contentSchedule)
+    .where(eq(contentSchedule.userId, userId))
+    .orderBy(contentSchedule.scheduledDate);
+}
 
-    // Get content that's ready for scheduling (not published and not already scheduled)
-    const availableContent = await db
-      .select({
-        id: content.id,
-        userId: content.userId,
-        websiteId: content.websiteId,
-        title: content.title,
-        body: content.body,
-        excerpt: content.excerpt,
-        metaDescription: content.metaDescription,
-        metaTitle: content.metaTitle,
-        status: content.status,
-        approvedBy: content.approvedBy,
-        approvedAt: content.approvedAt,
-        rejectionReason: content.rejectionReason,
-        aiModel: content.aiModel,
-        seoKeywords: content.seoKeywords,
-        seoScore: content.seoScore,
-        readabilityScore: content.readabilityScore,
-        plagiarismScore: content.plagiarismScore,
-        brandVoiceScore: content.brandVoiceScore,
-        factCheckStatus: content.factCheckStatus,
-        eatCompliance: content.eatCompliance,
-        tokensUsed: content.tokensUsed,
-        costUsd: content.costUsd,
-        publishDate: content.publishDate,
-        wordpressPostId: content.wordpressPostId,
-        wordpressUrl: content.wordpressUrl,
-        publishError: content.publishError,
-        createdAt: content.createdAt,
-        updatedAt: content.updatedAt,
-        hasImages: content.hasImages,
-        imageCount: content.imageCount,
-        imageCostCents: content.imageCostCents,
-      })
-      .from(content)
-      .leftJoin(contentSchedule, eq(content.id, contentSchedule.contentId))
-      .where(
-        and(
-          eq(content.websiteId, websiteId),
-          eq(content.userId, userId),
-          or(
-            eq(content.status, "ready"),
-            eq(content.status, "pending_approval")
-          ),
-          isNull(contentSchedule.id) // Not already scheduled
+// Get scheduled content that's ready to be published (for cron jobs)
+async getPendingScheduledContent(): Promise<ContentSchedule[]> {
+  const now = new Date();
+  return await db
+    .select()
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.status, 'scheduled'),
+        lte(contentSchedule.scheduledDate, now)
+      )
+    )
+    .orderBy(contentSchedule.scheduledDate);
+}
+
+// Get upcoming scheduled content (next 7 days)
+async getUpcomingScheduledContent(userId: string): Promise<ContentSchedule[]> {
+  const now = new Date();
+  const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  
+  return await db
+    .select()
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.userId, userId),
+        eq(contentSchedule.status, 'scheduled'),
+        gte(contentSchedule.scheduledDate, now),
+        lte(contentSchedule.scheduledDate, nextWeek)
+      )
+    )
+    .orderBy(contentSchedule.scheduledDate);
+}
+
+// Get unpublished content for a website
+async getUnpublishedContent(websiteId: string): Promise<Content[]> {
+  return await db
+    .select()
+    .from(content)
+    .where(
+      and(
+        eq(content.websiteId, websiteId),
+        or(
+          eq(content.status, 'ready'),
+          eq(content.status, 'pending_approval')
         )
       )
-      .orderBy(desc(content.createdAt));
+    )
+    .orderBy(desc(content.createdAt));
+}
 
-    return availableContent;
-  }
-
-  // Get dashboard stats for scheduled content
-  async getSchedulingStats(userId: string): Promise<{
-    totalScheduled: number;
-    scheduledThisWeek: number;
-    scheduledThisMonth: number;
-    overdueCount: number;
-    publishedFromSchedule: number;
-  }> {
-    const now = new Date();
-    const thisWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-
-    const [totalScheduled] = await db
-      .select({ count: count() })
-      .from(contentSchedule)
-      .where(
-        and(
-          eq(contentSchedule.userId, userId),
-          eq(contentSchedule.status, "scheduled")
+// Check if content is already scheduled
+async isContentScheduled(contentId: string): Promise<boolean> {
+  const [schedule] = await db
+    .select()
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.contentId, contentId),
+        or(
+          eq(contentSchedule.status, 'scheduled'),
+          eq(contentSchedule.status, 'publishing')
         )
-      );
+      )
+    );
+  return !!schedule;
+}
 
-    const [scheduledThisWeek] = await db
-      .select({ count: count() })
-      .from(contentSchedule)
-      .where(
-        and(
-          eq(contentSchedule.userId, userId),
-          eq(contentSchedule.status, "scheduled"),
-          gte(contentSchedule.scheduledDate, now),
-          lte(contentSchedule.scheduledDate, thisWeek)
-        )
-      );
+// Update the existing createContentSchedule method to work with contentId
+async createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule> {
+  const [scheduleRecord] = await db
+    .insert(contentSchedule)
+    .values({
+      ...schedule,
+      userId: schedule.userId
+    })
+    .returning();
+  return scheduleRecord;
+}
 
-    const [scheduledThisMonth] = await db
-      .select({ count: count() })
-      .from(contentSchedule)
-      .where(
-        and(
-          eq(contentSchedule.userId, userId),
-          eq(contentSchedule.status, "scheduled"),
-          gte(contentSchedule.scheduledDate, thisMonthStart),
-          lte(contentSchedule.scheduledDate, thisMonthEnd)
-        )
-      );
+// Update client report methods - ADD THIS METHOD TO SUPPORT REPORT UPDATES
+async updateClientReport(id: string, updates: Partial<{
+  data: any;
+  insights: any[];
+  roiData: any;
+  generatedAt: Date;
+}>): Promise<ClientReport | undefined> {
+  const [report] = await db
+    .update(clientReports)
+    .set({ ...updates })
+    .where(eq(clientReports.id, id))
+    .returning();
+  return report;
+}
 
-    const [overdueCount] = await db
-      .select({ count: count() })
-      .from(contentSchedule)
-      .where(
-        and(
-          eq(contentSchedule.userId, userId),
-          eq(contentSchedule.status, "scheduled"),
-          lte(contentSchedule.scheduledDate, now)
-        )
-      );
-
-    const [publishedFromSchedule] = await db
-      .select({ count: count() })
-      .from(contentSchedule)
-      .where(
-        and(
-          eq(contentSchedule.userId, userId),
-          eq(contentSchedule.status, "published")
-        )
-      );
-
-    return {
-      totalScheduled: Number(totalScheduled.count) || 0,
-      scheduledThisWeek: Number(scheduledThisWeek.count) || 0,
-      scheduledThisMonth: Number(scheduledThisMonth.count) || 0,
-      overdueCount: Number(overdueCount.count) || 0,
-      publishedFromSchedule: Number(publishedFromSchedule.count) || 0,
-    };
+// Enhanced content methods
+async getAvailableContentForScheduling(websiteId: string, userId: string): Promise<Content[]> {
+  // Verify website ownership first
+  const website = await this.getUserWebsite(websiteId, userId);
+  if (!website) {
+    return [];
   }
+  
+  // Get content that's ready for scheduling (not published and not already scheduled)
+  const availableContent = await db
+    .select({
+      id: content.id,
+      userId: content.userId,
+      websiteId: content.websiteId,
+      title: content.title,
+      body: content.body,
+      excerpt: content.excerpt,
+      metaDescription: content.metaDescription,
+      metaTitle: content.metaTitle,
+      status: content.status,
+      approvedBy: content.approvedBy,
+      approvedAt: content.approvedAt,
+      rejectionReason: content.rejectionReason,
+      aiModel: content.aiModel,
+      seoKeywords: content.seoKeywords,
+      seoScore: content.seoScore,
+      readabilityScore: content.readabilityScore,
+      plagiarismScore: content.plagiarismScore,
+      brandVoiceScore: content.brandVoiceScore,
+      factCheckStatus: content.factCheckStatus,
+      eatCompliance: content.eatCompliance,
+      tokensUsed: content.tokensUsed,
+      costUsd: content.costUsd,
+      publishDate: content.publishDate,
+      wordpressPostId: content.wordpressPostId,
+      wordpressUrl: content.wordpressUrl,
+      publishError: content.publishError,
+      createdAt: content.createdAt,
+      updatedAt: content.updatedAt,
+      hasImages: content.hasImages,
+      imageCount: content.imageCount,
+      imageCostCents: content.imageCostCents
+    })
+    .from(content)
+    .leftJoin(contentSchedule, eq(content.id, contentSchedule.contentId))
+    .where(
+      and(
+        eq(content.websiteId, websiteId),
+        eq(content.userId, userId),
+        or(
+          eq(content.status, 'ready'),
+          eq(content.status, 'pending_approval')
+        ),
+        isNull(contentSchedule.id) // Not already scheduled
+      )
+    )
+    .orderBy(desc(content.createdAt));
+  
+  return availableContent;
+}
 
-  // User Settings Methods
-  async getUserSettings(userId: string): Promise<UserSettings | undefined> {
-    const [settings] = await db
-      .select()
-      .from(userSettings)
-      .where(eq(userSettings.userId, userId));
-    return settings;
+// Get dashboard stats for scheduled content
+async getSchedulingStats(userId: string): Promise<{
+  totalScheduled: number;
+  scheduledThisWeek: number;
+  scheduledThisMonth: number;
+  overdueCount: number;
+  publishedFromSchedule: number;
+}> {
+  const now = new Date();
+  const thisWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  
+  const [totalScheduled] = await db
+    .select({ count: count() })
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.userId, userId),
+        eq(contentSchedule.status, 'scheduled')
+      )
+    );
+  
+  const [scheduledThisWeek] = await db
+    .select({ count: count() })
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.userId, userId),
+        eq(contentSchedule.status, 'scheduled'),
+        gte(contentSchedule.scheduledDate, now),
+        lte(contentSchedule.scheduledDate, thisWeek)
+      )
+    );
+  
+  const [scheduledThisMonth] = await db
+    .select({ count: count() })
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.userId, userId),
+        eq(contentSchedule.status, 'scheduled'),
+        gte(contentSchedule.scheduledDate, thisMonthStart),
+        lte(contentSchedule.scheduledDate, thisMonthEnd)
+      )
+    );
+  
+  const [overdueCount] = await db
+    .select({ count: count() })
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.userId, userId),
+        eq(contentSchedule.status, 'scheduled'),
+        lte(contentSchedule.scheduledDate, now)
+      )
+    );
+  
+  const [publishedFromSchedule] = await db
+    .select({ count: count() })
+    .from(contentSchedule)
+    .where(
+      and(
+        eq(contentSchedule.userId, userId),
+        eq(contentSchedule.status, 'published')
+      )
+    );
+  
+  return {
+    totalScheduled: Number(totalScheduled.count) || 0,
+    scheduledThisWeek: Number(scheduledThisWeek.count) || 0,
+    scheduledThisMonth: Number(scheduledThisMonth.count) || 0,
+    overdueCount: Number(overdueCount.count) || 0,
+    publishedFromSchedule: Number(publishedFromSchedule.count) || 0
+  };
+}
+
+// User Settings Methods
+async getUserSettings(userId: string): Promise<UserSettings | undefined> {
+  const [settings] = await db
+    .select()
+    .from(userSettings)
+    .where(eq(userSettings.userId, userId));
+  return settings;
+}
+
+async createUserSettings(userId: string, settingsData: Partial<InsertUserSettings>): Promise<UserSettings> {
+  const [settings] = await db
+    .insert(userSettings)
+    .values({
+      userId,
+      ...settingsData,
+    })
+    .returning();
+  return settings;
+}
+
+async updateUserSettings(userId: string, settingsData: Partial<InsertUserSettings>): Promise<UserSettings | undefined> {
+  const [settings] = await db
+    .update(userSettings)
+    .set({ 
+      ...settingsData, 
+      updatedAt: new Date() 
+    })
+    .where(eq(userSettings.userId, userId))
+    .returning();
+  return settings;
+}
+
+async deleteUserSettings(userId: string): Promise<boolean> {
+  const result = await db
+    .delete(userSettings)
+    .where(eq(userSettings.userId, userId));
+  return (result.rowCount ?? 0) > 0;
+}
+
+// Helper method to get or create user settings with defaults
+async getOrCreateUserSettings(userId: string): Promise<UserSettings> {
+  let settings = await this.getUserSettings(userId);
+  
+  if (!settings) {
+    // Create default settings if none exist
+    settings = await this.createUserSettings(userId, {
+      profileTimezone: "America/New_York",
+      notificationEmailReports: true,
+      notificationContentGenerated: true,
+      notificationSeoIssues: true,
+      notificationSystemAlerts: false,
+      automationDefaultAiModel: "gpt-4o",
+      automationAutoFixSeoIssues: true,
+      automationContentGenerationFrequency: "twice-weekly",
+      automationReportGeneration: "weekly",
+      securityTwoFactorAuth: false,
+      securitySessionTimeout: 24,
+      securityAllowApiAccess: true,
+    });
   }
+  
+  return settings;
+}
 
-  async createUserSettings(
-    userId: string,
-    settingsData: Partial<InsertUserSettings>
-  ): Promise<UserSettings> {
-    const [settings] = await db
-      .insert(userSettings)
-      .values({
-        userId,
-        ...settingsData,
-      })
-      .returning();
-    return settings;
-  }
-
-  async updateUserSettings(
-    userId: string,
-    settingsData: Partial<InsertUserSettings>
-  ): Promise<UserSettings | undefined> {
-    const [settings] = await db
-      .update(userSettings)
-      .set({
-        ...settingsData,
-        updatedAt: new Date(),
-      })
-      .where(eq(userSettings.userId, userId))
-      .returning();
-    return settings;
-  }
-
-  async deleteUserSettings(userId: string): Promise<boolean> {
-    const result = await db
-      .delete(userSettings)
-      .where(eq(userSettings.userId, userId));
-    return (result.rowCount ?? 0) > 0;
-  }
-
-  // Helper method to get or create user settings with defaults
-  async getOrCreateUserSettings(userId: string): Promise<UserSettings> {
-    let settings = await this.getUserSettings(userId);
-
-    if (!settings) {
-      // Create default settings if none exist
-      settings = await this.createUserSettings(userId, {
-        profileTimezone: "America/New_York",
-        notificationEmailReports: true,
-        notificationContentGenerated: true,
-        notificationSeoIssues: true,
-        notificationSystemAlerts: false,
-        automationDefaultAiModel: "gpt-4o",
-        automationAutoFixSeoIssues: true,
-        automationContentGenerationFrequency: "twice-weekly",
-        automationReportGeneration: "weekly",
-        securityTwoFactorAuth: false,
-        securitySessionTimeout: 24,
-        securityAllowApiAccess: true,
-      });
-    }
-
-    return settings;
-  }
-
-  async getUserApiKeys(userId: string): Promise<UserApiKey[]> {
+async getUserApiKeys(userId: string): Promise<UserApiKey[]> {
     return await db
       .select()
       .from(userApiKeys)
@@ -1204,32 +1065,28 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(userApiKeys.createdAt));
   }
 
-  async getUserApiKey(
-    userId: string,
-    keyId: string
-  ): Promise<UserApiKey | undefined> {
+  async getUserApiKey(userId: string, keyId: string): Promise<UserApiKey | undefined> {
     const [apiKey] = await db
       .select()
       .from(userApiKeys)
-      .where(and(eq(userApiKeys.userId, userId), eq(userApiKeys.id, keyId)));
+      .where(
+        and(
+          eq(userApiKeys.userId, userId),
+          eq(userApiKeys.id, keyId)
+        )
+      );
     return apiKey;
   }
 
-  async createUserApiKey(
-    userId: string,
-    data: {
-      provider: string;
-      keyName: string;
-      apiKey: string;
-    }
-  ): Promise<UserApiKey> {
+  async createUserApiKey(userId: string, data: {
+    provider: string;
+    keyName: string;
+    apiKey: string;
+  }): Promise<UserApiKey> {
     // Validate API key format
-    const formatValidation = apiKeyEncryptionService.validateApiKeyFormat(
-      data.provider,
-      data.apiKey
-    );
+    const formatValidation = apiKeyEncryptionService.validateApiKeyFormat(data.provider, data.apiKey);
     if (!formatValidation.valid) {
-      throw new Error(formatValidation.error || "Invalid API key format");
+      throw new Error(formatValidation.error || 'Invalid API key format');
     }
 
     // Encrypt the API key
@@ -1244,33 +1101,34 @@ export class DatabaseStorage implements IStorage {
         keyName: data.keyName,
         encryptedApiKey,
         maskedKey,
-        validationStatus: "pending",
+        validationStatus: 'pending'
       })
       .returning();
 
     return apiKey;
   }
 
-  async updateUserApiKey(
-    userId: string,
-    keyId: string,
-    updates: Partial<{
-      keyName: string;
-      isActive: boolean;
-      validationStatus: string;
-      lastValidated: Date;
-      validationError: string;
-      usageCount: number;
-      lastUsed: Date;
-    }>
-  ): Promise<UserApiKey | undefined> {
+  async updateUserApiKey(userId: string, keyId: string, updates: Partial<{
+    keyName: string;
+    isActive: boolean;
+    validationStatus: string;
+    lastValidated: Date;
+    validationError: string;
+    usageCount: number;
+    lastUsed: Date;
+  }>): Promise<UserApiKey | undefined> {
     const [apiKey] = await db
       .update(userApiKeys)
-      .set({
-        ...updates,
-        updatedAt: new Date(),
+      .set({ 
+        ...updates, 
+        updatedAt: new Date() 
       })
-      .where(and(eq(userApiKeys.userId, userId), eq(userApiKeys.id, keyId)))
+      .where(
+        and(
+          eq(userApiKeys.userId, userId),
+          eq(userApiKeys.id, keyId)
+        )
+      )
       .returning();
     return apiKey;
   }
@@ -1278,14 +1136,16 @@ export class DatabaseStorage implements IStorage {
   async deleteUserApiKey(userId: string, keyId: string): Promise<boolean> {
     const result = await db
       .delete(userApiKeys)
-      .where(and(eq(userApiKeys.userId, userId), eq(userApiKeys.id, keyId)));
+      .where(
+        and(
+          eq(userApiKeys.userId, userId),
+          eq(userApiKeys.id, keyId)
+        )
+      );
     return (result.rowCount ?? 0) > 0;
   }
 
-  async getDecryptedApiKey(
-    userId: string,
-    keyId: string
-  ): Promise<string | null> {
+  async getDecryptedApiKey(userId: string, keyId: string): Promise<string | null> {
     const apiKey = await this.getUserApiKey(userId, keyId);
     if (!apiKey || !apiKey.isActive) {
       return null;
@@ -1294,43 +1154,39 @@ export class DatabaseStorage implements IStorage {
     try {
       return apiKeyEncryptionService.decrypt(apiKey.encryptedApiKey);
     } catch (error) {
-      console.error("Failed to decrypt API key:", error);
+      console.error('Failed to decrypt API key:', error);
       return null;
     }
   }
 
-  async validateUserApiKey(
-    userId: string,
-    keyId: string
-  ): Promise<{ valid: boolean; error?: string }> {
+  async validateUserApiKey(userId: string, keyId: string): Promise<{ valid: boolean; error?: string }> {
     const apiKey = await this.getUserApiKey(userId, keyId);
     if (!apiKey) {
-      return { valid: false, error: "API key not found" };
+      return { valid: false, error: 'API key not found' };
     }
 
     try {
       const decryptedKey = await this.getDecryptedApiKey(userId, keyId);
       if (!decryptedKey) {
-        return { valid: false, error: "Could not decrypt API key" };
+        return { valid: false, error: 'Could not decrypt API key' };
       }
 
       // Update last validated timestamp
       await this.updateUserApiKey(userId, keyId, {
         lastValidated: new Date(),
-        validationStatus: "valid",
-        validationError: null,
+        validationStatus: 'valid',
+        validationError: null
       });
 
       return { valid: true };
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Validation failed";
-
+      const errorMessage = error instanceof Error ? error.message : 'Validation failed';
+      
       // Update validation status
       await this.updateUserApiKey(userId, keyId, {
         lastValidated: new Date(),
-        validationStatus: "invalid",
-        validationError: errorMessage,
+        validationStatus: 'invalid',
+        validationError: errorMessage
       });
 
       return { valid: false, error: errorMessage };
@@ -1345,14 +1201,689 @@ export class DatabaseStorage implements IStorage {
     totalUsage: number;
   }> {
     const keys = await this.getUserApiKeys(userId);
-
+    
     return {
       totalKeys: keys.length,
-      activeKeys: keys.filter((k) => k.isActive).length,
-      validKeys: keys.filter((k) => k.validationStatus === "valid").length,
-      totalUsage: keys.reduce((sum, k) => sum + (k.usageCount || 0), 0),
+      activeKeys: keys.filter(k => k.isActive).length,
+      validKeys: keys.filter(k => k.validationStatus === 'valid').length,
+      totalUsage: keys.reduce((sum, k) => sum + (k.usageCount || 0), 0)
     };
   }
+
+
+  //nadagdag
+  // Auto-Schedule Methods for Neon Database
+  async getActiveAutoSchedules(): Promise<AutoSchedule[]> {
+    try {
+      const schedules = await db
+        .select()
+        .from(autoSchedules)
+        .where(
+          and(
+            eq(autoSchedules.isActive, true),
+            isNull(autoSchedules.deletedAt)
+          )
+        )
+        .orderBy(desc(autoSchedules.createdAt));
+      
+      return schedules.map(schedule => ({
+        ...schedule,
+        topics: schedule.topics || [],
+        customDays: schedule.customDays || [],
+        publishDelay: schedule.publishDelay || 0,
+        topicRotation: schedule.topicRotation || 'sequential',
+        nextTopicIndex: schedule.nextTopicIndex || 0,
+        maxDailyCost: schedule.maxDailyCost || 10,
+        maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
+        costToday: schedule.costToday || 0,
+        postsThisMonth: schedule.postsThisMonth || 0,
+      }));
+    } catch (error) {
+      console.error('Error fetching active auto-schedules:', error);
+      return [];
+    }
+  }
+
+// In storage/index.ts, update the updateAutoSchedule method (around line 1263)
+
+  //nadagdag - Fixed to ensure numeric values are properly handled
+//nadagdag - Fixed to ensure numeric values are properly handled
+  async updateAutoSchedule(scheduleId: string, updates: any): Promise<void> {
+    try {
+      const updateData: any = {
+        updatedAt: new Date()
+      };
+      
+      if (updates.lastRun !== undefined) {
+        updateData.lastRun = updates.lastRun;
+      }
+      
+      if (updates.postsThisMonth !== undefined) {
+        // Ensure it's a number
+        const posts = typeof updates.postsThisMonth === 'string' 
+          ? parseInt(updates.postsThisMonth) 
+          : updates.postsThisMonth;
+        updateData.postsThisMonth = posts || 0;
+      }
+      
+      if (updates.costToday !== undefined) {
+        // CRITICAL FIX: Ensure costToday is a valid number
+        let cost = updates.costToday;
+        
+        // Handle if it's already a malformed string like "0.000.051885"
+        if (typeof cost === 'string' && cost.includes('.') && cost.split('.').length > 2) {
+          // Extract the last valid decimal number
+          const parts = cost.split('.');
+          cost = parseFloat(`0.${parts[parts.length - 1]}`);
+        } else {
+          // Normal parsing
+          cost = parseFloat(cost);
+        }
+        
+        if (isNaN(cost)) {
+          console.error('Invalid costToday value:', updates.costToday);
+          updateData.costToday = 0;
+        } else {
+          updateData.costToday = cost;
+        }
+        
+        console.log('Cost update:', {
+          original: updates.costToday,
+          parsed: cost,
+          final: updateData.costToday
+        });
+      }
+      
+      if (updates.nextTopicIndex !== undefined) {
+        const index = typeof updates.nextTopicIndex === 'string' 
+          ? parseInt(updates.nextTopicIndex) 
+          : updates.nextTopicIndex;
+        updateData.nextTopicIndex = index || 0;
+      }
+
+      console.log('Updating auto-schedule:', {
+        scheduleId,
+        updates: updateData
+      });
+
+      await db
+        .update(autoSchedules)
+        .set(updateData)
+        .where(eq(autoSchedules.id, scheduleId));
+        
+      console.log('✅ Auto-schedule updated successfully');
+    } catch (error) {
+      console.error('Error updating auto-schedule:', error);
+      throw error;
+    }
+  }
+
+  async resetAutoScheduleDailyCosts(): Promise<void> {
+    try {
+      await db
+        .update(autoSchedules)
+        .set({ 
+          costToday: 0,
+          updatedAt: new Date()
+        })
+        .where(eq(autoSchedules.isActive, true));
+      
+      console.log('✅ Daily costs reset for all active auto-schedules');
+    } catch (error) {
+      console.error('Error resetting daily costs:', error);
+      throw error;
+    }
+  }
+
+  async resetAutoScheduleMonthlyCounts(): Promise<void> {
+    try {
+      await db
+        .update(autoSchedules)
+        .set({ 
+          postsThisMonth: 0,
+          updatedAt: new Date()
+        })
+        .where(eq(autoSchedules.isActive, true));
+      
+      console.log('✅ Monthly post counts reset for all active auto-schedules');
+    } catch (error) {
+      console.error('Error resetting monthly counts:', error);
+      throw error;
+    }
+  }
+
+  // Additional auto-schedule methods
+// Update this method in your storage file (around line 1309)
+
+async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Promise<AutoSchedule> {
+  try {
+    // Manually generate the UUID
+    const scheduleData = {
+      id: randomUUID(), // Generate UUID here
+      userId: schedule.userId,
+      websiteId: schedule.websiteId,
+      name: schedule.name,
+      frequency: schedule.frequency,
+      timeOfDay: schedule.timeOfDay,
+      customDays: schedule.customDays || [],
+      topics: schedule.topics || [],
+      keywords: schedule.keywords || null,
+      tone: schedule.tone || 'professional',
+      wordCount: schedule.wordCount || 800,
+      brandVoice: schedule.brandVoice || null,
+      targetAudience: schedule.targetAudience || null,
+      eatCompliance: schedule.eatCompliance || false,
+      aiProvider: schedule.aiProvider || 'openai',
+      includeImages: schedule.includeImages || false,
+      imageCount: schedule.imageCount || 1,
+      imageStyle: schedule.imageStyle || 'natural',
+      seoOptimized: schedule.seoOptimized !== false,
+      autoPublish: schedule.autoPublish || false,
+      publishDelay: schedule.publishDelay || 0,
+      topicRotation: schedule.topicRotation || 'random',
+      nextTopicIndex: schedule.nextTopicIndex || 0,
+      maxDailyCost: schedule.maxDailyCost || 5.00,
+      maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
+      costToday: schedule.costToday || 0,
+      postsThisMonth: schedule.postsThisMonth || 0,
+      lastRun: schedule.lastRun || null,
+      isActive: schedule.isActive !== false,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const [newSchedule] = await db
+      .insert(autoSchedules)
+      .values(scheduleData)
+      .returning();
+    
+    console.log('Auto-schedule created successfully:', newSchedule.id);
+    return newSchedule;
+  } catch (error) {
+    console.error('Error creating auto-schedule:', error);
+    throw error;
+  }
+}
+  async getAutoSchedule(scheduleId: string): Promise<AutoSchedule | undefined> {
+    try {
+      const [schedule] = await db
+        .select()
+        .from(autoSchedules)
+        .where(eq(autoSchedules.id, scheduleId));
+      
+      return schedule;
+    } catch (error) {
+      console.error('Error fetching auto-schedule:', error);
+      return undefined;
+    }
+  }
+
+  async deleteAutoSchedule(scheduleId: string): Promise<boolean> {
+    try {
+      // Soft delete
+      await db
+        .update(autoSchedules)
+        .set({ 
+          deletedAt: new Date(),
+          isActive: false,
+          updatedAt: new Date()
+        })
+        .where(eq(autoSchedules.id, scheduleId));
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting auto-schedule:', error);
+      return false;
+    }
+  }
+
+  async getUserAutoSchedules(userId: string): Promise<AutoSchedule[]> {
+    try {
+      const schedules = await db
+        .select()
+        .from(autoSchedules)
+        .where(
+          and(
+            eq(autoSchedules.userId, userId),
+            isNull(autoSchedules.deletedAt)
+          )
+        )
+        .orderBy(desc(autoSchedules.createdAt));
+      
+      return schedules;
+    } catch (error) {
+      console.error('Error fetching user auto-schedules:', error);
+      return [];
+    }
+  }
+
+  // Note: createContentSchedule and createActivityLog already exist in your code
+  
+
+
+
+  //seo tracking
+  async createSeoIssue(issue: InsertSeoIssue): Promise<SeoIssue> {
+    const [newIssue] = await db
+      .insert(seoIssues)
+      .values({
+        ...issue,
+        status: issue.status || 'open',
+        priority: issue.priority || 5,
+        affectedPages: issue.affectedPages || 1,
+        autoFixAvailable: issue.autoFixAvailable || false,
+      })
+      .returning();
+    return newIssue;
+  }
+
+  async updateSeoIssueStatus(
+    issueId: string,
+    updates: Partial<{
+      status: SeoIssueStatus;
+      fixMethod: SeoIssueFixMethod;
+      fixedBy: string;
+      fixDescription: string;
+      verificationStatus: SeoIssueVerificationStatus;
+      priority: number;
+      metadata: any;
+    }>
+  ): Promise<SeoIssue | undefined> {
+    const updateData: any = {
+      ...updates,
+      updatedAt: new Date(),
+    };
+
+    // Set timestamps based on status changes
+    if (updates.status === 'fixed') {
+      updateData.fixedAt = new Date();
+      updateData.resolvedAt = new Date();
+      if (!updates.fixMethod) {
+        updateData.fixMethod = 'manual';
+      }
+    }
+
+    if (updates.verificationStatus === 'verified' || updates.verificationStatus === 'failed') {
+      updateData.verifiedAt = new Date();
+    }
+
+    const [issue] = await db
+      .update(seoIssues)
+      .set(updateData)
+      .where(eq(seoIssues.id, issueId))
+      .returning();
+    return issue;
+  }
+
+  async getSeoIssuesByWebsite(
+    websiteId: string,
+    filters?: {
+      status?: SeoIssueStatus;
+      severity?: SeoIssueSeverity;
+      category?: string;
+      assignedTo?: string;
+    }
+  ): Promise<SeoIssue[]> {
+    let query = db
+      .select()
+      .from(seoIssues)
+      .where(eq(seoIssues.websiteId, websiteId));
+
+    if (filters?.status) {
+      query = query.where(eq(seoIssues.status, filters.status));
+    }
+
+    if (filters?.severity) {
+      query = query.where(eq(seoIssues.severity, filters.severity));
+    }
+
+    if (filters?.category) {
+      query = query.where(eq(seoIssues.issueCategory, filters.category));
+    }
+
+    return query.orderBy(desc(seoIssues.priority), desc(seoIssues.lastDetected));
+  }
+
+  async getSeoIssueById(issueId: string): Promise<SeoIssue | undefined> {
+    const [issue] = await db
+      .select()
+      .from(seoIssues)
+      .where(eq(seoIssues.id, issueId));
+    return issue;
+  }
+
+  async upsertSeoIssue(
+    websiteId: string,
+    userId: string,
+    seoReportId: string,
+    issueData: any
+  ): Promise<SeoIssue> {
+    const issueHash = issueData.metadata?.issueHash;
+    
+    if (!issueHash) {
+      // Create new issue
+      return this.createSeoIssue({
+        userId,
+        websiteId,
+        seoReportId,
+        issueType: issueData.issueType,
+        issueCategory: issueData.issueCategory,
+        severity: issueData.severity,
+        title: issueData.title,
+        description: issueData.description,
+        affectedElement: issueData.affectedElement,
+        affectedPages: issueData.affectedPages,
+        autoFixAvailable: issueData.autoFixAvailable,
+        metadata: issueData.metadata,
+        priority: issueData.priority,
+      });
+    }
+
+    // Check if issue already exists
+    const [existingIssue] = await db
+      .select()
+      .from(seoIssues)
+      .where(
+        and(
+          eq(seoIssues.websiteId, websiteId),
+          sql`${seoIssues.metadata}->>'issueHash' = ${issueHash}`
+        )
+      );
+
+    if (existingIssue) {
+      // Update existing issue
+      const [updated] = await db
+        .update(seoIssues)
+        .set({
+          seoReportId,
+          lastDetected: new Date(),
+          occurrenceCount: existingIssue.occurrenceCount + 1,
+          affectedPages: issueData.affectedPages,
+          priority: issueData.priority,
+          metadata: {
+            ...existingIssue.metadata,
+            ...issueData.metadata,
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(seoIssues.id, existingIssue.id))
+        .returning();
+      return updated;
+    } else {
+      // Create new issue
+      return this.createSeoIssue({
+        userId,
+        websiteId,
+        seoReportId,
+        issueType: issueData.issueType,
+        issueCategory: issueData.issueCategory,
+        severity: issueData.severity,
+        title: issueData.title,
+        description: issueData.description,
+        affectedElement: issueData.affectedElement,
+        affectedPages: issueData.affectedPages,
+        autoFixAvailable: issueData.autoFixAvailable,
+        metadata: issueData.metadata,
+        priority: issueData.priority,
+      });
+    }
+  }
+
+  async getSeoIssueStats(websiteId: string): Promise<{
+    total: number;
+    byStatus: Record<SeoIssueStatus, number>;
+    bySeverity: Record<SeoIssueSeverity, number>;
+    byCategory: Record<string, number>;
+    autoFixableCount: number;
+    averagePriority: number;
+  }> {
+    const issues = await this.getSeoIssuesByWebsite(websiteId);
+    
+    const byStatus = {
+      open: 0,
+      in_progress: 0,
+      fixed: 0,
+      ignored: 0,
+      needs_verification: 0,
+    } as Record<SeoIssueStatus, number>;
+
+    const bySeverity = {
+      critical: 0,
+      warning: 0,
+      info: 0,
+    } as Record<SeoIssueSeverity, number>;
+
+    const byCategory: Record<string, number> = {};
+    let autoFixableCount = 0;
+    let totalPriority = 0;
+
+    issues.forEach(issue => {
+      byStatus[issue.status]++;
+      bySeverity[issue.severity]++;
+      byCategory[issue.issueCategory] = (byCategory[issue.issueCategory] || 0) + 1;
+      
+      if (issue.autoFixAvailable) autoFixableCount++;
+      totalPriority += issue.priority;
+    });
+
+    return {
+      total: issues.length,
+      byStatus,
+      bySeverity,
+      byCategory,
+      autoFixableCount,
+      averagePriority: issues.length > 0 ? Math.round(totalPriority / issues.length) : 0,
+    };
+  }
+
+  async markIssuesAsFixedByAI(
+    websiteId: string,
+    fixDetails: Array<{
+      issueHash: string;
+      fixDescription: string;
+      fixMethod: SeoIssueFixMethod;
+    }>
+  ): Promise<void> {
+    for (const fix of fixDetails) {
+      await db
+        .update(seoIssues)
+        .set({
+          status: 'needs_verification',
+          fixMethod: fix.fixMethod,
+          fixDescription: fix.fixDescription,
+          fixedAt: new Date(),
+          verificationStatus: 'pending',
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(seoIssues.websiteId, websiteId),
+            sql`${seoIssues.metadata}->>'issueHash' = ${fix.issueHash}`
+          )
+        );
+    }
+  }
+
+  async getSeoIssueHistory(issueHash: string, websiteId: string): Promise<any[]> {
+    const issueHistory = await db
+      .select({
+        issue: seoIssues,
+        report: seoReports,
+      })
+      .from(seoIssues)
+      .innerJoin(seoReports, eq(seoIssues.seoReportId, seoReports.id))
+      .where(
+        and(
+          eq(seoIssues.websiteId, websiteId),
+          sql`${seoIssues.metadata}->>'issueHash' = ${issueHash}`
+        )
+      )
+      .orderBy(desc(seoIssues.lastDetected));
+
+    return issueHistory.map(h => ({
+      detectedAt: h.issue.lastDetected,
+      status: h.issue.status,
+      severity: h.issue.severity,
+      priority: h.issue.priority,
+      occurrenceCount: h.issue.occurrenceCount,
+      analysisScore: h.report.score,
+      analysisId: h.report.id,
+      fixMethod: h.issue.fixMethod,
+      fixDescription: h.issue.fixDescription,
+      verificationStatus: h.issue.verificationStatus,
+    }));
+  }
+
+  async bulkUpdateSeoIssueStatus(
+    issueIds: string[],
+    updates: Partial<{
+      status: SeoIssueStatus;
+      fixMethod: SeoIssueFixMethod;
+      fixDescription: string;
+      fixedBy: string;
+    }>
+  ): Promise<SeoIssue[]> {
+    const updateData: any = {
+      ...updates,
+      updatedAt: new Date(),
+    };
+
+    if (updates.status === 'fixed') {
+      updateData.fixedAt = new Date();
+      updateData.resolvedAt = new Date();
+    }
+
+    const updatedIssues = await db
+      .update(seoIssues)
+      .set(updateData)
+      .where(inArray(seoIssues.id, issueIds))
+      .returning();
+
+    return updatedIssues;
+  }
+
+   async upsertSeoIssue(
+    websiteId: string,
+    userId: string,
+    seoReportId: string,
+    issueData: {
+      issueType: string;
+      issueCategory: string;
+      severity: SeoIssueSeverity;
+      title: string;
+      description: string;
+      affectedElement?: string;
+      affectedPages?: number;
+      autoFixAvailable?: boolean;
+      priority?: number;
+      metadata?: any;
+    }
+  ): Promise<SeoIssue> {
+    console.log(`💾 Upserting issue: ${issueData.title}`);
+    
+    const issueHash = issueData.metadata?.issueHash;
+    
+    if (!issueHash) {
+      console.log(`➕ Creating new issue (no hash): ${issueData.title}`);
+      // Create new issue
+      return this.createSeoIssue({
+        userId,
+        websiteId,
+        seoReportId,
+        issueType: issueData.issueType,
+        issueCategory: issueData.issueCategory,
+        severity: issueData.severity,
+        title: issueData.title,
+        description: issueData.description,
+        affectedElement: issueData.affectedElement,
+        affectedPages: issueData.affectedPages || 1,
+        autoFixAvailable: issueData.autoFixAvailable || false,
+        metadata: issueData.metadata,
+        priority: issueData.priority || 5,
+      });
+    }
+
+    try {
+      // Check if issue already exists using the hash in metadata
+      const existingIssues = await db
+        .select()
+        .from(seoIssues)
+        .where(
+          and(
+            eq(seoIssues.websiteId, websiteId),
+            sql`${seoIssues.metadata}->>'issueHash' = ${issueHash}`
+          )
+        );
+
+      if (existingIssues.length > 0) {
+        const existingIssue = existingIssues[0];
+        console.log(`🔄 Updating existing issue: ${existingIssue.title} (occurrence #${existingIssue.occurrenceCount + 1})`);
+        
+        // Update existing issue
+        const [updated] = await db
+          .update(seoIssues)
+          .set({
+            seoReportId,
+            lastDetected: new Date(),
+            occurrenceCount: existingIssue.occurrenceCount + 1,
+            affectedPages: issueData.affectedPages || existingIssue.affectedPages,
+            priority: issueData.priority || existingIssue.priority,
+            metadata: {
+              ...existingIssue.metadata,
+              ...issueData.metadata,
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(seoIssues.id, existingIssue.id))
+          .returning();
+        return updated;
+      } else {
+        console.log(`➕ Creating new issue with hash: ${issueData.title}`);
+        // Create new issue
+        return this.createSeoIssue({
+          userId,
+          websiteId,
+          seoReportId,
+          issueType: issueData.issueType,
+          issueCategory: issueData.issueCategory,
+          severity: issueData.severity,
+          title: issueData.title,
+          description: issueData.description,
+          affectedElement: issueData.affectedElement,
+          affectedPages: issueData.affectedPages || 1,
+          autoFixAvailable: issueData.autoFixAvailable || false,
+          metadata: issueData.metadata,
+          priority: issueData.priority || 5,
+        });
+      }
+    } catch (error) {
+      console.error(`❌ Error upserting SEO issue:`, error);
+      throw error;
+    }
+  }
+
+  async createSeoIssue(issue: InsertSeoIssue): Promise<SeoIssue> {
+    console.log(`➕ Creating SEO issue: ${issue.title}`);
+    try {
+      const [newIssue] = await db
+        .insert(seoIssues)
+        .values({
+          ...issue,
+          status: issue.status || 'open',
+          priority: issue.priority || 5,
+          affectedPages: issue.affectedPages || 1,
+          autoFixAvailable: issue.autoFixAvailable || false,
+        })
+        .returning();
+      
+      console.log(`✅ SEO issue created with ID: ${newIssue.id}`);
+      return newIssue;
+    } catch (error) {
+      console.error(`❌ Failed to create SEO issue:`, error);
+      throw error;
+    }
+  }
+  
 }
 
 export const storage = new DatabaseStorage();
