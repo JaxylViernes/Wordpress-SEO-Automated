@@ -1,7 +1,17 @@
 
 //shared/schema.ts
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, boolean, jsonb, index,numeric } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  varchar,
+  timestamp,
+  integer,
+  boolean,
+  jsonb,
+  index,
+  numeric
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -627,6 +637,126 @@ export const insertUserApiKeySchema = createInsertSchema(userApiKeys).pick({
   usageCount: true,
   lastUsed: true,
 });
+
+export const appliedFixes = pgTable(
+  "applied_fixes",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Issue identification
+    issueType: text("issue_type").notNull(), // missing_alt_text, poor_title_tag, etc.
+    issueTitle: text("issue_title").notNull(),
+    issueDescription: text("issue_description"),
+    issueHash: text("issue_hash").notNull(), // Unique identifier for this specific issue
+    
+    // Fix details
+    fixType: text("fix_type").notNull(),
+    fixDescription: text("fix_description").notNull(),
+    fixSuccess: boolean("fix_success").notNull(),
+    fixError: text("fix_error"),
+    
+    // Content affected
+    wordpressPostId: integer("wordpress_post_id"),
+    elementPath: text("element_path"), // CSS selector or similar
+    beforeValue: text("before_value"),
+    afterValue: text("after_value"),
+    
+    // Fix context
+    fixBatchId: varchar("fix_batch_id"), // Groups fixes from the same AI fix run
+    aiModel: text("ai_model"),
+    scoreBefore: integer("score_before"),
+    scoreAfter: integer("score_after"),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_applied_fixes_user_website").on(table.userId, table.websiteId),
+    index("idx_applied_fixes_issue_hash").on(table.issueHash),
+    index("idx_applied_fixes_batch").on(table.fixBatchId),
+  ]
+);
+
+export const seoIssueStatuses = pgTable(
+  "seo_issue_statuses",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Issue identification
+    issueHash: text("issue_hash").notNull().unique(), // Consistent hash for the same issue
+    issueType: text("issue_type").notNull(), // missing_alt_text, poor_title_tag, etc.
+    issueTitle: text("issue_title").notNull(),
+    issueDescription: text("issue_description"),
+    issueSeverity: text("issue_severity").notNull(), // critical, warning, info
+    
+    // Status tracking
+    status: text("status").notNull().default("open"), // open, in_progress, fixed, ignored, cannot_fix
+    statusReason: text("status_reason"), // Why it's ignored/cannot be fixed
+    
+    // Fix attempts
+    fixAttempts: integer("fix_attempts").notNull().default(0),
+    lastFixAttempt: timestamp("last_fix_attempt"),
+    lastFixError: text("last_fix_error"),
+    
+    // Resolution details
+    resolvedAt: timestamp("resolved_at"),
+    resolvedBy: text("resolved_by"), // 'ai_fix', 'manual', 'auto_resolved'
+    resolutionNotes: text("resolution_notes"),
+    
+    // Context
+    firstDetected: timestamp("first_detected").notNull().defaultNow(),
+    lastDetected: timestamp("last_detected").notNull().defaultNow(),
+    detectionCount: integer("detection_count").notNull().default(1),
+    
+    // Associated data
+    wordpressPostId: integer("wordpress_post_id"),
+    elementPath: text("element_path"),
+    currentValue: text("current_value"),
+    recommendedValue: text("recommended_value"),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_seo_issue_statuses_user_website").on(table.userId, table.websiteId),
+    index("idx_seo_issue_statuses_hash").on(table.issueHash),
+    index("idx_seo_issue_statuses_status").on(table.status),
+    index("idx_seo_issue_statuses_type").on(table.issueType),
+  ]
+);
+
+// Add insert schema
+export const insertSeoIssueStatusSchema = createInsertSchema(seoIssueStatuses).pick({
+  websiteId: true,
+  issueHash: true,
+  issueType: true,
+  issueTitle: true,
+  issueDescription: true,
+  issueSeverity: true,
+  status: true,
+  statusReason: true,
+  fixAttempts: true,
+  lastFixAttempt: true,
+  lastFixError: true,
+  resolvedAt: true,
+  resolvedBy: true,
+  resolutionNotes: true,
+  firstDetected: true,
+  lastDetected: true,
+  detectionCount: true,
+  wordpressPostId: true,
+  elementPath: true,
+  currentValue: true,
+  recommendedValue: true,
+});
+
+
+export type InsertSeoIssueStatus = z.infer<typeof insertSeoIssueStatusSchema>;
+export type SeoIssueStatus = typeof seoIssueStatuses.$inferSelect;
+
 
 // Add this at the bottom of your schema.ts file
 // Make sure you have imported 'numeric' from "drizzle-orm/pg-core" at the top

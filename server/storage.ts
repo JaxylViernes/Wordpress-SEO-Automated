@@ -525,6 +525,7 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(contentSchedule.scheduledDate));
   }
 
+
   // async createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule> {
   //   const [scheduleRecord] = await db
   //     .insert(contentSchedule)
@@ -1707,7 +1708,222 @@ async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Pro
 
   // Note: createContentSchedule and createActivityLog already exist in your code
   
-  
+
+
+
+  //seo tracking
+  async createSeoIssue(issue: InsertSeoIssue): Promise<SeoIssue> {
+    const [newIssue] = await db
+      .insert(seoIssues)
+      .values({
+        ...issue,
+        status: issue.status || 'open',
+        priority: issue.priority || 5,
+        affectedPages: issue.affectedPages || 1,
+        autoFixAvailable: issue.autoFixAvailable || false,
+      })
+      .returning();
+    return newIssue;
+  }
+
+  async updateSeoIssueStatus(
+    issueId: string,
+    updates: Partial<{
+      status: SeoIssueStatus;
+      fixMethod: SeoIssueFixMethod;
+      fixedBy: string;
+      fixDescription: string;
+      verificationStatus: SeoIssueVerificationStatus;
+      priority: number;
+      metadata: any;
+    }>
+  ): Promise<SeoIssue | undefined> {
+    const updateData: any = {
+      ...updates,
+      updatedAt: new Date(),
+    };
+
+    // Set timestamps based on status changes
+    if (updates.status === 'fixed') {
+      updateData.fixedAt = new Date();
+      updateData.resolvedAt = new Date();
+      if (!updates.fixMethod) {
+        updateData.fixMethod = 'manual';
+      }
+    }
+
+    if (updates.verificationStatus === 'verified' || updates.verificationStatus === 'failed') {
+      updateData.verifiedAt = new Date();
+    }
+
+    const [issue] = await db
+      .update(seoIssues)
+      .set(updateData)
+      .where(eq(seoIssues.id, issueId))
+      .returning();
+    return issue;
+  }
+
+  async getSeoIssuesByWebsite(
+    websiteId: string,
+    filters?: {
+      status?: SeoIssueStatus;
+      severity?: SeoIssueSeverity;
+      category?: string;
+      assignedTo?: string;
+    }
+  ): Promise<SeoIssue[]> {
+    let query = db
+      .select()
+      .from(seoIssues)
+      .where(eq(seoIssues.websiteId, websiteId));
+
+    if (filters?.status) {
+      query = query.where(eq(seoIssues.status, filters.status));
+    }
+
+    if (filters?.severity) {
+      query = query.where(eq(seoIssues.severity, filters.severity));
+    }
+
+    if (filters?.category) {
+      query = query.where(eq(seoIssues.issueCategory, filters.category));
+    }
+
+    return query.orderBy(desc(seoIssues.priority), desc(seoIssues.lastDetected));
+  }
+
+  async getSeoIssueById(issueId: string): Promise<SeoIssue | undefined> {
+    const [issue] = await db
+      .select()
+      .from(seoIssues)
+      .where(eq(seoIssues.id, issueId));
+    return issue;
+  }
+
+  async upsertSeoIssue(
+    websiteId: string,
+    userId: string,
+    seoReportId: string,
+    issueData: any
+  ): Promise<SeoIssue> {
+    const issueHash = issueData.metadata?.issueHash;
+    
+    if (!issueHash) {
+      // Create new issue
+      return this.createSeoIssue({
+        userId,
+        websiteId,
+        seoReportId,
+        issueType: issueData.issueType,
+        issueCategory: issueData.issueCategory,
+        severity: issueData.severity,
+        title: issueData.title,
+        description: issueData.description,
+        affectedElement: issueData.affectedElement,
+        affectedPages: issueData.affectedPages,
+        autoFixAvailable: issueData.autoFixAvailable,
+        metadata: issueData.metadata,
+        priority: issueData.priority,
+      });
+    }
+
+    // Check if issue already exists
+    const [existingIssue] = await db
+      .select()
+      .from(seoIssues)
+      .where(
+        and(
+          eq(seoIssues.websiteId, websiteId),
+          sql`${seoIssues.metadata}->>'issueHash' = ${issueHash}`
+        )
+      );
+
+    if (existingIssue) {
+      // Update existing issue
+      const [updated] = await db
+        .update(seoIssues)
+        .set({
+          seoReportId,
+          lastDetected: new Date(),
+          occurrenceCount: existingIssue.occurrenceCount + 1,
+          affectedPages: issueData.affectedPages,
+          priority: issueData.priority,
+          metadata: {
+            ...existingIssue.metadata,
+            ...issueData.metadata,
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(seoIssues.id, existingIssue.id))
+        .returning();
+      return updated;
+    } else {
+      // Create new issue
+      return this.createSeoIssue({
+        userId,
+        websiteId,
+        seoReportId,
+        issueType: issueData.issueType,
+        issueCategory: issueData.issueCategory,
+        severity: issueData.severity,
+        title: issueData.title,
+        description: issueData.description,
+        affectedElement: issueData.affectedElement,
+        affectedPages: issueData.affectedPages,
+        autoFixAvailable: issueData.autoFixAvailable,
+        metadata: issueData.metadata,
+        priority: issueData.priority,
+      });
+    }
+  }
+
+  async getSeoIssueStats(websiteId: string): Promise<{
+    total: number;
+    byStatus: Record<SeoIssueStatus, number>;
+    bySeverity: Record<SeoIssueSeverity, number>;
+    byCategory: Record<string, number>;
+    autoFixableCount: number;
+    averagePriority: number;
+  }> {
+    const issues = await this.getSeoIssuesByWebsite(websiteId);
+    
+    const byStatus = {
+      open: 0,
+      in_progress: 0,
+      fixed: 0,
+      ignored: 0,
+      needs_verification: 0,
+    } as Record<SeoIssueStatus, number>;
+
+    const bySeverity = {
+      critical: 0,
+      warning: 0,
+      info: 0,
+    } as Record<SeoIssueSeverity, number>;
+
+    const byCategory: Record<string, number> = {};
+    let autoFixableCount = 0;
+    let totalPriority = 0;
+
+    issues.forEach(issue => {
+      byStatus[issue.status]++;
+      bySeverity[issue.severity]++;
+      byCategory[issue.issueCategory] = (byCategory[issue.issueCategory] || 0) + 1;
+      
+      if (issue.autoFixAvailable) autoFixableCount++;
+      totalPriority += issue.priority;
+    });
+
+    return {
+      total: issues.length,
+      byStatus,
+      bySeverity,
+      byCategory,
+      autoFixableCount,
+      averagePriority: issues.length > 0 ? Math.round(totalPriority / issues.length) : 0,
+    };
+  }
 }
 
 export const storage = new DatabaseStorage();
