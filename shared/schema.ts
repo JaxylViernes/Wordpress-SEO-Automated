@@ -152,6 +152,9 @@ export const seoReports = pgTable(
     recommendations: jsonb("recommendations").notNull().default([]),
     pageSpeedScore: integer("page_speed_score"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+     hasTrackedIssues: boolean("has_tracked_issues").default(false),
+    fixableIssuesCount: integer("fixable_issues_count").default(0),
+    criticalIssuesCount: integer("critical_issues_count").default(0),
   },
   (table) => [index("idx_seo_reports_user_id").on(table.userId)]
 );
@@ -845,6 +848,116 @@ export const insertAutoScheduleSchema = createInsertSchema(autoSchedules).pick({
   maxMonthlyPosts: true,
   // userId will be added automatically in the backend
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+export const seoIssueTracking = pgTable(
+  "seo_issue_tracking",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id, { onDelete: "cascade" }),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    
+    // Issue identification
+    issueType: varchar("issue_type", { length: 100 }).notNull(),
+    issueTitle: varchar("issue_title", { length: 500 }).notNull(),
+    issueDescription: text("issue_description"),
+    severity: text("severity", { enum: ['critical', 'warning', 'info'] }).notNull().default('warning'),
+    status: text("status", { enum: ['detected', 'fixing', 'fixed', 'resolved', 'reappeared'] }).notNull().default('detected'),
+    autoFixAvailable: boolean("auto_fix_available").notNull().default(false),
+    
+    // Timestamps
+    detectedAt: timestamp("detected_at").notNull().defaultNow(),
+    fixedAt: timestamp("fixed_at"),
+    resolvedAt: timestamp("resolved_at"),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    
+    // Fix details
+    fixMethod: text("fix_method", { enum: ['ai_automatic', 'ai_iterative', 'manual'] }),
+    fixSessionId: varchar("fix_session_id", { length: 255 }),
+    fixBefore: text("fix_before"),
+    fixAfter: text("fix_after"),
+    aiModel: varchar("ai_model", { length: 100 }),
+    tokensUsed: integer("tokens_used"),
+    
+    // Element details
+    elementPath: text("element_path"),
+    currentValue: text("current_value"),
+    recommendedValue: text("recommended_value"),
+    
+    // Resolution details
+    resolvedBy: text("resolved_by"), // 'ai_fix', 'manual', 'auto_resolved'
+    resolutionNotes: text("resolution_notes"),
+    
+    // Metadata stored as JSONB for flexibility
+    metadata: jsonb("metadata").default({}),
+    
+    // Audit timestamps
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_seo_issue_tracking_website_user").on(table.websiteId, table.userId),
+    index("idx_seo_issue_tracking_status").on(table.status),
+    index("idx_seo_issue_tracking_issue_type").on(table.issueType),
+    index("idx_seo_issue_tracking_severity").on(table.severity),
+    index("idx_seo_issue_tracking_detected_at").on(table.detectedAt.desc()),
+    index("idx_seo_issue_tracking_last_seen_at").on(table.lastSeenAt.desc()),
+    index("idx_seo_issue_tracking_auto_fix").on(table.autoFixAvailable),
+    index("idx_seo_issue_tracking_website_status_type").on(table.websiteId, table.status, table.issueType),
+  ]
+);
+
+// Add insert schema
+export const insertSeoIssueTrackingSchema = createInsertSchema(seoIssueTracking).pick({
+  websiteId: true,
+  issueType: true,
+  issueTitle: true,
+  issueDescription: true,
+  severity: true,
+  status: true,
+  autoFixAvailable: true,
+  detectedAt: true,
+  fixedAt: true,
+  resolvedAt: true,
+  lastSeenAt: true,
+  fixMethod: true,
+  fixSessionId: true,
+  fixBefore: true,
+  fixAfter: true,
+  aiModel: true,
+  tokensUsed: true,
+  elementPath: true,
+  currentValue: true,
+  recommendedValue: true,
+  resolvedBy: true,
+  resolutionNotes: true,
+  metadata: true,
+});
+
+// Add type definitions
+export type InsertSeoIssueTracking = z.infer<typeof insertSeoIssueTrackingSchema>;
+export type SeoIssueTracking = typeof seoIssueTracking.$inferSelect;
+
+
 
 // Types for auto schedules
 export type InsertAutoSchedule = z.infer<typeof insertAutoScheduleSchema>;

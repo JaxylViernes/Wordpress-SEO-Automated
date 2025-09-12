@@ -2140,77 +2140,82 @@ app.post("/api/system/publish-scheduled-content", async (req: Request, res: Resp
   });
 
   app.post("/api/user/websites/:id/seo-analysis", requireAuth, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = req.user!.id;
-      const { targetKeywords } = req.body;
-      
-      const website = await storage.getUserWebsite(req.params.id, userId);
-      if (!website) {
-        res.status(404).json({ message: "Website not found or access denied" });
-        return;
-      }
-
-      console.log(`🔍 Starting SEO analysis for website: ${website.name} (${website.url})`);
-
-      const analysis = await seoService.analyzeWebsite(
-        website.url, 
-        targetKeywords || []
-      );
-      
-      // Save the report
-      const report = await storage.createSeoReport({
-        userId,
-        websiteId: req.params.id,
-        score: analysis.score,
-        issues: analysis.issues,
-        recommendations: analysis.recommendations,
-        pageSpeedScore: analysis.pageSpeedScore
-      });
-
-      // Update website SEO score
-      await storage.updateWebsite(req.params.id, {
-        seoScore: analysis.score
-      });
-
-      // Log activity
-      await storage.createActivityLog({
-        userId,
-        websiteId: req.params.id,
-        type: "seo_analysis",
-        description: `SEO analysis completed for ${website.url} (Score: ${analysis.score}/100)`,
-        metadata: { 
-          reportId: report.id, 
-          score: analysis.score,
-          pageSpeedScore: analysis.pageSpeedScore,
-          issuesFound: analysis.issues?.length || 0
-        }
-      });
-
-      console.log(`✅ SEO analysis completed. Score: ${analysis.score}, Issues: ${analysis.issues.length}`);
-
-      res.json(analysis);
-    } catch (error) {
-      console.error("SEO analysis error:", error);
-      
-      let statusCode = 500;
-      let errorMessage = error instanceof Error ? error.message : "Failed to perform SEO analysis";
-      
-      if (error instanceof Error) {
-        if (error.message.includes('Cannot access website')) {
-          statusCode = 400;
-          errorMessage = `Website is not accessible: ${error.message}`;
-        } else if (error.message.includes('timeout')) {
-          statusCode = 408;
-          errorMessage = "Website took too long to respond. Please try again.";
-        }
-      }
-      
-      res.status(statusCode).json({ 
-        message: errorMessage,
-        error: 'SEO_ANALYSIS_FAILED'
-      });
+  try {
+    const userId = req.user!.id;
+    const websiteId = req.params.id; // Get the websiteId from params
+    const { targetKeywords } = req.body;
+    
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
     }
-  });
+
+    console.log(`🔍 Starting SEO analysis for website: ${website.name} (${website.url})`);
+
+    // FIXED: Pass userId and websiteId to enable issue tracking
+    const analysis = await seoService.analyzeWebsite(
+      website.url, 
+      targetKeywords || [],
+      userId,    // ← Add this parameter
+      websiteId  // ← Add this parameter  
+    );
+    
+    // Save the report (this will now work because userId/websiteId are provided)
+    const report = await storage.createSeoReport({
+      userId,
+      websiteId: websiteId,
+      score: analysis.score,
+      issues: analysis.issues,
+      recommendations: analysis.recommendations,
+      pageSpeedScore: analysis.pageSpeedScore
+    });
+
+    // Update website SEO score
+    await storage.updateWebsite(websiteId, {
+      seoScore: analysis.score
+    });
+
+    // Log activity
+    await storage.createActivityLog({
+      userId,
+      websiteId: websiteId,
+      type: "seo_analysis",
+      description: `SEO analysis completed for ${website.url} (Score: ${analysis.score}/100)`,
+      metadata: { 
+        reportId: report.id, 
+        score: analysis.score,
+        pageSpeedScore: analysis.pageSpeedScore,
+        issuesFound: analysis.issues?.length || 0,
+        issuesTracked: true // ← Add this flag
+      }
+    });
+
+    console.log(`✅ SEO analysis completed. Score: ${analysis.score}, Issues: ${analysis.issues.length}, Tracked: ${analysis.issues.length} issues`);
+
+    res.json(analysis);
+  } catch (error) {
+    console.error("SEO analysis error:", error);
+    
+    let statusCode = 500;
+    let errorMessage = error instanceof Error ? error.message : "Failed to perform SEO analysis";
+    
+    if (error instanceof Error) {
+      if (error.message.includes('Cannot access website')) {
+        statusCode = 400;
+        errorMessage = `Website is not accessible: ${error.message}`;
+      } else if (error.message.includes('timeout')) {
+        statusCode = 408;
+        errorMessage = "Website took too long to respond. Please try again.";
+      }
+    }
+    
+    res.status(statusCode).json({ 
+      message: errorMessage,
+      error: 'SEO_ANALYSIS_FAILED'
+    });
+  }
+});
 
   // Add this route to your routes.ts file, right after the existing AI fix routes
 
@@ -3599,6 +3604,169 @@ app.post("/api/auth/change-password", requireAuth, async (req: Request, res: Res
     res.status(500).json({ 
       message: "Failed to change password",
       error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+
+//SEO TRACKING
+app.get("/api/user/websites/:websiteId/detailed-seo", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { websiteId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
+
+    // Validate website ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+
+    console.log(`Getting detailed SEO data for website ${websiteId}`);
+
+    // Get detailed SEO data including tracked issues
+    const detailedData = await seoService.getDetailedSeoData(websiteId, userId);
+
+    res.json(detailedData);
+  } catch (error) {
+    console.error("Error getting detailed SEO data:", error);
+    res.status(500).json({ 
+      message: "Failed to get detailed SEO data",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+});
+
+// Add this endpoint to get tracked issues for a website
+app.get("/api/user/websites/:websiteId/tracked-issues", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { websiteId } = req.params;
+    const userId = req.user?.id;
+    const { status, autoFixableOnly, limit } = req.query;
+
+    if (!userId) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
+
+    // Validate website ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+
+    const options: any = {};
+    
+    if (status && typeof status === 'string') {
+      options.status = status.split(',');
+    }
+    
+    if (autoFixableOnly === 'true') {
+      options.autoFixableOnly = true;
+    }
+    
+    if (limit && !isNaN(Number(limit))) {
+      options.limit = Number(limit);
+    }
+
+    const trackedIssues = await storage.getTrackedSeoIssues(websiteId, userId, options);
+
+    res.json(trackedIssues);
+  } catch (error) {
+    console.error("Error getting tracked issues:", error);
+    res.status(500).json({ 
+      message: "Failed to get tracked issues",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+});
+
+// Add this endpoint to get issue tracking summary
+app.get("/api/user/websites/:websiteId/issue-summary", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { websiteId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
+
+    // Validate website ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+
+    const summary = await storage.getSeoIssueTrackingSummary(websiteId, userId);
+
+    res.json(summary);
+  } catch (error) {
+    console.error("Error getting issue summary:", error);
+    res.status(500).json({ 
+      message: "Failed to get issue summary",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+});
+
+// Add this endpoint to manually update issue status (for manual fixes)
+app.put("/api/user/tracked-issues/:issueId/status", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { issueId } = req.params;
+    const { status, resolutionNotes, fixMethod } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
+
+    // Validate that the issue belongs to the user
+    const trackedIssues = await storage.getTrackedSeoIssues("", userId, { limit: 1000 });
+    const issue = trackedIssues.find(i => i.id === issueId);
+    
+    if (!issue) {
+      res.status(404).json({ message: "Issue not found or access denied" });
+      return;
+    }
+
+    // Validate website ownership
+    const website = await storage.getUserWebsite(issue.websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+
+    const validStatuses = ['detected', 'fixing', 'fixed', 'resolved', 'reappeared'];
+    if (!validStatuses.includes(status)) {
+      res.status(400).json({ message: "Invalid status" });
+      return;
+    }
+
+    const updatedIssue = await storage.updateSeoIssueStatus(issueId, status, {
+      fixMethod: fixMethod || 'manual',
+      resolutionNotes
+    });
+
+    if (!updatedIssue) {
+      res.status(404).json({ message: "Issue not found" });
+      return;
+    }
+
+    res.json(updatedIssue);
+  } catch (error) {
+    console.error("Error updating issue status:", error);
+    res.status(500).json({ 
+      message: "Failed to update issue status",
+      error: error instanceof Error ? error.message : "Unknown error"
     });
   }
 });

@@ -24,6 +24,8 @@ import {
   Lightbulb,
   BarChart3,
   Wrench,
+  Settings,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,7 +59,48 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 
-// Helper function to format time ago
+// Constants
+const AI_FIXABLE_TITLES = [
+  "missing page title",
+  "title tag too long",
+  "title tag too short",
+  "missing meta description",
+  "meta description too long",
+  "meta description too short",
+  "missing h1 tag",
+  "multiple h1 tags",
+  "improper heading hierarchy",
+  "images missing alt text",
+  "low content quality",
+  "poor content readability",
+];
+
+// Helper Functions
+const getIssueStatusBadge = (status: string) => {
+  const configs = {
+    detected: {
+      variant: "destructive" as const,
+      icon: "🔍",
+      text: "New Issue",
+    },
+    reappeared: {
+      variant: "destructive" as const,
+      icon: "🔄",
+      text: "Reappeared",
+    },
+    fixing: { variant: "default" as const, icon: "⚙️", text: "Fixing..." },
+    fixed: { variant: "secondary" as const, icon: "✅", text: "Fixed" },
+    resolved: { variant: "secondary" as const, icon: "✅", text: "Resolved" },
+  };
+  return (
+    configs[status as keyof typeof configs] || {
+      variant: "outline" as const,
+      icon: "❓",
+      text: status,
+    }
+  );
+};
+
 const formatTimeAgo = (date: string) => {
   const now = new Date();
   const past = new Date(date);
@@ -137,6 +180,77 @@ const getKeywordDistributionColor = (distribution: string) => {
   }
 };
 
+//Fixables
+const getFixableIssuesOnly = (issues: any[]) => {
+  const AI_FIXABLE_TYPES = [
+    "missing page title",
+    "title tag too long",
+    "title tag too short",
+    "missing meta description",
+    "meta description too long",
+    "meta description too short",
+    "missing h1 tag",
+    "multiple h1 tags",
+    "improper heading hierarchy",
+    "images missing alt text",
+    "low content quality",
+    "poor content readability",
+  ];
+
+  return issues.filter((issue) =>
+    AI_FIXABLE_TYPES.some((type) =>
+      issue.title.toLowerCase().includes(type.toLowerCase())
+    )
+  );
+};
+
+const getFixableIssuesWithStatus = (issues: any[], trackedIssues: any[]) => {
+  const fixableIssues = getFixableIssuesOnly(issues);
+
+  return fixableIssues.map((issue) => {
+    // Find matching tracked issue with improved matching logic
+    const tracked = trackedIssues.find((t) => {
+      // First try exact title match
+      if (t.issueTitle === issue.title) return true;
+      
+      // Then try issue type matching
+      const mappedType = mapReportIssueToTrackingType(issue.title);
+      if (t.issueType === mappedType) return true;
+      
+      // Finally try partial title matching for common patterns
+      return t.issueTitle.toLowerCase().includes(issue.title.toLowerCase().substring(0, 20));
+    });
+
+    return {
+      ...issue,
+      trackingStatus: tracked?.status || "detected",
+      trackingInfo: tracked,
+      lastSeen: tracked?.lastSeenAt || tracked?.last_seen_at || new Date().toISOString(),
+      fixedAt: tracked?.fixedAt || tracked?.fixed_at,
+      detectedAt: tracked?.detectedAt || tracked?.detected_at,
+    };
+  });
+};
+
+// Helper function to map report issue titles to tracking types
+const mapReportIssueToTrackingType = (title: string): string => {
+  const titleLower = title.toLowerCase();
+
+  if (titleLower.includes("meta description")) return "missing_meta_description";
+  if (titleLower.includes("title tag")) return "poor_title_tag"; 
+  if (titleLower.includes("h1") || titleLower.includes("heading")) return "heading_structure";
+  if (titleLower.includes("alt text") || titleLower.includes("image")) return "missing_alt_text";
+  if (titleLower.includes("viewport")) return "missing_viewport_meta";
+  if (titleLower.includes("schema") || titleLower.includes("structured data")) return "missing_schema";
+  if (titleLower.includes("mobile") || titleLower.includes("responsive")) return "mobile_responsiveness";
+  if (titleLower.includes("content quality")) return "low_content_quality";
+  if (titleLower.includes("readability")) return "poor_readability";
+  if (titleLower.includes("e-a-t")) return "low_eat_score";
+  if (titleLower.includes("keyword")) return "keyword_optimization";
+
+  return "other";
+};
+
 export default function SEOAnalysis() {
   const [selectedWebsite, setSelectedWebsite] = useState<string>("");
   const [fixResult, setFixResult] = useState<any>(null);
@@ -175,14 +289,19 @@ export default function SEOAnalysis() {
     enabled: !!selectedWebsite,
   });
 
-  const { data: detailedAnalysis } = useQuery({
+  const latestReport = seoReports?.[0];
+
+  const { data: detailedAnalysis, isLoading: isDetailedLoading } = useQuery({
     queryKey: ["/api/seo-detailed", selectedWebsite],
     queryFn: () =>
       selectedWebsite
         ? api.getDetailedSeoData(selectedWebsite)
         : Promise.resolve(null),
-    enabled: !!selectedWebsite && !!seoReports?.[0],
+    enabled: !!selectedWebsite && !!latestReport,
   });
+
+  // Calculate current score
+  const currentScore = latestReport?.score || 0;
 
   const runAnalysis = useMutation({
     mutationFn: () => api.runSeoAnalysis(selectedWebsite),
@@ -457,6 +576,17 @@ export default function SEOAnalysis() {
     },
   });
 
+  // Helper functions
+  const getWebsiteName = (websiteId: string) => {
+    const website = websites?.find((w) => w.id === websiteId);
+    return website?.name || "Unknown Website";
+  };
+
+  const getWebsiteUrl = (websiteId: string) => {
+    const website = websites?.find((w) => w.id === websiteId);
+    return website?.url || "";
+  };
+
   // Iterative Fix Configuration Dialog Component
   const IterativeFixDialog = () => {
     const [config, setConfig] = useState({
@@ -467,7 +597,6 @@ export default function SEOAnalysis() {
       skipBackup: false,
     });
 
-    const currentScore = latestReport?.score || 0;
     const canImprove = currentScore < config.targetScore;
 
     return (
@@ -1065,18 +1194,6 @@ export default function SEOAnalysis() {
     );
   };
 
-  const getWebsiteName = (websiteId: string) => {
-    const website = websites?.find((w) => w.id === websiteId);
-    return website?.name || "Unknown Website";
-  };
-
-  const getWebsiteUrl = (websiteId: string) => {
-    const website = websites?.find((w) => w.id === websiteId);
-    return website?.url || "";
-  };
-
-  const latestReport = seoReports?.[0];
-
   return (
     <div className="py-6">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
@@ -1093,20 +1210,6 @@ export default function SEOAnalysis() {
           </div>
           <div className="mt-4 flex md:mt-0 md:ml-4 gap-2">
             <IterativeFixDialog />
-
-            {/* Dry Run */}
-            <Button
-              onClick={() => fixWithAIMutation.mutate(true)}
-              disabled={!selectedWebsite || fixWithAIMutation.isPending}
-              variant="outline"
-            >
-              {fixWithAIMutation.isPending ? (
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Eye className="w-4 h-4 mr-2" />
-              )}
-              {fixWithAIMutation.isPending ? "Running..." : "Preview AI Fix"}
-            </Button>
 
             {/* Fix with AI */}
             <Button
@@ -1391,17 +1494,6 @@ export default function SEOAnalysis() {
                       Apply These Fixes
                     </Button>
                   )}
-
-                  {!fixResult.dryRun && fixResult.stats.fixesSuccessful > 0 && (
-                    <Button
-                      onClick={() => runAnalysis.mutate()}
-                      disabled={runAnalysis.isPending}
-                      variant="outline"
-                    >
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      Re-run SEO Analysis
-                    </Button>
-                  )}
                 </div>
 
                 <Button
@@ -1547,117 +1639,441 @@ export default function SEOAnalysis() {
                     </p>
                   </CardContent>
                 </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <AlertTriangle className="w-5 h-5 mr-2" />
-                      Issues Found
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-bold text-gray-900">
-                      {(latestReport.issues as any[])?.length || 0}
-                    </div>
-                    <p className="text-sm text-gray-600 mt-2">
-                      Issues detected
-                    </p>
-                    <div className="flex space-x-1 mt-2">
-                      <Badge variant="destructive" className="text-xs">
-                        {(latestReport.issues as any[])?.filter(
-                          (i) => i.type === "critical"
-                        ).length || 0}{" "}
-                        Critical
-                      </Badge>
-                      <Badge variant="outline" className="text-xs">
-                        {(latestReport.issues as any[])?.filter(
-                          (i) => i.type === "warning"
-                        ).length || 0}{" "}
-                        Warnings
-                      </Badge>
-                    </div>
-                  </CardContent>
-                </Card>
               </div>
 
               {/* Detailed Analysis Tabs */}
-              <Tabs defaultValue="issues" className="space-y-6">
+              <Tabs defaultValue="history" className="space-y-6">
                 <TabsList className="grid w-full grid-cols-6">
-
-                  {/* <TabsTrigger value="technical">Technical</TabsTrigger> */}
-                  {/* <TabsTrigger value="issues">Issues & Fixes</TabsTrigger> */}
-                  
+                  <TabsTrigger value="issues">Issues & Fixes</TabsTrigger>
                   <TabsTrigger value="history">History</TabsTrigger>
                 </TabsList>
-                
-                {/* <TabsContent value="issues">
+
+                <TabsContent value="issues">
                   <Card>
                     <CardHeader>
-                      <CardTitle className="flex items-center">
-                        <AlertTriangle className="w-5 h-5 mr-2 text-red-500" />
-                        SEO Issues Found
+                      <CardTitle className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <Wrench className="w-5 h-5 mr-2 text-purple-600" />
+                          SEO Issues & AI Fixes
+                        </div>
+                        {/* Issue Summary Badges */}
+                        <div className="flex items-center space-x-2">
+                          {(() => {
+                            const allIssues = latestReport?.issues || [];
+                            const fixableIssues = getFixableIssuesWithStatus(
+                              allIssues,
+                              detailedAnalysis?.trackedIssues || []
+                            );
+                            const detectedCount = fixableIssues.filter((i) =>
+                              ["detected", "reappeared"].includes(
+                                i.trackingStatus
+                              )
+                            ).length;
+                            const fixedCount = fixableIssues.filter((i) =>
+                              ["fixed", "resolved"].includes(i.trackingStatus)
+                            ).length;
+                            const fixingCount = fixableIssues.filter(
+                              (i) => i.trackingStatus === "fixing"
+                            ).length;
+
+                            return (
+                              <>
+                                {detectedCount > 0 && (
+                                  <Badge
+                                    variant="destructive"
+                                    className="text-xs"
+                                  >
+                                    {detectedCount} Fixable
+                                  </Badge>
+                                )}
+                                {fixingCount > 0 && (
+                                  <Badge
+                                    variant="default"
+                                    className="text-xs animate-pulse"
+                                  >
+                                    <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                                    {fixingCount} Fixing
+                                  </Badge>
+                                )}
+                                {fixedCount > 0 && (
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs bg-green-100 text-green-800"
+                                  >
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    {fixedCount} Fixed
+                                  </Badge>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
                       </CardTitle>
                       <CardDescription>
-                        {detailedAnalysis?.hasAIAnalysis
-                          ? "AI-enhanced"
-                          : "Technical"}{" "}
-                        issues detected from website analysis
+                        Track SEO issues and their fix status. AI can
+                        automatically resolve technical issues.
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-4">
-                        {latestReport.issues &&
-                        latestReport.issues.length > 0 ? (
-                          (latestReport.issues as any[]).map((issue, index) => (
-                            <div
-                              key={index}
-                              className={`p-4 rounded-lg border ${getIssueColor(
-                                issue.type
-                              )}`}
-                            >
-                              <div className="flex items-start justify-between">
-                                <div className="flex items-start space-x-3">
-                                  {getIssueIcon(issue.type)}
-                                  <div className="flex-1">
-                                    <h4 className="font-medium">
-                                      {issue.title}
-                                    </h4>
-                                    <p className="text-sm mt-1 opacity-90">
-                                      {issue.description}
-                                    </p>
-                                    <div className="flex items-center space-x-4 mt-2">
-                                      <Badge
-                                        variant="outline"
-                                        className="text-xs"
-                                      >
-                                        {issue.type.toUpperCase()}
-                                      </Badge>
-                                      <span className="text-xs opacity-75">
-                                        {issue.affectedPages} page(s) affected
+                      <Tabs defaultValue="fixable" className="w-full">
+                        <TabsList className="grid w-full grid-cols-3">
+                          <TabsTrigger value="fixable">
+                            AI-Fixable Issues
+                          </TabsTrigger>
+                          <TabsTrigger value="manual">
+                            Manual Issues
+                          </TabsTrigger>
+                          <TabsTrigger value="resolved">
+                            Resolved Issues
+                          </TabsTrigger>
+                        </TabsList>
+
+                        {/* AI-Fixable Issues Tab */}
+                        <TabsContent value="fixable" className="space-y-4 mt-6">
+  {(() => {
+    const allIssues = latestReport?.issues || [];
+    const fixableIssues = getFixableIssuesWithStatus(
+      allIssues,
+      detailedAnalysis?.trackedIssues || []
+    );
+    
+    // Filter out already fixed/resolved issues
+    const activeFixableIssues = fixableIssues.filter((i) =>
+      !["fixed", "resolved"].includes(i.trackingStatus)
+    );
+
+    if (activeFixableIssues.length === 0) {
+      return (
+        <div className="text-center py-8">
+          <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
+          <h3 className="mt-2 text-sm font-medium text-gray-900">
+            No Active AI-Fixable Issues
+          </h3>
+          <p className="mt-1 text-sm text-gray-500">
+            All automatically fixable SEO issues have been resolved!
+          </p>
+        </div>
+      );
+    }
+
+    return activeFixableIssues.map((issue, index) => {
+                              const statusConfig = getIssueStatusBadge(
+                                issue.trackingStatus
+                              );
+
+                              return (
+                                <div
+                                  key={index}
+                                  className={`p-4 rounded-lg border ${getIssueColor(
+                                    issue.type
+                                  )} relative`}
+                                >
+                                  {/* Status indicator */}
+                                  <div className="absolute top-2 right-2">
+                                    <Badge
+                                      variant={statusConfig.variant}
+                                      className="text-xs"
+                                    >
+                                      <span className="mr-1">
+                                        {statusConfig.icon}
                                       </span>
+                                      {statusConfig.text}
+                                    </Badge>
+                                  </div>
+
+                                  <div className="flex items-start justify-between pr-20">
+                                    <div className="flex items-start space-x-3">
+                                      {getIssueIcon(issue.type)}
+                                      <div className="flex-1">
+                                        <div className="flex items-center space-x-2 mb-1">
+                                          <h4 className="font-medium">
+                                            {issue.title}
+                                          </h4>
+                                          <Badge
+                                            variant="outline"
+                                            className="text-xs bg-green-50 text-green-700 border-green-200"
+                                          >
+                                            <Zap className="w-3 h-3 mr-1" />
+                                            AI Fixable
+                                          </Badge>
+                                        </div>
+                                        <p className="text-sm mt-1 opacity-90">
+                                          {issue.description}
+                                        </p>
+
+                                        {/* Tracking Details */}
+                                        <div className="flex items-center space-x-4 mt-3">
+                                          <Badge
+                                            variant="outline"
+                                            className="text-xs"
+                                          >
+                                            {issue.type.toUpperCase()}
+                                          </Badge>
+                                          <span className="text-xs opacity-75">
+                                            {issue.affectedPages} page(s)
+                                            affected
+                                          </span>
+                                          {issue.lastSeen && (
+                                            <span className="text-xs text-gray-500">
+                                              Last seen:{" "}
+                                              {formatTimeAgo(issue.lastSeen)}
+                                            </span>
+                                          )}
+                                          {issue.trackingStatus ===
+                                            "reappeared" && (
+                                            <Badge
+                                              variant="destructive"
+                                              className="text-xs"
+                                            >
+                                              <AlertTriangle className="w-3 h-3 mr-1" />
+                                              Issue returned after fix
+                                            </Badge>
+                                          )}
+                                        </div>
+
+                                        {/* Fix History */}
+                                        {issue.trackingInfo?.metadata
+                                          ?.fixHistory && (
+                                          <details className="mt-3">
+                                            <summary className="text-xs cursor-pointer text-blue-600 hover:text-blue-800">
+                                              View Fix History
+                                            </summary>
+                                            <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
+                                              <pre className="whitespace-pre-wrap">
+                                                {JSON.stringify(
+                                                  issue.trackingInfo.metadata
+                                                    .fixHistory,
+                                                  null,
+                                                  2
+                                                )}
+                                              </pre>
+                                            </div>
+                                          </details>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Progress indicator for fixing status */}
+                                  {issue.trackingStatus === "fixing" && (
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                      <div className="flex items-center space-x-2">
+                                        <RefreshCw className="w-4 h-4 text-blue-500 animate-spin" />
+                                        <div className="flex-1">
+                                          <div className="flex justify-between text-xs mb-1">
+                                            <span>Applying AI fix...</span>
+                                            <span>In progress</span>
+                                          </div>
+                                          <div className="w-full bg-gray-200 rounded-full h-2">
+                                            <div
+                                              className="bg-blue-500 h-2 rounded-full animate-pulse"
+                                              style={{ width: "60%" }}
+                                            ></div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            });
+                          })()}
+                        </TabsContent>
+
+                        {/* Manual Issues Tab */}
+                        <TabsContent value="manual" className="space-y-4 mt-6">
+                          {(() => {
+                            const allIssues = latestReport?.issues || [];
+                            const manualIssues = allIssues.filter(
+                              (issue) =>
+                                !AI_FIXABLE_TITLES.some((type) =>
+                                  issue.title
+                                    .toLowerCase()
+                                    .includes(type.toLowerCase())
+                                )
+                            );
+
+                            if (manualIssues.length === 0) {
+                              return (
+                                <div className="text-center py-8">
+                                  <CheckCircle className="mx-auto h-12 w-12 text-blue-500" />
+                                  <h3 className="mt-2 text-sm font-medium text-gray-900">
+                                    No Manual Issues Found
+                                  </h3>
+                                  <p className="mt-1 text-sm text-gray-500">
+                                    All detected issues can be automatically
+                                    fixed by AI.
+                                  </p>
+                                </div>
+                              );
+                            }
+
+                            return manualIssues.map((issue, index) => (
+                              <div
+                                key={index}
+                                className={`p-4 rounded-lg border ${getIssueColor(
+                                  issue.type
+                                )}`}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-start space-x-3">
+                                    {getIssueIcon(issue.type)}
+                                    <div className="flex-1">
+                                      <div className="flex items-center space-x-2 mb-1">
+                                        <h4 className="font-medium">
+                                          {issue.title}
+                                        </h4>
+                                        <Badge
+                                          variant="outline"
+                                          className="text-xs bg-orange-50 text-orange-700 border-orange-200"
+                                        >
+                                          <Settings className="w-3 h-3 mr-1" />
+                                          Manual Fix Required
+                                        </Badge>
+                                      </div>
+                                      <p className="text-sm mt-1 opacity-90">
+                                        {issue.description}
+                                      </p>
+                                      <div className="flex items-center space-x-4 mt-2">
+                                        <Badge
+                                          variant="outline"
+                                          className="text-xs"
+                                        >
+                                          {issue.type.toUpperCase()}
+                                        </Badge>
+                                        <span className="text-xs opacity-75">
+                                          {issue.affectedPages} page(s) affected
+                                        </span>
+                                        <span className="text-xs text-orange-600 font-medium">
+                                          🔧 Manual fix needed
+                                        </span>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="text-center py-8">
-                            <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
-                            <h3 className="mt-2 text-sm font-medium text-gray-900">
-                              No issues found
-                            </h3>
-                            <p className="mt-1 text-sm text-gray-500">
-                              Your website is performing well!
-                            </p>
+                            ));
+                          })()}
+                        </TabsContent>
+
+                        {/* Resolved Issues Tab */}
+                        <TabsContent
+                          value="resolved"
+                          className="space-y-4 mt-6"
+                        >
+                          {(() => {
+                            const allIssues = latestReport?.issues || [];
+                            const fixableIssues = getFixableIssuesWithStatus(
+                              allIssues,
+                              detailedAnalysis?.trackedIssues || []
+                            );
+                            const resolvedIssues = fixableIssues.filter((i) =>
+                              ["fixed", "resolved"].includes(i.trackingStatus)
+                            );
+
+                            if (resolvedIssues.length === 0) {
+                              return (
+                                <div className="text-center py-8">
+                                  <Clock className="mx-auto h-12 w-12 text-gray-400" />
+                                  <h3 className="mt-2 text-sm font-medium text-gray-900">
+                                    No Resolved Issues Yet
+                                  </h3>
+                                  <p className="mt-1 text-sm text-gray-500">
+                                    Issues that have been fixed will appear
+                                    here.
+                                  </p>
+                                </div>
+                              );
+                            }
+
+                            return resolvedIssues.map((issue, index) => {
+                              const statusConfig = getIssueStatusBadge(
+                                issue.trackingStatus
+                              );
+
+                              return (
+                                <div
+                                  key={index}
+                                  className="p-4 rounded-lg border border-green-200 bg-green-50"
+                                >
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex items-start space-x-3">
+                                      <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                                      <div className="flex-1">
+                                        <div className="flex items-center space-x-2 mb-1">
+                                          <h4 className="font-medium text-green-900">
+                                            {issue.title}
+                                          </h4>
+                                          <Badge
+                                            variant={statusConfig.variant}
+                                            className="text-xs"
+                                          >
+                                            <span className="mr-1">
+                                              {statusConfig.icon}
+                                            </span>
+                                            {statusConfig.text}
+                                          </Badge>
+                                        </div>
+                                        <p className="text-sm mt-1 text-green-800 opacity-90">
+                                          {issue.description}
+                                        </p>
+                                        <div className="flex items-center space-x-4 mt-2">
+                                          {issue.fixedAt && (
+                                            <span className="text-xs text-green-600">
+                                              Fixed:{" "}
+                                              {formatTimeAgo(issue.fixedAt)}
+                                            </span>
+                                          )}
+                                          {issue.trackingInfo?.fix_method && (
+                                            <Badge
+                                              variant="outline"
+                                              className="text-xs bg-green-100 text-green-800"
+                                            >
+                                              {issue.trackingInfo.fix_method ===
+                                              "ai_automatic"
+                                                ? "🤖 AI Fixed"
+                                                : issue.trackingInfo
+                                                    .fix_method ===
+                                                  "ai_iterative"
+                                                ? "🧠 Smart AI"
+                                                : "👤 Manual"}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </TabsContent>
+                      </Tabs>
+
+                      {/* Action Section */}
+                      <div className="mt-6 pt-4 border-t border-gray-200">
+                        <div className="flex justify-between items-center">
+                          <div className="text-sm text-gray-600">
+                            Issues are automatically tracked and updated when
+                            fixes are applied or when new analysis detects
+                            changes.
                           </div>
-                        )}
+                          <div className="flex space-x-2">
+                            <Button
+                              onClick={() => runAnalysis.mutate()}
+                              disabled={runAnalysis.isPending}
+                              variant="outline"
+                              size="sm"
+                            >
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                              Refresh Issues
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
-                </TabsContent> */}
-
-               
+                </TabsContent>
 
                 <TabsContent value="history">
                   <Card>

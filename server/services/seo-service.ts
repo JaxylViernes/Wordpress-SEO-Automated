@@ -205,188 +205,375 @@ export class EnhancedSEOService {
     }
   }
   async analyzeWebsite(
-    url: string,
-    targetKeywords?: string[],
-    userId?: string,
-    websiteId?: string // Add websiteId parameter
-  ): Promise<EnhancedSEOAnalysisResult> {
-    try {
-      console.log(
-        `Starting enhanced SEO analysis for: ${url}${
-          userId ? ` (user: ${userId})` : ""
-        }${websiteId ? ` (website: ${websiteId})` : ""}`
-      );
+  url: string,
+  targetKeywords?: string[],
+  userId?: string,
+  websiteId?: string
+): Promise<EnhancedSEOAnalysisResult> {
+  try {
+    console.log(
+      `Starting enhanced SEO analysis for: ${url}${
+        userId ? ` (user: ${userId})` : ""
+      }${websiteId ? ` (website: ${websiteId})` : ""}`
+    );
 
-      const normalizedUrl = this.normalizeUrl(url);
+    const normalizedUrl = this.normalizeUrl(url);
 
-      // Perform basic technical analysis first
-      const [pageContent, pageSpeedScore, technicalDetails] = await Promise.all(
-        [
-          this.fetchPageContent(normalizedUrl),
-          this.getPageSpeedScore(normalizedUrl, userId),
-          this.performTechnicalAnalysis(normalizedUrl),
-        ]
-      );
+    // Perform basic technical analysis first
+    const [pageContent, pageSpeedScore, technicalDetails] = await Promise.all([
+      this.fetchPageContent(normalizedUrl),
+      this.getPageSpeedScore(normalizedUrl, userId),
+      this.performTechnicalAnalysis(normalizedUrl),
+    ]);
 
-      // Extract text content for AI analysis
-      const textContent = this.extractTextContent(pageContent);
-      const pageTitle = cheerio.load(pageContent)("title").text();
-      const metaDescription =
-        cheerio.load(pageContent)('meta[name="description"]').attr("content") ||
-        "";
+    // Extract text content for AI analysis
+    const textContent = this.extractTextContent(pageContent);
+    const pageTitle = cheerio.load(pageContent)("title").text();
+    const metaDescription =
+      cheerio.load(pageContent)('meta[name="description"]').attr("content") || "";
 
-      // Perform AI-powered content analysis (if user has AI keys)
-      const contentAnalysis = await this.performAIContentAnalysis(
-        textContent,
-        pageTitle,
-        metaDescription,
-        targetKeywords || [],
-        userId
-      );
+    // Perform AI-powered content analysis (if user has AI keys)
+    const contentAnalysis = await this.performAIContentAnalysis(
+      textContent,
+      pageTitle,
+      metaDescription,
+      targetKeywords || [],
+      userId
+    );
 
-      // Generate issues based on both technical and content analysis
-      const issues = this.analyzeForIssues(
-        technicalDetails,
-        pageContent,
-        contentAnalysis
-      );
-      const recommendations = this.generateEnhancedRecommendations(
-        issues,
-        technicalDetails,
-        contentAnalysis
-      );
-      const score = this.calculateEnhancedScore(
-        issues,
-        pageSpeedScore,
-        technicalDetails,
-        contentAnalysis
-      );
+    // Generate issues based on both technical and content analysis
+    const issues = this.analyzeForIssues(
+      technicalDetails,
+      pageContent,
+      contentAnalysis
+    );
+    const recommendations = this.generateEnhancedRecommendations(
+      issues,
+      technicalDetails,
+      contentAnalysis
+    );
+    const score = this.calculateEnhancedScore(
+      issues,
+      pageSpeedScore,
+      technicalDetails,
+      contentAnalysis
+    );
 
-      // Store the SEO report if we have both userId and websiteId
-      let seoReportId = "";
-      if (userId && websiteId) {
-        try {
-          // Validate that the website exists and belongs to the user
-          const website = await storage.getUserWebsite(websiteId, userId);
-          if (!website) {
-            throw new Error(
-              `Website ${websiteId} not found or access denied for user ${userId}`
-            );
-          }
-
-          const seoReport = await storage.createSeoReport({
-            userId,
-            websiteId, // Now properly using the passed websiteId
-            score,
-            issues: issues.map((i) => ({
-              type: i.type,
-              title: i.title,
-              description: i.description,
-              affectedPages: i.affectedPages,
-              autoFixAvailable: i.autoFixAvailable,
-            })),
-            recommendations,
-            pageSpeedScore,
-            metadata: {
-              technicalDetails,
-              contentAnalysis,
-              analysisUrl: url,
-              targetKeywords,
-            },
-          });
-          seoReportId = seoReport.id;
-
-          // Update the website's SEO score
-          await storage.updateWebsite(websiteId, {
-            seoScore: score,
-            updatedAt: new Date(),
-          });
-
-          // Store individual tracked issues
-          await this.storeTrackedIssues(issues, userId, websiteId, seoReportId);
-
-          console.log(`SEO report created with ID: ${seoReportId}`);
-        } catch (error) {
-          console.error("Failed to store SEO report:", error);
-          // Don't throw here - return the analysis even if storage fails
-          console.log("Continuing with analysis despite storage failure");
+    // Store the SEO report if we have both userId and websiteId
+    let seoReportId = "";
+    if (userId && websiteId) {
+      try {
+        // Validate that the website exists and belongs to the user
+        const website = await storage.getUserWebsite(websiteId, userId);
+        if (!website) {
+          throw new Error(
+            `Website ${websiteId} not found or access denied for user ${userId}`
+          );
         }
-      } else {
-        console.log(
-          "Skipping SEO report storage - missing userId or websiteId"
-        );
+
+        const seoReport = await storage.createSeoReport({
+          userId,
+          websiteId,
+          score,
+          issues: issues.map((i) => ({
+            type: i.type,
+            title: i.title,
+            description: i.description,
+            affectedPages: i.affectedPages,
+            autoFixAvailable: i.autoFixAvailable,
+          })),
+          recommendations,
+          pageSpeedScore,
+          metadata: {
+            technicalDetails,
+            contentAnalysis,
+            analysisUrl: url,
+            targetKeywords,
+            aiAnalysisPerformed: !!userId,
+            hasTrackedIssues: true,
+            trackingEnabled: true
+          },
+        });
+        seoReportId = seoReport.id;
+
+        // Update the website's SEO score
+        await storage.updateWebsite(websiteId, {
+          seoScore: score,
+          updatedAt: new Date(),
+        });
+
+        // NEW: Track individual issues
+        await this.storeTrackedIssues(issues, userId, websiteId, seoReportId);
+
+        console.log(`SEO report created with ID: ${seoReportId} and issues tracked`);
+      } catch (error) {
+        console.error("Failed to store SEO report or track issues:", error);
+        console.log("Continuing with analysis despite storage failure");
       }
-
-      console.log(`Enhanced SEO analysis completed. Score: ${score}`);
-
-      return {
-        score,
-        issues,
-        recommendations,
-        pageSpeedScore,
-        technicalDetails,
-        contentAnalysis,
-      };
-    } catch (error) {
-      console.error("Enhanced SEO analysis failed:", error);
-      throw new Error(`Failed to analyze website SEO: ${error.message}`);
+    } else {
+      console.log("Skipping SEO report storage and issue tracking - missing userId or websiteId");
     }
+
+    console.log(`Enhanced SEO analysis completed. Score: ${score}`);
+
+    return {
+      score,
+      issues,
+      recommendations,
+      pageSpeedScore,
+      technicalDetails,
+      contentAnalysis,
+    };
+  } catch (error) {
+    console.error("Enhanced SEO analysis failed:", error);
+    throw new Error(`Failed to analyze website SEO: ${error.message}`);
+  }
+}
+
+
+// Add method to get detailed SEO data including tracked issues (UPDATED)
+async getDetailedSeoData(
+  websiteId: string,
+  userId: string
+): Promise<{
+  hasAIAnalysis: boolean;
+  trackedIssues: any[];
+  issuesSummary: any;
+  recentActivity: any[];
+}> {
+  try {
+    // Get the latest SEO report
+    const seoReports = await storage.getSeoReportsByWebsite(websiteId);
+    const latestReport = seoReports[0];
+    
+    const hasAIAnalysis = latestReport?.metadata?.aiAnalysisPerformed || false;
+    
+    // Get tracked issues - this already returns properly formatted data from storage
+    const trackedIssues = await storage.getTrackedSeoIssues(websiteId, userId, {
+      limit: 50 // Limit to recent issues
+    });
+    
+    // Get summary statistics
+    const issuesSummary = await storage.getSeoIssueTrackingSummary(websiteId, userId);
+    
+    // Get recent activity (last 10 status changes from metadata)
+    const recentActivity = trackedIssues
+      .filter(issue => issue.metadata?.statusHistory)
+      .flatMap(issue => 
+        (issue.metadata.statusHistory || []).map((history: any) => ({
+          ...history,
+          issueTitle: issue.issueTitle,
+          issueType: issue.issueType,
+          issueId: issue.id
+        }))
+      )
+      .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 10);
+
+    console.log(`Retrieved ${trackedIssues.length} tracked issues for website ${websiteId}`);
+
+    return {
+      hasAIAnalysis,
+      trackedIssues,
+      issuesSummary,
+      recentActivity
+    };
+  } catch (error) {
+    console.error('Error getting detailed SEO data:', error);
+    return {
+      hasAIAnalysis: false,
+      trackedIssues: [],
+      issuesSummary: {
+        totalIssues: 0,
+        detected: 0,
+        fixing: 0,
+        fixed: 0,
+        resolved: 0,
+        reappeared: 0,
+        autoFixable: 0,
+        completionPercentage: 0,
+        lastActivity: null
+      },
+      recentActivity: []
+    };
+  }
+}
+
+//seo-service.ts - Update storeTrackedIssues to prevent duplicates of already fixed issues
+
+private async storeTrackedIssues(
+  issues: SEOIssue[],
+  userId: string,
+  websiteId: string,
+  seoReportId: string
+): Promise<void> {
+  if (!userId || !websiteId) {
+    console.log('Skipping issue tracking - missing userId or websiteId');
+    return;
   }
 
-  private async storeTrackedIssues(
-    issues: SEOIssue[],
-    userId: string,
-    websiteId: string,
-    seoReportId: string
-  ): Promise<void> {
+  console.log(`Tracking ${issues.length} SEO issues for website ${websiteId}`);
+
+  // Get existing tracked issues to avoid creating duplicates of fixed issues
+  const existingTrackedIssues = await storage.getTrackedSeoIssues(websiteId, userId, {
+    status: ['fixed', 'resolved'], // Get already fixed issues
+    limit: 100
+  });
+
+  const AI_FIXABLE_TYPES = [
+    'missing page title',
+    'title tag too long', 
+    'title tag too short',
+    'missing meta description',
+    'meta description too long',
+    'missing h1 tag',
+    'multiple h1 tags', 
+    'improper heading hierarchy',
+    'images missing alt text',
+    'low content quality',
+    'poor readability'
+  ];
+
+  try {
+    // Process each issue for tracking
     for (const issue of issues) {
       try {
-        await storage.createSeoIssue({
+        // Check if this issue is already fixed
+        const issueType = this.mapIssueToTrackingType(issue.title);
+        const alreadyFixed = existingTrackedIssues.some(existing => 
+          existing.issueType === issueType && 
+          ['fixed', 'resolved'].includes(existing.status)
+        );
+
+        if (alreadyFixed) {
+          console.log(`Skipping issue "${issue.title}" - already fixed`);
+          continue; // Skip this issue, don't re-track it
+        }
+
+        // Determine if this issue is AI-fixable
+        const isAutoFixable = AI_FIXABLE_TYPES.some(type => 
+          issue.title.toLowerCase().includes(type.toLowerCase())
+        );
+
+        // Create or update the tracked issue (will only update if not already fixed)
+        await storage.createOrUpdateSeoIssue({
           userId,
           websiteId,
           seoReportId,
-          issueType: this.mapIssueToType(issue.title),
-          issueCategory: this.categorizeIssue(issue.title),
-          severity: issue.type,
-          title: issue.title,
-          description: issue.description,
-          affectedPages: issue.affectedPages,
-          autoFixAvailable: issue.autoFixAvailable,
-          priority: this.calculateIssuePriority(issue),
-          metadata: {
-            originalIssue: issue,
-            detectedAt: new Date().toISOString(),
-          },
+          issueType,
+          issueTitle: issue.title,
+          issueDescription: issue.description,
+          severity: issue.type as 'critical' | 'warning' | 'info',
+          autoFixAvailable: isAutoFixable,
+          elementPath: this.generateElementPath(issue.title),
+          currentValue: this.extractCurrentValue(issue.title, issue.description),
+          recommendedValue: this.generateRecommendedValue(issue.title, issue.description)
         });
-      } catch (error) {
-        console.error("Failed to store tracked issue:", error);
+      } catch (issueError) {
+        console.error(`Failed to track individual issue "${issue.title}":`, issueError);
+        // Continue processing other issues even if one fails
       }
     }
+
+    // Mark any previously detected issues that are no longer present as resolved
+    const currentIssueTypes = issues.map(issue => this.mapIssueToTrackingType(issue.title));
+    await storage.markIssuesAsResolved(websiteId, userId, currentIssueTypes);
+
+    console.log(`Successfully processed ${issues.length} issues for tracking`);
+  } catch (error) {
+    console.error('Error in storeTrackedIssues:', error);
+    // Don't throw - issue tracking shouldn't break SEO analysis
   }
+}
 
-  private mapIssueToType(title: string): string {
-    const titleLower = title.toLowerCase();
+/**
+ * Map issue title to consistent tracking type
+ */
+private mapIssueToTrackingType(title: string): string {
+  const titleLower = title.toLowerCase();
 
-    if (titleLower.includes("meta description"))
-      return "missing_meta_description";
-    if (titleLower.includes("title tag")) return "poor_title_tag";
-    if (titleLower.includes("h1") || titleLower.includes("heading"))
-      return "heading_structure";
-    if (titleLower.includes("alt text") || titleLower.includes("image"))
-      return "missing_alt_text";
-    if (titleLower.includes("viewport")) return "missing_viewport_meta";
-    if (titleLower.includes("schema") || titleLower.includes("structured data"))
-      return "missing_schema";
-    if (titleLower.includes("mobile") || titleLower.includes("responsive"))
-      return "mobile_responsiveness";
-    if (titleLower.includes("content quality")) return "low_content_quality";
-    if (titleLower.includes("readability")) return "poor_readability";
-    if (titleLower.includes("e-a-t")) return "low_eat_score";
-    if (titleLower.includes("keyword")) return "keyword_optimization";
-    if (titleLower.includes("open graph")) return "missing_og_tags";
+  if (titleLower.includes("meta description")) return "missing_meta_description";
+  if (titleLower.includes("title tag")) return "poor_title_tag";
+  if (titleLower.includes("h1") || titleLower.includes("heading")) return "heading_structure";
+  if (titleLower.includes("alt text") || titleLower.includes("image")) return "missing_alt_text";
+  if (titleLower.includes("viewport")) return "missing_viewport_meta";
+  if (titleLower.includes("schema") || titleLower.includes("structured data")) return "missing_schema";
+  if (titleLower.includes("mobile") || titleLower.includes("responsive")) return "mobile_responsiveness";
+  if (titleLower.includes("content quality")) return "low_content_quality";
+  if (titleLower.includes("readability")) return "poor_readability";
+  if (titleLower.includes("e-a-t")) return "low_eat_score";
+  if (titleLower.includes("keyword")) return "keyword_optimization";
+  if (titleLower.includes("open graph")) return "missing_og_tags";
 
-    return "other";
+  return "other";
+}
+
+/**
+ * Generate element path for issue tracking
+ */
+private generateElementPath(title: string): string | undefined {
+  const titleLower = title.toLowerCase();
+  
+  if (titleLower.includes("title tag")) return "title";
+  if (titleLower.includes("meta description")) return 'meta[name="description"]';
+  if (titleLower.includes("h1")) return "h1";
+  if (titleLower.includes("viewport")) return 'meta[name="viewport"]';
+  if (titleLower.includes("alt text")) return "img";
+  
+  return undefined;
+}
+
+/**
+ * Extract current value from issue description
+ */
+private extractCurrentValue(title: string, description: string): string | undefined {
+  if (title.toLowerCase().includes("missing")) {
+    return "Not present";
   }
+  
+  if (title.toLowerCase().includes("too long")) {
+    const match = description.match(/(\d+) characters/);
+    return match ? `${match[1]} characters` : "Too long";
+  }
+  
+  if (title.toLowerCase().includes("too short")) {
+    const match = description.match(/(\d+) characters/);
+    return match ? `${match[1]} characters` : "Too short";
+  }
+  
+  return undefined;
+}
+
+/**
+ * Generate recommended value for the issue
+ */
+private generateRecommendedValue(title: string, description: string): string | undefined {
+  const titleLower = title.toLowerCase();
+  
+  if (titleLower.includes("meta description")) {
+    return titleLower.includes("missing") 
+      ? "Add 120-160 character meta description"
+      : "Optimize to 120-160 characters";
+  }
+  
+  if (titleLower.includes("title tag")) {
+    return titleLower.includes("missing")
+      ? "Add 30-60 character title tag"
+      : "Optimize to 30-60 characters";
+  }
+  
+  if (titleLower.includes("alt text")) {
+    return "Add descriptive alt text to images";
+  }
+  
+  if (titleLower.includes("h1")) {
+    return titleLower.includes("missing")
+      ? "Add one H1 heading"
+      : "Use only one H1 per page";
+  }
+  
+  return undefined;
+}
 
   private categorizeIssue(title: string): string {
     const titleLower = title.toLowerCase();
