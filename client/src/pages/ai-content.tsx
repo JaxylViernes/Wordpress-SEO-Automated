@@ -1220,32 +1220,6 @@ const generateContent = async () => {
     <div className="py-6 bg-gray-50 min-h-screen">
       {/* PROGRESS BAR ADDITION: Add CSS for animated stripes inline */}
 
-      <style>{`
-
-        @keyframes stripes {
-          0% {
-            background-position: 0 0;
-          }
-          100% {
-            background-position: 40px 0;
-          }
-        }
-        .bg-stripes {
-          background-image: linear-gradient(
-            45deg,
-            rgba(255, 255, 255, 0.15) 25%,
-            transparent 25%,
-            transparent 50%,
-            rgba(255, 255, 255, 0.15) 50%,
-            rgba(255, 255, 255, 0.15) 75%,
-            transparent 75%,
-            transparent
-          );
-          background-size: 40px 40px;
-          animation: stripes 1s linear infinite;
-        }
-      `}</style>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
         {/* Enhanced Toast Notification */}
         {toast && (
