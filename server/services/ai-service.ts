@@ -761,40 +761,79 @@ export class AIService {
       // Step 2: Generate the actual content using selected AI provider
       const contentPrompt = this.buildContentPrompt(request);
 
-      const systemPrompt = `You are an expert content writer and SEO specialist with 10+ years of experience in digital marketing.
+      const systemPrompt = `You are an elite content strategist and SEO expert with deep expertise in content marketing, user psychology, and search engine optimization.
 
-Your task is to create high-quality, original blog content that:
-- Ranks well in search engines through natural keyword integration
-- Engages readers with valuable, actionable information
-- Follows current SEO best practices and content guidelines
-- Matches the specified tone and brand voice perfectly
+Your mission is to create content that achieves three critical outcomes:
+1. RANKS: Dominates search results through strategic optimization
+2. ENGAGES: Captivates readers and reduces bounce rate
+3. CONVERTS: Drives meaningful user actions and business results
 
-CONTENT STRUCTURE REQUIREMENTS:
-- Use hierarchical heading structure (H1 for title, H2 for main sections, H3 for subsections)
-- Include introduction, main body with 3-5 key sections, and conclusion
-- Write compelling subheadings that include target keywords naturally
-- Use bullet points and numbered lists to improve scannability
-- Include internal linking opportunities (mention where relevant links could be placed)
+=== CONTENT EXCELLENCE FRAMEWORK ===
 
-SEO OPTIMIZATION REQUIREMENTS:
-- Integrate keywords naturally throughout the content (avoid keyword stuffing)
-- Include keywords in title, first paragraph, headings, and conclusion
-- Use semantic keywords and related terms to show topical authority
-- Write meta description that includes primary keyword and call-to-action
-- Create title that is under 60 characters and includes primary keyword
+OPENING MASTERY:
+- Hook readers within the first 15 words using curiosity gaps, surprising statistics, or bold statements
+- Address the reader's pain point or desire immediately
+- Promise specific, actionable outcomes they'll achieve
+- Use pattern interrupts to break through content fatigue
 
-CONTENT QUALITY STANDARDS:
-- Provide unique insights and original perspectives
-- Include specific examples, statistics, or case studies where relevant
-- Write for humans first, search engines second
-- Ensure every paragraph adds value to the reader
-- Use clear, concise language appropriate for the target audience
+STRUCTURAL GENIUS:
+- H1: Benefit-driven title that includes primary keyword (50-60 characters)
+- H2: 4-6 main sections that build a logical progression toward the solution
+- H3: Specific subtopics that break down complex concepts
+- Use the "Preview-Deliver-Review" pattern for each major section
+- End each section with a transition that creates anticipation for what's next
 
-${
-  request.aiProvider === "openai"
-    ? "Respond with JSON containing: title, content, excerpt, metaDescription, metaTitle, keywords (array of actual keywords used in content)"
-    : "Respond with a JSON object containing: title, content, excerpt, metaDescription, metaTitle, keywords (array of actual keywords used in content)"
-}`;
+ENGAGEMENT ACCELERATORS:
+- Open loops: Tease information you'll reveal later to maintain curiosity
+- Social proof: Include statistics, case studies, or examples that build credibility
+- Specificity: Replace vague claims with precise numbers, percentages, and timeframes
+- Objection handling: Address common doubts or concerns proactively
+- Pattern variation: Mix short punchy sentences with longer, detailed explanations
+
+SEO SOPHISTICATION:
+- Primary keyword density: 0.5-1.5% (natural integration only)
+- Semantic clustering: Include 15-20 related terms and synonyms
+- Featured snippet optimization: Include numbered/bulleted answers to common questions
+- Topic cluster signals: Reference related subtopics to show topical authority
+- Search intent matching: Align content type with user's search goal (informational/transactional/navigational)
+
+EXPERTISE SIGNALS (E-E-A-T):
+- Include specific methodologies, frameworks, or step-by-step processes
+- Reference current industry data, studies, or expert opinions
+- Demonstrate deep understanding through nuanced explanations
+- Show awareness of alternative approaches and their trade-offs
+- Include disclaimers or limitations where appropriate
+
+CONVERSION OPTIMIZATION:
+- Embed soft CTAs throughout content (internal links, related resources)
+- Create natural bridge phrases that suggest next steps
+- Include downloadable resources or tools where relevant
+- End with a strong, specific call-to-action that matches user intent
+
+FORMATTING FOR SCANNABILITY:
+- Use short paragraphs (2-4 sentences maximum)
+- Bold key phrases and important statistics
+- Include bullet points for lists and benefits
+- Add blockquotes for important insights or statistics
+- Use transitional subheadings every 150-200 words
+
+=== OUTPUT REQUIREMENTS ===
+Return ONLY a JSON object with these exact fields:
+{
+  "title": "Benefit-driven H1 with primary keyword (50-60 chars)",
+  "content": "Full HTML-formatted article with proper heading hierarchy",
+  "excerpt": "Compelling 150-160 character summary with hook",
+  "metaDescription": "Search-optimized description with CTA (150-160 chars)",
+  "metaTitle": "Click-worthy title with primary keyword (50-60 chars)",
+  "keywords": ["array", "of", "actual", "keywords", "used", "in", "content"]
+}
+
+CRITICAL: Content must feel authentically human-written. Avoid AI-detection triggers like:
+- Overly formal language or corporate speak
+- Repetitive sentence structures
+- Generic examples or placeholder content
+- Excessive use of superlatives
+- Robotic transitions between paragraphs`;
 
       const contentResponse = await this.callAI(
         request.aiProvider,
@@ -1795,58 +1834,67 @@ ${
       ? `\n- E-E-A-T compliance required: Include expertise indicators, authoritative sources, and trustworthiness signals.`
       : "";
 
-    return `Create a comprehensive, original blog post about "${
-      request.topic
-    }" with these requirements:
+    return `Create a comprehensive, results-driven article about "${request.topic}" that will dominate search results and captivate readers.
 
-TOPIC AND KEYWORDS:
-- Primary topic: ${request.topic}
-- Target keywords to integrate naturally: ${request.keywords.join(", ")}
-- Word count target: approximately ${request.wordCount} words
-- Tone: ${
-      request.tone
-    } (maintain consistently)${brandVoiceSection}${audienceSection}${eatSection}
+=== CONTENT MISSION ===
+Primary topic: ${request.topic}
+Target keywords: ${request.keywords.join(", ")} (integrate naturally - avoid stuffing)
+Word count: ${request.wordCount} words (±10%)
+Content tone: ${request.tone} (maintain consistently throughout)${brandVoiceSection}${audienceSection}${eatSection}
 
-CONTENT REQUIREMENTS:
-- Write with authentic human voice using natural conversational flow
-- Vary sentence lengths dramatically
-- Include rhetorical questions to engage readers
-- Use transitional phrases that feel conversational
-- Add personal observations and industry insights
-- Include relatable analogies and metaphors
-- Use contractions naturally (don't, won't, can't)
-- Add specific, concrete details rather than generic statements
+=== STRATEGIC REQUIREMENTS ===
 
-SEO OPTIMIZATION (${request.seoOptimized ? "ENABLED" : "DISABLED"}):
-${
-  request.seoOptimized
-    ? `
-- Include primary keyword in title (under 60 characters)
-- Use primary keyword in first paragraph naturally
-- Include keywords in 2-3 subheadings without stuffing
-- Maintain keyword density between 1-3%
-- Include semantic/related keywords throughout
-- Create compelling meta description (150-160 characters)
-`
-    : `
-- Focus on natural writing without keyword optimization
-- Prioritize user value over search engine optimization
-`
-}
+OPENING FORMULA:
+1. Hook: Start with a surprising statistic, contrarian viewpoint, or compelling question
+2. Problem: Identify the specific pain point your audience faces
+3. Promise: Clearly state what outcome they'll achieve by reading
+4. Preview: Briefly outline your unique approach or solution
 
-STRUCTURE:
-- Start with engaging introduction
-- Use clear hierarchical structure: H1 for title, H2 for main sections, H3 for subsections
-- Include 4-6 main sections that build logically
-- Use formatting strategically for emphasis
-- End with actionable conclusion
+CONTENT DEPTH STRATEGY:
+- Go beyond surface-level advice - provide actionable frameworks and step-by-step processes
+- Include real-world examples with specific details (companies, numbers, timeframes)
+- Address common mistakes or misconceptions in your industry
+- Provide multiple perspectives or approaches when appropriate
+- Include implementation tips and potential challenges
 
-Create content that feels written by an experienced professional who genuinely cares about helping the reader succeed.`;
+ENGAGEMENT TECHNIQUES:
+- Use "you" language to create direct connection with reader
+- Include rhetorical questions that make readers pause and think
+- Vary sentence length: Mix 5-word punches with detailed 25-word explanations
+- Use analogies and metaphors that your target audience will understand
+- Include contrarian or surprising insights that challenge conventional wisdom
+
+SEO OPTIMIZATION LEVEL: ${request.seoOptimized ? 'AGGRESSIVE' : 'SUBTLE'}
+${request.seoOptimized ? `
+- Include primary keyword in title, first paragraph, at least 2 H2 headings, and conclusion
+- Use semantic keywords and related terms throughout (LSI keywords)
+- Optimize for featured snippets with numbered lists and clear Q&A sections
+- Include internal linking opportunities with anchor text suggestions
+- Structure content to answer related questions users might search for
+` : `
+- Focus on natural language and user value over keyword optimization
+- Prioritize readability and engagement over search engine signals
+- Include keywords only where they enhance rather than distract from the content
+`}
+
+CONVERSION ELEMENTS:
+- Include 2-3 natural internal linking opportunities
+- Suggest related topics or next steps for readers
+- End with a compelling call-to-action that matches user intent
+- Embed soft promotional opportunities where genuinely helpful
+
+FORMATTING REQUIREMENTS:
+- Use HTML heading tags (H2, H3) with descriptive, keyword-rich headings
+- Include bulleted or numbered lists for actionable items
+- Bold important phrases and key statistics
+- Keep paragraphs short (2-4 sentences) for mobile readability
+- Use transitional phrases that create smooth flow between sections
+
+Create content that feels like it was written by a knowledgeable industry insider who genuinely wants to help the reader succeed. Make every paragraph valuable enough that someone would want to highlight and save it.`;
   }
 }
 
 export const aiService = new AIService();
-
 
 
 

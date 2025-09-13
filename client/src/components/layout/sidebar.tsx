@@ -10,6 +10,8 @@ import {
   History,
   Settings,
   X,
+  Image,
+  SearchCheck, // Add this import for Google Search Console icon
 } from "lucide-react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useState, createContext, useContext } from "react";
@@ -42,7 +44,9 @@ const navigation = [
   { name: "Websites", href: "/websites", icon: Globe },
   { name: "AI Content", href: "/ai-content", icon: Bot },
   { name: "SEO Analysis", href: "/seo-analysis", icon: Search },
+  { name: "Search Console", href: "/googlesearchconsole", icon: SearchCheck }, // Add this line
   { name: "Content Schedule", href: "/content-schedule", icon: Calendar },
+  { name: "Image Metadata", href: "/image-metadata", icon: Image },
   { name: "Reports", href: "/reports", icon: BarChart3 },
   { name: "Activity Logs", href: "/activity-logs", icon: History },
   { name: "Settings", href: "/settings", icon: Settings },

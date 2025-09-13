@@ -398,186 +398,559 @@ export default function AIContent() {
     setFormErrors({});
   };
 
-  // Enhanced AI content generation with proper error handling
-  const generateContent = async () => {
-    if (!validateForm()) return;
 
-    setIsGenerating(true);
-    // PROGRESS BAR ADDITION: Reset progress to 0 at start
-    setGenerationProgress(0);
-    // PROGRESS BAR ADDITION: Set initial phase message
-    setGenerationPhase("Initializing AI...");
 
-    // PROGRESS BAR ADDITION: Start interval to simulate progress
-    const progressInterval = setInterval(() => {
-      setGenerationProgress((prev) => {
-        // PROGRESS BAR ADDITION: Stop at 90% until API completes
-        if (prev >= 90) {
-          clearInterval(progressInterval);
-          return 90;
-        }
 
-        // PROGRESS BAR ADDITION: Variable speed based on current progress
-        const increment = prev < 20 ? 3 : prev < 50 ? 2 : prev < 80 ? 1.5 : 0.5;
-        const newProgress = Math.min(prev + increment, 90);
 
-        // PROGRESS BAR ADDITION: Update phase messages based on progress
-        if (newProgress < 15) {
-          setGenerationPhase("Initializing AI...");
-          setEstimatedTimeRemaining(25);
-        } else if (newProgress < 30) {
-          setGenerationPhase("Analyzing topic and keywords...");
-          setEstimatedTimeRemaining(20);
-        } else if (newProgress < 45) {
-          setGenerationPhase(
-            "Generating content with " +
-              getProviderName(formData.aiProvider) +
-              "..."
-          );
-          setEstimatedTimeRemaining(15);
-        } else if (newProgress < 60) {
-          setGenerationPhase("Optimizing for SEO...");
-          setEstimatedTimeRemaining(10);
-        } else if (newProgress < 75) {
-          setGenerationPhase("Analyzing readability and brand voice...");
-          setEstimatedTimeRemaining(5);
-        } else if (newProgress < 85) {
-          setGenerationPhase(
-            formData.includeImages
-              ? "Generating AI images..."
-              : "Finalizing content..."
-          );
-          setEstimatedTimeRemaining(3);
+
+
+
+
+
+
+
+
+
+
+
+
+const generateContent = async () => {
+  if (!validateForm()) return;
+
+  setIsGenerating(true);
+  setGenerationProgress(0);
+  setGenerationPhase("Initializing AI...");
+
+  const progressInterval = setInterval(() => {
+    setGenerationProgress((prev) => {
+      if (prev >= 90) {
+        clearInterval(progressInterval);
+        return 90;
+      }
+
+      const increment = prev < 20 ? 3 : prev < 50 ? 2 : prev < 80 ? 1.5 : 0.5;
+      const newProgress = Math.min(prev + increment, 90);
+
+      if (newProgress < 15) {
+        setGenerationPhase("Initializing AI...");
+        setEstimatedTimeRemaining(25);
+      } else if (newProgress < 30) {
+        setGenerationPhase("Analyzing topic and keywords...");
+        setEstimatedTimeRemaining(20);
+      } else if (newProgress < 45) {
+        setGenerationPhase(
+          "Generating content with " +
+            getProviderName(formData.aiProvider) +
+            "..."
+        );
+        setEstimatedTimeRemaining(15);
+      } else if (newProgress < 60) {
+        setGenerationPhase("Optimizing for SEO...");
+        setEstimatedTimeRemaining(10);
+      } else if (newProgress < 75) {
+        setGenerationPhase("Analyzing readability and brand voice...");
+        setEstimatedTimeRemaining(5);
+      } else if (newProgress < 85) {
+        setGenerationPhase(
+          formData.includeImages
+            ? "Generating AI images..."
+            : "Finalizing content..."
+        );
+        setEstimatedTimeRemaining(3);
+      } else {
+        setGenerationPhase("Almost done...");
+        setEstimatedTimeRemaining(1);
+      }
+
+      return newProgress;
+    });
+  }, 300);
+
+  try {
+    const keywords = formData.keywords
+      .split(",")
+      .map((k) => k.trim())
+      .filter((k) => k);
+
+    const result = await api.generateContent({
+      websiteId: formData.websiteId,
+      topic: formData.topic,
+      keywords: keywords,
+      tone: formData.tone,
+      wordCount: formData.wordCount,
+      brandVoice: formData.brandVoice || undefined,
+      targetAudience: formData.targetAudience || undefined,
+      eatCompliance: formData.eatCompliance,
+      aiProvider: formData.aiProvider,
+      includeImages: formData.includeImages,
+      imageCount: formData.imageCount,
+      imageStyle: formData.imageStyle,
+    });
+
+    // Process images with metadata if they were generated
+    if (result.aiResult?.images?.length > 0 && formData.includeImages) {
+      console.log('🎨 ===== METADATA PROCESSING STARTED =====');
+      console.log('📊 Number of images to process:', result.aiResult.images.length);
+      console.log('🌐 Website ID:', formData.websiteId);
+      console.log('📝 Topic:', formData.topic);
+      
+      setGenerationProgress(92);
+      setGenerationPhase("Processing image metadata...");
+      
+      try {
+        const website = websites.find(w => w.id === formData.websiteId);
+        
+        console.log('🏢 Website found:', website ? website.name : 'NOT FOUND');
+        console.log('📅 Copyright year:', new Date().getFullYear());
+        
+        // Process each generated image
+        const processedImages = await Promise.all(
+          result.aiResult.images.map(async (image, index) => {
+            console.log(`\n🖼️ Processing Image ${index + 1}/${result.aiResult.images.length}`);
+            console.log(`  - Image type: ${image.data ? 'base64' : 'URL'}`);
+            console.log(`  - Image size: ${image.data ? `${(image.data.length / 1024).toFixed(2)}KB` : 'Unknown'}`);
+            
+            const metadataPayload = {
+              imageData: image.data || image.url,
+              contentId: result.contentId,
+              websiteName: website?.name || 'AI Content',
+              imageIndex: index,
+              metadata: {
+                copyright: `© ${new Date().getFullYear()} ${website?.name || 'AI Content'}`,
+                author: 'AI Content Generator',
+                description: `AI-generated image for: ${formData.topic}`,
+                aiProvider: 'OpenAI',
+                aiModel: 'DALL-E 3',
+                keywords: keywords,
+                contentTopic: formData.topic
+              }
+            };
+            
+            console.log(`  - Metadata to embed:`, {
+              copyright: metadataPayload.metadata.copyright,
+              author: metadataPayload.metadata.author,
+              description: metadataPayload.metadata.description,
+              aiModel: metadataPayload.metadata.aiModel,
+              keywordCount: keywords.length
+            });
+            
+            try {
+              // Call image metadata processing API
+              const processed = await fetch('/api/images/process-metadata', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(metadataPayload)
+              });
+              
+              console.log(`  - API Response Status: ${processed.status} ${processed.ok ? '✅' : '❌'}`);
+              
+              // Check if response is JSON before parsing
+              const contentType = processed.headers.get("content-type");
+              if (!processed.ok || !contentType || !contentType.includes("application/json")) {
+                // Log the actual response for debugging
+                const responseText = await processed.text();
+                console.error(`  ❌ Failed to process metadata for image ${index + 1}`);
+                console.error(`  - Status: ${processed.status}`);
+                console.error(`  - Content-Type: ${contentType}`);
+                
+                // Check if it's an HTML error page
+                if (responseText.includes("<!DOCTYPE") || responseText.includes("<html")) {
+                  console.error(`  - Error: API endpoint returned HTML instead of JSON`);
+                  console.error(`  - This usually means the endpoint doesn't exist or there's a routing issue`);
+                  
+                  // If it's a 404, the endpoint doesn't exist
+                  if (processed.status === 404) {
+                    console.error(`  - The /api/images/process-metadata endpoint was not found`);
+                    console.error(`  - Please create this API endpoint or disable metadata processing`);
+                  }
+                } else {
+                  console.error(`  - Response: ${responseText.substring(0, 200)}...`);
+                }
+                
+                console.warn(`  ⚠️ Returning original image without metadata`);
+                return image; // Return original if processing fails
+              }
+              
+              // Safe to parse JSON now
+              const processedData = await processed.json();
+              
+              console.log(`  ✅ Image ${index + 1} processed successfully!`);
+              console.log(`  - Response data:`, {
+                hasData: !!processedData,
+                processedSize: processedData.size ? `${(processedData.size / 1024).toFixed(2)}KB` : 'Unknown',
+                metadataAdded: processedData.metadataAdded || 'Unknown'
+              });
+              
+              return processedData;
+              
+            } catch (imageProcessingError) {
+              console.error(`  ❌ Error processing image ${index + 1}:`, imageProcessingError.message);
+              console.warn(`  ⚠️ Returning original image without metadata`);
+              return image; // Return original image on any error
+            }
+          })
+        );
+        
+        // Update result with processed images
+        result.aiResult.images = processedImages;
+        
+        setGenerationProgress(95);
+        setGenerationPhase("Embedding copyright information...");
+        
+        console.log('\n✨ ===== METADATA PROCESSING COMPLETED =====');
+        console.log(`📊 Successfully processed: ${processedImages.length} images`);
+        
+        // Check if any images were actually processed with metadata
+        const processedCount = processedImages.filter(img => img.metadataAdded).length;
+        if (processedCount < processedImages.length) {
+          console.warn(`⚠️ Only ${processedCount} of ${processedImages.length} images had metadata embedded`);
+          
+          // Show warning if not all images were processed
+          if (processedCount === 0) {
+            showToast(
+              "Metadata Processing Skipped",
+              "Images saved without metadata. The metadata processing endpoint may be unavailable.",
+              "warning"
+            );
+          }
         } else {
-          setGenerationPhase("Almost done...");
-          setEstimatedTimeRemaining(1);
+          console.log('✅ All images now have embedded metadata!');
         }
-
-        return newProgress;
-      });
-    }, 300); // Update every 300ms
-
-    try {
-      const keywords = formData.keywords
-        .split(",")
-        .map((k) => k.trim())
-        .filter((k) => k);
-
-      const result = await api.generateContent({
-        websiteId: formData.websiteId,
-        topic: formData.topic,
-        keywords: keywords,
-        tone: formData.tone,
-        wordCount: formData.wordCount,
-        brandVoice: formData.brandVoice || undefined,
-        targetAudience: formData.targetAudience || undefined,
-        eatCompliance: formData.eatCompliance,
-        aiProvider: formData.aiProvider,
-        includeImages: formData.includeImages,
-        imageCount: formData.imageCount,
-        imageStyle: formData.imageStyle,
-      });
-
-      // PROGRESS BAR ADDITION: Clear interval and set to 100% on success
-      clearInterval(progressInterval);
-      setGenerationProgress(100);
-      setGenerationPhase("Content generated successfully!");
-
-      // PROGRESS BAR ADDITION: Brief pause to show completion
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const aiResult = result.aiResult;
-
-      const imageInfo =
-        aiResult.images?.length > 0
-          ? ` + ${
-              aiResult.images.length
-            } images ($${aiResult.totalImageCost?.toFixed(4)})`
-          : "";
-
-      showToast(
-        "Content Generated Successfully",
-        `${getProviderName(aiResult.aiProvider)} generated content with SEO: ${
-          aiResult.seoScore
-        }%, Readability: ${aiResult.readabilityScore}%, Brand Voice: ${
-          aiResult.brandVoiceScore
-        }%. Cost: $${(aiResult.costUsd / 100).toFixed(4)}${imageInfo}`
-      );
-
-      setIsGenerateDialogOpen(false);
-      setFormData((prev) => ({
-        ...prev,
-        websiteId: "",
-        topic: "",
-        keywords: "",
-        includeImages: false,
-        imageCount: 1,
-      }));
-      setFormErrors({});
-
-      // PROGRESS BAR ADDITION: Reset all progress states
-      setGenerationProgress(0);
-      setGenerationPhase("");
-      setEstimatedTimeRemaining(0);
-
-      await loadContent();
-    } catch (error) {
-      // PROGRESS BAR ADDITION: Clear interval on error
-      clearInterval(progressInterval);
-      // PROGRESS BAR ADDITION: Reset progress states on error
-      setGenerationProgress(0);
-      setGenerationPhase("");
-
-      const errorType = getErrorType(error);
-      const severity = getErrorSeverity(error);
-
-      let errorTitle = "Content Generation Failed";
-      let errorDescription = error.message;
-
-      if (error.message.includes("Image generation failed")) {
-        errorTitle = "Image Generation Failed";
-        errorDescription =
-          "Content generated successfully, but image generation failed. " +
-          error.message;
+        
+      } catch (metadataError) {
+        console.error('❌ ===== METADATA PROCESSING ERROR =====');
+        console.error('Error type:', metadataError.name);
+        console.error('Error message:', metadataError.message);
+        console.error('Stack trace:', metadataError.stack);
+        
+        // Continue with original images if metadata processing fails
+        showToast(
+          "Metadata Processing Warning",
+          "Images generated successfully but metadata processing failed. Images saved without copyright embedding.",
+          "warning"
+        );
       }
-
-      switch (errorType) {
-        case "openai":
-          errorTitle = "OpenAI API Error";
-          errorDescription +=
-            " Please check your OpenAI API key configuration.";
-          break;
-        case "anthropic":
-          errorTitle = "Anthropic API Error";
-          errorDescription +=
-            " Please check your Anthropic API key configuration.";
-          break;
-        case "gemini":
-          errorTitle = "Gemini API Error";
-          errorDescription +=
-            " Please check your Google Gemini API key configuration.";
-          break;
-        case "pagespeed":
-          errorTitle = "PageSpeed API Error";
-          errorDescription +=
-            " SEO scores may be incomplete due to PageSpeed API issues.";
-          break;
-        case "analysis":
-          errorTitle = "Content Analysis Error";
-          errorDescription += " Content was generated but analysis failed.";
-          break;
-      }
-
-      showToast(
-        errorTitle,
-        errorDescription,
-        severity === "error" ? "destructive" : "warning",
-        errorType
-      );
-    } finally {
-      setIsGenerating(false);
+    } else {
+      console.log('ℹ️ No images to process for metadata');
+      console.log(`  - Images included: ${formData.includeImages}`);
+      console.log(`  - Images in result: ${result.aiResult?.images?.length || 0}`);
     }
-  };
+
+    // Clear interval and set to 100% on success
+    clearInterval(progressInterval);
+    setGenerationProgress(100);
+    setGenerationPhase("Content generated successfully!");
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const aiResult = result.aiResult;
+
+    // Include metadata processing info in toast
+    const imageInfo =
+      aiResult.images?.length > 0
+        ? ` + ${aiResult.images.length} images ($${aiResult.totalImageCost?.toFixed(4)})`
+        : "";
+
+    showToast(
+      "Content Generated Successfully",
+      `${getProviderName(aiResult.aiProvider)} generated content with SEO: ${
+        aiResult.seoScore
+      }%, Readability: ${aiResult.readabilityScore}%, Brand Voice: ${
+        aiResult.brandVoiceScore
+      }%. Cost: $${(aiResult.costUsd / 100).toFixed(4)}${imageInfo}`
+    );
+
+    setIsGenerateDialogOpen(false);
+    setFormData((prev) => ({
+      ...prev,
+      websiteId: "",
+      topic: "",
+      keywords: "",
+      includeImages: false,
+      imageCount: 1,
+    }));
+    setFormErrors({});
+
+    setGenerationProgress(0);
+    setGenerationPhase("");
+    setEstimatedTimeRemaining(0);
+
+    await loadContent();
+  } catch (error) {
+    clearInterval(progressInterval);
+    setGenerationProgress(0);
+    setGenerationPhase("");
+
+    const errorType = getErrorType(error);
+    const severity = getErrorSeverity(error);
+
+    let errorTitle = "Content Generation Failed";
+    let errorDescription = error.message;
+
+    if (error.message.includes("Image generation failed")) {
+      errorTitle = "Image Generation Failed";
+      errorDescription =
+        "Content generated successfully, but image generation failed. " +
+        error.message;
+    }
+
+    switch (errorType) {
+      case "openai":
+        errorTitle = "OpenAI API Error";
+        errorDescription +=
+          " Please check your OpenAI API key configuration.";
+        break;
+      case "anthropic":
+        errorTitle = "Anthropic API Error";
+        errorDescription +=
+          " Please check your Anthropic API key configuration.";
+        break;
+      case "gemini":
+        errorTitle = "Gemini API Error";
+        errorDescription +=
+          " Please check your Google Gemini API key configuration.";
+        break;
+      case "pagespeed":
+        errorTitle = "PageSpeed API Error";
+        errorDescription +=
+          " SEO scores may be incomplete due to PageSpeed API issues.";
+        break;
+      case "analysis":
+        errorTitle = "Content Analysis Error";
+        errorDescription += " Content was generated but analysis failed.";
+        break;
+    }
+
+    showToast(
+      errorTitle,
+      errorDescription,
+      severity === "error" ? "destructive" : "warning",
+      errorType
+    );
+  } finally {
+    setIsGenerating(false);
+  }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  // // Enhanced AI content generation with proper error handling
+  // const generateContent = async () => {
+  //   if (!validateForm()) return;
+
+  //   setIsGenerating(true);
+  //   // PROGRESS BAR ADDITION: Reset progress to 0 at start
+  //   setGenerationProgress(0);
+  //   // PROGRESS BAR ADDITION: Set initial phase message
+  //   setGenerationPhase("Initializing AI...");
+
+  //   // PROGRESS BAR ADDITION: Start interval to simulate progress
+  //   const progressInterval = setInterval(() => {
+  //     setGenerationProgress((prev) => {
+  //       // PROGRESS BAR ADDITION: Stop at 90% until API completes
+  //       if (prev >= 90) {
+  //         clearInterval(progressInterval);
+  //         return 90;
+  //       }
+
+  //       // PROGRESS BAR ADDITION: Variable speed based on current progress
+  //       const increment = prev < 20 ? 3 : prev < 50 ? 2 : prev < 80 ? 1.5 : 0.5;
+  //       const newProgress = Math.min(prev + increment, 90);
+
+  //       // PROGRESS BAR ADDITION: Update phase messages based on progress
+  //       if (newProgress < 15) {
+  //         setGenerationPhase("Initializing AI...");
+  //         setEstimatedTimeRemaining(25);
+  //       } else if (newProgress < 30) {
+  //         setGenerationPhase("Analyzing topic and keywords...");
+  //         setEstimatedTimeRemaining(20);
+  //       } else if (newProgress < 45) {
+  //         setGenerationPhase(
+  //           "Generating content with " +
+  //             getProviderName(formData.aiProvider) +
+  //             "..."
+  //         );
+  //         setEstimatedTimeRemaining(15);
+  //       } else if (newProgress < 60) {
+  //         setGenerationPhase("Optimizing for SEO...");
+  //         setEstimatedTimeRemaining(10);
+  //       } else if (newProgress < 75) {
+  //         setGenerationPhase("Analyzing readability and brand voice...");
+  //         setEstimatedTimeRemaining(5);
+  //       } else if (newProgress < 85) {
+  //         setGenerationPhase(
+  //           formData.includeImages
+  //             ? "Generating AI images..."
+  //             : "Finalizing content..."
+  //         );
+  //         setEstimatedTimeRemaining(3);
+  //       } else {
+  //         setGenerationPhase("Almost done...");
+  //         setEstimatedTimeRemaining(1);
+  //       }
+
+  //       return newProgress;
+  //     });
+  //   }, 300); // Update every 300ms
+
+  //   try {
+  //     const keywords = formData.keywords
+  //       .split(",")
+  //       .map((k) => k.trim())
+  //       .filter((k) => k);
+
+  //     const result = await api.generateContent({
+  //       websiteId: formData.websiteId,
+  //       topic: formData.topic,
+  //       keywords: keywords,
+  //       tone: formData.tone,
+  //       wordCount: formData.wordCount,
+  //       brandVoice: formData.brandVoice || undefined,
+  //       targetAudience: formData.targetAudience || undefined,
+  //       eatCompliance: formData.eatCompliance,
+  //       aiProvider: formData.aiProvider,
+  //       includeImages: formData.includeImages,
+  //       imageCount: formData.imageCount,
+  //       imageStyle: formData.imageStyle,
+  //     });
+
+  //     // PROGRESS BAR ADDITION: Clear interval and set to 100% on success
+  //     clearInterval(progressInterval);
+  //     setGenerationProgress(100);
+  //     setGenerationPhase("Content generated successfully!");
+
+  //     // PROGRESS BAR ADDITION: Brief pause to show completion
+  //     await new Promise((resolve) => setTimeout(resolve, 500));
+
+  //     const aiResult = result.aiResult;
+
+  //     const imageInfo =
+  //       aiResult.images?.length > 0
+  //         ? ` + ${
+  //             aiResult.images.length
+  //           } images ($${aiResult.totalImageCost?.toFixed(4)})`
+  //         : "";
+
+  //     showToast(
+  //       "Content Generated Successfully",
+  //       `${getProviderName(aiResult.aiProvider)} generated content with SEO: ${
+  //         aiResult.seoScore
+  //       }%, Readability: ${aiResult.readabilityScore}%, Brand Voice: ${
+  //         aiResult.brandVoiceScore
+  //       }%. Cost: $${(aiResult.costUsd / 100).toFixed(4)}${imageInfo}`
+  //     );
+
+  //     setIsGenerateDialogOpen(false);
+  //     setFormData((prev) => ({
+  //       ...prev,
+  //       websiteId: "",
+  //       topic: "",
+  //       keywords: "",
+  //       includeImages: false,
+  //       imageCount: 1,
+  //     }));
+  //     setFormErrors({});
+
+  //     // PROGRESS BAR ADDITION: Reset all progress states
+  //     setGenerationProgress(0);
+  //     setGenerationPhase("");
+  //     setEstimatedTimeRemaining(0);
+
+  //     await loadContent();
+  //   } catch (error) {
+  //     // PROGRESS BAR ADDITION: Clear interval on error
+  //     clearInterval(progressInterval);
+  //     // PROGRESS BAR ADDITION: Reset progress states on error
+  //     setGenerationProgress(0);
+  //     setGenerationPhase("");
+
+  //     const errorType = getErrorType(error);
+  //     const severity = getErrorSeverity(error);
+
+  //     let errorTitle = "Content Generation Failed";
+  //     let errorDescription = error.message;
+
+  //     if (error.message.includes("Image generation failed")) {
+  //       errorTitle = "Image Generation Failed";
+  //       errorDescription =
+  //         "Content generated successfully, but image generation failed. " +
+  //         error.message;
+  //     }
+
+  //     switch (errorType) {
+  //       case "openai":
+  //         errorTitle = "OpenAI API Error";
+  //         errorDescription +=
+  //           " Please check your OpenAI API key configuration.";
+  //         break;
+  //       case "anthropic":
+  //         errorTitle = "Anthropic API Error";
+  //         errorDescription +=
+  //           " Please check your Anthropic API key configuration.";
+  //         break;
+  //       case "gemini":
+  //         errorTitle = "Gemini API Error";
+  //         errorDescription +=
+  //           " Please check your Google Gemini API key configuration.";
+  //         break;
+  //       case "pagespeed":
+  //         errorTitle = "PageSpeed API Error";
+  //         errorDescription +=
+  //           " SEO scores may be incomplete due to PageSpeed API issues.";
+  //         break;
+  //       case "analysis":
+  //         errorTitle = "Content Analysis Error";
+  //         errorDescription += " Content was generated but analysis failed.";
+  //         break;
+  //     }
+
+  //     showToast(
+  //       errorTitle,
+  //       errorDescription,
+  //       severity === "error" ? "destructive" : "warning",
+  //       errorType
+  //     );
+  //   } finally {
+  //     setIsGenerating(false);
+  //   }
+  // };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   // ENHANCED: Open edit dialog with image data initialization
   const openEditDialog = (contentItem) => {
@@ -1669,7 +2042,7 @@ export default function AIContent() {
                               <div className="flex items-center">
                                 <Cpu className="w-4 h-4 text-green-600 mr-2" />
                                 <span className="font-medium">
-                                  OpenAI GPT-4O
+                                  OpenAI GPT-4
                                 </span>
                               </div>
                             </div>

@@ -1,3 +1,6 @@
+
+
+//server/storgae.ts
 import { 
   users,
   websites,
@@ -109,6 +112,7 @@ export interface IStorage {
     contentCount: number;
     avgSeoScore: number;
     recentActivity: number;
+    scheduledPosts: number;
   }>;
 
   getUserSettings(userId: string): Promise<UserSettings | undefined>;
@@ -547,43 +551,102 @@ export class DatabaseStorage implements IStorage {
     return backupRecord;
   }
 
-  // Dashboard stats
-  async getUserDashboardStats(userId: string): Promise<{
-    websiteCount: number;
-    contentCount: number;
-    avgSeoScore: number;
-    recentActivity: number;
-  }> {
-    const userWebsites = await this.getUserWebsites(userId);
-    const userContent = await this.getUserContent(userId);
-    const recentLogs = await db
-      .select()
-      .from(activityLogs)
-      .where(
-        and(
-          eq(activityLogs.userId, userId),
-          // Last 7 days
-          eq(activityLogs.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
-        )
-      );
 
-    return {
-      websiteCount: userWebsites.length,
-      contentCount: userContent.length,
-      avgSeoScore: userWebsites.length > 0 
-        ? Math.round(userWebsites.reduce((sum, w) => sum + w.seoScore, 0) / userWebsites.length)
-        : 0,
-      recentActivity: recentLogs.length
-    };
-  }
 
-  async createContentImage(data: InsertContentImage & { userId: string }): Promise<ContentImage> {
+
+
+
+
+
+
+
+
+
+
+// Dashboard stats
+async getUserDashboardStats(userId: string): Promise<{
+  websiteCount: number;
+  contentCount: number;
+  avgSeoScore: number;
+  recentActivity: number;
+  scheduledPosts: number;  // ADD THIS FIELD
+}> {
+  const userWebsites = await this.getUserWebsites(userId);
+  const userContent = await this.getUserContent(userId);
+  const recentLogs = await db
+    .select()
+    .from(activityLogs)
+    .where(
+      and(
+        eq(activityLogs.userId, userId),
+        // FIX: Change eq to gte for date comparison
+        gte(activityLogs.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+      )
+    );
+  
+  // ADD: Count scheduled posts
+  const [scheduledCount] = await db
+    .select({ count: count() })
+    .from(contentSchedule)
+    .where(eq(contentSchedule.userId, userId));
+
+  return {
+    websiteCount: userWebsites.length,
+    contentCount: userContent.length,
+    avgSeoScore: userWebsites.length > 0 
+      ? Math.round(userWebsites.reduce((sum, w) => sum + w.seoScore, 0) / userWebsites.length)
+      : 0,
+    recentActivity: recentLogs.length,
+    scheduledPosts: Number(scheduledCount?.count) || 0  // ADD THIS LINE
+  };
+}
+
+async createContentImage(data: InsertContentImage & { userId: string }): Promise<ContentImage> {
   const validatedData = insertContentImageSchema.parse(data);
   const imageWithUserId = { ...validatedData, userId: data.userId };
   
   const [image] = await db.insert(contentImages).values(imageWithUserId).returning();
   return image;
 }
+
+  //WAG ALISIN
+//   // Dashboard stats
+//   async getUserDashboardStats(userId: string): Promise<{
+//     websiteCount: number;
+//     contentCount: number;
+//     avgSeoScore: number;
+//     recentActivity: number;
+//   }> {
+//     const userWebsites = await this.getUserWebsites(userId);
+//     const userContent = await this.getUserContent(userId);
+//     const recentLogs = await db
+//       .select()
+//       .from(activityLogs)
+//       .where(
+//         and(
+//           eq(activityLogs.userId, userId),
+//           // Last 7 days
+//           eq(activityLogs.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+//         )
+//       );
+
+//     return {
+//       websiteCount: userWebsites.length,
+//       contentCount: userContent.length,
+//       avgSeoScore: userWebsites.length > 0 
+//         ? Math.round(userWebsites.reduce((sum, w) => sum + w.seoScore, 0) / userWebsites.length)
+//         : 0,
+//       recentActivity: recentLogs.length
+//     };
+//   }
+
+//   async createContentImage(data: InsertContentImage & { userId: string }): Promise<ContentImage> {
+//   const validatedData = insertContentImageSchema.parse(data);
+//   const imageWithUserId = { ...validatedData, userId: data.userId };
+  
+//   const [image] = await db.insert(contentImages).values(imageWithUserId).returning();
+//   return image;
+// }
 
 // Get images for a specific content piece
 async getContentImages(contentId: string): Promise<ContentImage[]> {
