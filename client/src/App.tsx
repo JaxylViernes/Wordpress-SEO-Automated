@@ -1,3 +1,4 @@
+//client/src/App.tsx
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -14,6 +15,8 @@ import ContentSchedule from "@/pages/content-schedule";
 import Reports from "@/pages/reports";
 import ActivityLogs from "@/pages/activity-logs";
 import Settings from "@/pages/settings";
+import ImageMetadata from "@/pages/image-metadata";
+import GoogleSearchConsole from "@/pages/googlesearchconsole"; // Add this import
 
 // Layout components
 import Sidebar, { MobileSidebarProvider } from "@/components/layout/sidebar";
@@ -40,7 +43,9 @@ function AppRouter() {
       <Route path="/websites" component={Websites} />
       <Route path="/ai-content" component={AIContent} />
       <Route path="/seo-analysis" component={SEOAnalysis} />
+      <Route path="/googlesearchconsole" component={GoogleSearchConsole} /> {/* Add this route */}
       <Route path="/content-schedule" component={ContentSchedule} />
+      <Route path="/image-metadata" component={ImageMetadata} />
       <Route path="/reports" component={Reports} />
       <Route path="/activity-logs" component={ActivityLogs} />
       <Route path="/settings" component={Settings} />
