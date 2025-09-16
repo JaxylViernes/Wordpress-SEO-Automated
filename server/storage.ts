@@ -51,7 +51,8 @@ import {
 } from "@shared/schema";
 import { apiKeyEncryptionService } from "./services/api-key-encryption";
 import { db } from "./db";
-import { lte, gte, count, eq, desc, and, or, isNull, inArray, sql, notInArray } from "drizzle-orm";
+// FIXED: Added sum import
+import { lte, gte, count, eq, desc, and, or, isNull, inArray, sql, notInArray, sum } from "drizzle-orm";
 import { wordPressAuthService } from "./services/wordpress-auth";
 import { contentImages, insertContentImageSchema, type InsertContentImage, type ContentImage } from "@shared/schema";
 import { autoSchedules, type AutoSchedule, type InsertAutoSchedule } from "@shared/schema";
@@ -76,7 +77,7 @@ export interface SeoIssueTracking {
   fixedAt?: Date;
   resolvedAt?: Date;
   lastSeenAt: Date;
-  fixMethod?: 'ai_automatic' | 'ai_iterative' | 'manual';
+  fixMethod?: 'ai_automatic' | 'manual';
   fixSessionId?: string;
   fixBefore?: string;
   fixAfter?: string;
@@ -486,12 +487,12 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
-  // Delete content images (cascade when content is deleted)
+  // FIXED: Changed this.db to db
   async deleteContentImages(contentId: string): Promise<void> {
-    await this.db.delete(contentImages).where(eq(contentImages.contentId, contentId));
+    await db.delete(contentImages).where(eq(contentImages.contentId, contentId));
   }
 
-  // Get image usage statistics for a user
+  // FIXED: Properly use sum with Drizzle ORM
   async getUserImageStats(userId: string): Promise<{
     totalImages: number;
     totalCostCents: number;
@@ -502,7 +503,7 @@ export class DatabaseStorage implements IStorage {
     thisMonth.setDate(1);
     thisMonth.setHours(0, 0, 0, 0);
 
-    const [allTimeStats] = await this.db
+    const [allTimeStats] = await db
       .select({
         totalImages: count(),
         totalCostCents: sum(contentImages.costCents)
@@ -510,7 +511,7 @@ export class DatabaseStorage implements IStorage {
       .from(contentImages)
       .where(eq(contentImages.userId, userId));
 
-    const [monthlyStats] = await this.db
+    const [monthlyStats] = await db
       .select({
         imagesThisMonth: count(),
         costThisMonthCents: sum(contentImages.costCents)
@@ -1221,6 +1222,7 @@ export class DatabaseStorage implements IStorage {
   // DASHBOARD AND ANALYTICS METHODS
   // ===============================
 
+  // FIXED: Proper date comparison with Drizzle ORM
   async getUserDashboardStats(userId: string): Promise<{
     websiteCount: number;
     contentCount: number;
@@ -1229,14 +1231,18 @@ export class DatabaseStorage implements IStorage {
   }> {
     const userWebsites = await this.getUserWebsites(userId);
     const userContent = await this.getUserContent(userId);
+    
+    // Calculate date 7 days ago
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    
+    // FIXED: Use gte for date comparison instead of eq
     const recentLogs = await db
       .select()
       .from(activityLogs)
       .where(
         and(
           eq(activityLogs.userId, userId),
-          // Last 7 days
-          eq(activityLogs.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+          gte(activityLogs.createdAt, sevenDaysAgo) // Fixed: use gte for date range
         )
       );
 
@@ -1729,107 +1735,110 @@ export class DatabaseStorage implements IStorage {
   /**
    * Create or update a tracked SEO issue
    */
-  async createOrUpdateSeoIssue(issue: {
-    userId: string;
-    websiteId: string;
-    issueType: string;
-    issueTitle: string;
-    issueDescription?: string;
-    severity: 'critical' | 'warning' | 'info';
-    autoFixAvailable: boolean;
-    elementPath?: string;
-    currentValue?: string;
-    recommendedValue?: string;
-    seoReportId?: string;
-  }): Promise<SeoIssueTracking> {
-    const issueHash = this.generateIssueHash(issue.issueType, issue.websiteId, issue.elementPath);
-    
-    try {
-      // Try to find existing issue
-      const [existingIssue] = await db
-        .select()
-        .from(seoIssueTracking)
-        .where(
-          and(
-            eq(seoIssueTracking.websiteId, issue.websiteId),
-            eq(seoIssueTracking.userId, issue.userId),
-            eq(seoIssueTracking.issueType, issue.issueType),
-            eq(seoIssueTracking.issueTitle, issue.issueTitle)
-          )
+ async createOrUpdateSeoIssue(issue: {
+  userId: string;
+  websiteId: string;
+  issueType: string;
+  issueTitle: string;
+  issueDescription?: string;
+  severity: 'critical' | 'warning' | 'info';
+  autoFixAvailable: boolean;
+  elementPath?: string;
+  currentValue?: string;
+  recommendedValue?: string;
+  seoReportId?: string;
+}): Promise<SeoIssueTracking> {
+  const issueHash = this.generateIssueHash(issue.issueType, issue.websiteId, issue.elementPath);
+  
+  try {
+    const [existingIssue] = await db
+      .select()
+      .from(seoIssueTracking)
+      .where(
+        and(
+          eq(seoIssueTracking.websiteId, issue.websiteId),
+          eq(seoIssueTracking.userId, issue.userId),
+          eq(seoIssueTracking.issueType, issue.issueType),
+          eq(seoIssueTracking.issueTitle, issue.issueTitle)
         )
-        .limit(1);
+      )
+      .limit(1);
 
-      const now = new Date();
+    const now = new Date();
+    
+    if (existingIssue) {
+      let newStatus = existingIssue.status;
       
-      if (existingIssue) {
-        // Issue exists - update it
-        let newStatus = existingIssue.status;
-        
-        // If issue was previously fixed/resolved but now detected again, mark as reappeared
-        if (['fixed', 'resolved'].includes(existingIssue.status)) {
-          newStatus = 'reappeared' as const;
-        }
-        
-        const [updatedIssue] = await db
-          .update(seoIssueTracking)
-          .set({
-            lastSeenAt: now,
-            status: newStatus,
-            issueDescription: issue.issueDescription,
-            severity: issue.severity,
-            autoFixAvailable: issue.autoFixAvailable,
-            currentValue: issue.currentValue,
-            recommendedValue: issue.recommendedValue,
-            metadata: {
-              ...existingIssue.metadata,
-              lastDetectedInReport: issue.seoReportId,
-              detectionCount: (existingIssue.metadata?.detectionCount || 0) + 1,
-              reappearedAt: newStatus === 'reappeared' ? now.toISOString() : existingIssue.metadata?.reappearedAt
-            },
-            updatedAt: now
-          })
-          .where(eq(seoIssueTracking.id, existingIssue.id))
-          .returning();
-        
-        console.log(`Updated existing SEO issue: ${issue.issueTitle} (status: ${newStatus})`);
-        return updatedIssue;
-      } else {
-        // Create new issue
-        const [newIssue] = await db
-          .insert(seoIssueTracking)
-          .values({
-            websiteId: issue.websiteId,
-            userId: issue.userId,
-            issueType: issue.issueType,
-            issueTitle: issue.issueTitle,
-            issueDescription: issue.issueDescription,
-            severity: issue.severity,
-            status: 'detected',
-            autoFixAvailable: issue.autoFixAvailable,
-            detectedAt: now,
-            lastSeenAt: now,
-            elementPath: issue.elementPath,
-            currentValue: issue.currentValue,
-            recommendedValue: issue.recommendedValue,
-            metadata: {
-              issueHash,
-              firstDetectedInReport: issue.seoReportId,
-              detectionCount: 1
-            },
-            createdAt: now,
-            updatedAt: now
-          })
-          .returning();
-        
-        console.log(`Created new SEO issue: ${issue.issueTitle}`);
-        return newIssue;
+      // CRITICAL: Handle status transitions properly
+      if (existingIssue.status === 'fixing') {
+        // If it's stuck in fixing, reset to detected
+        newStatus = 'detected' as const;
+        console.log(`Reset stuck fixing status for: ${issue.issueTitle}`);
+      } else if (['fixed', 'resolved'].includes(existingIssue.status)) {
+        newStatus = 'reappeared' as const;
       }
-    } catch (error) {
-      console.error('Error creating/updating SEO issue:', error);
-      throw error;
+      // If already 'detected' or 'reappeared', keep the status
+      
+      const [updatedIssue] = await db
+        .update(seoIssueTracking)
+        .set({
+          lastSeenAt: now,
+          status: newStatus,
+          issueDescription: issue.issueDescription,
+          severity: issue.severity,
+          autoFixAvailable: issue.autoFixAvailable,
+          currentValue: issue.currentValue,
+          recommendedValue: issue.recommendedValue,
+          metadata: {
+            ...existingIssue.metadata,
+            lastDetectedInReport: issue.seoReportId,
+            detectionCount: (existingIssue.metadata?.detectionCount || 0) + 1,
+            reappearedAt: newStatus === 'reappeared' ? now.toISOString() : existingIssue.metadata?.reappearedAt,
+            wasStuckInFixing: existingIssue.status === 'fixing' ? true : existingIssue.metadata?.wasStuckInFixing
+          },
+          updatedAt: now
+        })
+        .where(eq(seoIssueTracking.id, existingIssue.id))
+        .returning();
+      
+      console.log(`Updated existing SEO issue: ${issue.issueTitle} (${existingIssue.status} → ${newStatus})`);
+      return updatedIssue;
+    } else {
+      // Create new issue
+      const [newIssue] = await db
+        .insert(seoIssueTracking)
+        .values({
+          websiteId: issue.websiteId,
+          userId: issue.userId,
+          issueType: issue.issueType,
+          issueTitle: issue.issueTitle,
+          issueDescription: issue.issueDescription,
+          severity: issue.severity,
+          status: 'detected',
+          autoFixAvailable: issue.autoFixAvailable,
+          detectedAt: now,
+          lastSeenAt: now,
+          elementPath: issue.elementPath,
+          currentValue: issue.currentValue,
+          recommendedValue: issue.recommendedValue,
+          metadata: {
+            issueHash,
+            firstDetectedInReport: issue.seoReportId,
+            detectionCount: 1
+          },
+          createdAt: now,
+          updatedAt: now
+        })
+        .returning();
+      
+      console.log(`Created new SEO issue: ${issue.issueTitle}`);
+      return newIssue;
     }
+  } catch (error) {
+    console.error('Error creating/updating SEO issue:', error);
+    throw error;
   }
-
+}
   /**
    * Get tracked SEO issues for a website
    */
@@ -1898,7 +1907,7 @@ export class DatabaseStorage implements IStorage {
     issueId: string,
     status: 'detected' | 'fixing' | 'fixed' | 'resolved' | 'reappeared',
     updates: {
-      fixMethod?: 'ai_automatic' | 'ai_iterative' | 'manual';
+      fixMethod?: 'ai_automatic' | 'manual';
       fixSessionId?: string;
       fixBefore?: string;
       fixAfter?: string;

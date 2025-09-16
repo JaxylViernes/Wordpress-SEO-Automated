@@ -414,48 +414,76 @@ private async storeTrackedIssues(
 
   console.log(`Tracking ${issues.length} SEO issues for website ${websiteId}`);
 
-  // Get existing tracked issues to avoid creating duplicates of fixed issues
+  // CRITICAL FIX: Get ALL existing tracked issues, including 'fixing' status
   const existingTrackedIssues = await storage.getTrackedSeoIssues(websiteId, userId, {
-    status: ['fixed', 'resolved'], // Get already fixed issues
+    status: ['fixed', 'resolved', 'fixing'], // ADD 'fixing' here
     limit: 100
   });
 
-  const AI_FIXABLE_TYPES = [
+   const AI_FIXABLE_TYPES = [
+    // Title issues
     'missing page title',
     'title tag too long', 
     'title tag too short',
+    // Meta description issues
     'missing meta description',
     'meta description too long',
+    // Heading issues
     'missing h1 tag',
     'multiple h1 tags', 
     'improper heading hierarchy',
+    // Image issues
     'images missing alt text',
+    // Content quality issues
     'low content quality',
-    'poor readability'
+    'poor readability',
+    'poor content structure',
+    // Technical SEO issues (newly fixable)
+    'missing viewport meta tag',
+    'missing schema markup',
+    'missing open graph tags',
+    // Keyword optimization issues (newly fixable)
+    'poor keyword distribution',
+    'keyword over-optimization',
+    'missing important keywords',
+    'poor content structure',
+  'content structure',
   ];
 
   try {
-    // Process each issue for tracking
     for (const issue of issues) {
       try {
-        // Check if this issue is already fixed
         const issueType = this.mapIssueToTrackingType(issue.title);
-        const alreadyFixed = existingTrackedIssues.some(existing => 
-          existing.issueType === issueType && 
-          ['fixed', 'resolved'].includes(existing.status)
+        
+        // Check existing issue status
+        const existingIssue = existingTrackedIssues.find(existing => 
+          existing.issueType === issueType || 
+          existing.issueTitle.toLowerCase().includes(issue.title.toLowerCase().substring(0, 30))
         );
 
-        if (alreadyFixed) {
-          console.log(`Skipping issue "${issue.title}" - already fixed`);
-          continue; // Skip this issue, don't re-track it
+        if (existingIssue) {
+          // Handle different statuses appropriately
+          if (existingIssue.status === 'fixing') {
+            console.log(`Issue "${issue.title}" is currently being fixed - resetting to detected`);
+            // Reset stuck "fixing" status
+            await storage.updateSeoIssueStatus(existingIssue.id, 'detected', {
+              resolutionNotes: 'Reset from fixing status during new analysis'
+            });
+          } else if (['fixed', 'resolved'].includes(existingIssue.status)) {
+            console.log(`Issue "${issue.title}" was previously fixed - marking as reappeared`);
+            // Don't skip, but mark as reappeared
+            await storage.updateSeoIssueStatus(existingIssue.id, 'reappeared', {
+              resolutionNotes: 'Issue detected again after being fixed'
+            });
+          }
         }
 
-        // Determine if this issue is AI-fixable
         const isAutoFixable = AI_FIXABLE_TYPES.some(type => 
           issue.title.toLowerCase().includes(type.toLowerCase())
-        );
+        ) || issue.autoFixAvailable === true;
 
-        // Create or update the tracked issue (will only update if not already fixed)
+
+        // Create or update the tracked issue
         await storage.createOrUpdateSeoIssue({
           userId,
           websiteId,
@@ -471,18 +499,15 @@ private async storeTrackedIssues(
         });
       } catch (issueError) {
         console.error(`Failed to track individual issue "${issue.title}":`, issueError);
-        // Continue processing other issues even if one fails
       }
     }
 
-    // Mark any previously detected issues that are no longer present as resolved
     const currentIssueTypes = issues.map(issue => this.mapIssueToTrackingType(issue.title));
     await storage.markIssuesAsResolved(websiteId, userId, currentIssueTypes);
 
     console.log(`Successfully processed ${issues.length} issues for tracking`);
   } catch (error) {
     console.error('Error in storeTrackedIssues:', error);
-    // Don't throw - issue tracking shouldn't break SEO analysis
   }
 }
 
@@ -505,6 +530,9 @@ private mapIssueToTrackingType(title: string): string {
   if (titleLower.includes("keyword")) return "keyword_optimization";
   if (titleLower.includes("open graph")) return "missing_og_tags";
 
+  if (titleLower.includes("user intent")) return "poor_user_intent";
+  if (titleLower.includes("content uniqueness") || titleLower.includes("uniqueness")) return "low_content_uniqueness";
+  if (titleLower.includes("content structure")) return "poor_content_structure"
   return "other";
 }
 
@@ -629,14 +657,39 @@ private generateRecommendedValue(title: string, description: string): string | u
     return Math.min(10, priority);
   }
 
-  private async performAIContentAnalysis(
-    content: string,
-    title: string,
-    description: string,
-    targetKeywords: string[],
-    userId?: string,
-    websiteId?: string
-  ): Promise<ContentAnalysisResult> {
+ private async performAIContentAnalysis(
+  content: string,
+  title: string,
+  description: string,
+  targetKeywords: string[],
+  userId?: string,
+  websiteId?: string
+): Promise<ContentAnalysisResult> {
+  // Default fallback result
+  const defaultResult: ContentAnalysisResult = {
+    qualityScore: 70,
+    readabilityScore: 70,
+    keywordOptimization: {
+      primaryKeywordDensity: 2,
+      keywordDistribution: "good",
+      missingKeywords: [],
+      keywordCannibalization: false,
+      lsiKeywords: [],
+    },
+    eatScore: {
+      expertise: 70,
+      authoritativeness: 70,
+      trustworthiness: 70,
+      overall: 70,
+    },
+    contentGaps: [],
+    semanticKeywords: [],
+    contentStructureScore: 70,
+    uniquenessScore: 70,
+    userIntentAlignment: 70,
+  };
+
+  try {
     const analysisPrompt = `Analyze this webpage content for comprehensive SEO quality assessment:
 
 TITLE: ${title}
@@ -690,79 +743,134 @@ Return ONLY valid JSON with this exact structure:
   "userIntentAlignment": number
 }`;
 
-    let analysisResult: string;
+    let analysisResult: string = "";
     let tokensUsed = 0;
+    let aiProvider = "";
 
-    // Try Anthropic first, then OpenAI
-    const anthropic = await this.getUserAnthropic(userId);
+    // Get AI providers
     const openai = await this.getUserOpenAI(userId);
+    const anthropic = await this.getUserAnthropic(userId);
 
-    if (anthropic) {
-      console.log("Using user Anthropic Claude for content analysis...");
-      try {
-        const response = await anthropic.messages.create({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2000,
-          messages: [{ role: "user", content: analysisPrompt }],
-        });
-        analysisResult =
-          response.content[0].type === "text" ? response.content[0].text : "";
-        tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
-      } catch (error) {
-        throw new Error(`Anthropic API error: ${error.message}`);
-      }
-    } else if (openai) {
-      console.log("Using user OpenAI GPT-4 for content analysis...");
+    // Try OpenAI first
+    if (openai) {
+      console.log("Using OpenAI GPT-4 for content analysis...");
       try {
         const response = await openai.chat.completions.create({
-          model: "gpt-4",
-          messages: [{ role: "user", content: analysisPrompt }],
+          model: "gpt-4-turbo-preview",
+          messages: [
+            { 
+              role: "system", 
+              content: "You are an SEO expert. Return ONLY valid JSON without any markdown formatting or explanation."
+            },
+            { role: "user", content: analysisPrompt }
+          ],
           max_tokens: 2000,
           temperature: 0.3,
+          response_format: { type: "json_object" }
         });
+        
         analysisResult = response.choices[0].message.content || "";
         tokensUsed = response.usage?.total_tokens || 0;
-      } catch (error) {
-        throw new Error(`OpenAI API error: ${error.message}`);
+        aiProvider = "openai";
+        
+        console.log("OpenAI GPT-4 response received, length:", analysisResult.length);
+      } catch (openaiError) {
+        console.error("OpenAI API error:", openaiError);
+        console.log("OpenAI failed, will try Claude as fallback...");
+        
+        // Try Claude as fallback
+        if (anthropic) {
+          console.log("Falling back to Claude for content analysis...");
+          try {
+            const response = await anthropic.messages.create({
+              model: "claude-3-5-sonnet-latest",
+              max_tokens: 2000,
+              messages: [{ role: "user", content: analysisPrompt }],
+              temperature: 0.3,
+            });
+            
+            analysisResult = response.content[0].type === "text" ? response.content[0].text : "";
+            tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
+            aiProvider = "anthropic";
+            
+            console.log("Claude fallback response received, length:", analysisResult.length);
+          } catch (claudeError) {
+            console.error("Claude API also failed:", claudeError);
+            console.log("Both AI providers failed, using default analysis");
+            return defaultResult;
+          }
+        } else {
+          console.log("No Claude fallback available, using default analysis");
+          return defaultResult;
+        }
+      }
+    } else if (anthropic) {
+      // No OpenAI configured, use Claude directly
+      console.log("OpenAI not configured, using Claude for content analysis...");
+      try {
+        const response = await anthropic.messages.create({
+          model: "claude-3-5-sonnet-latest",
+          max_tokens: 2000,
+          messages: [{ role: "user", content: analysisPrompt }],
+          temperature: 0.3,
+        });
+        
+        analysisResult = response.content[0].type === "text" ? response.content[0].text : "";
+        tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
+        aiProvider = "anthropic";
+        
+        console.log("Claude response received, length:", analysisResult.length);
+      } catch (claudeError) {
+        console.error("Claude API error:", claudeError);
+        console.log("Claude failed, using default analysis");
+        return defaultResult;
       }
     } else {
-      throw new Error(
-        "No AI service available. Please configure either OpenAI or Anthropic API keys in your settings to enable content analysis."
-      );
+      console.log("No AI service available, using default analysis");
+      return defaultResult;
     }
 
-    // Parse JSON response
-    const jsonMatch = analysisResult.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error(
-        `AI service returned invalid response format. Expected JSON but got: ${analysisResult.substring(
-          0,
-          200
-        )}...`
-      );
-    }
-
-    let parsed;
+    // Parse JSON response with better error handling
+    let parsed: any;
     try {
+      // Try to extract JSON from the response
+      const jsonMatch = analysisResult.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.error("No JSON found in AI response:", analysisResult.substring(0, 500));
+        throw new Error("No JSON structure found in AI response");
+      }
+
       parsed = JSON.parse(jsonMatch[0]);
-    } catch (error) {
-      throw new Error(`Failed to parse AI response as JSON: ${error.message}`);
+      console.log("Successfully parsed AI response");
+    } catch (parseError) {
+      console.error("Failed to parse AI response:", parseError);
+      console.error("Raw response:", analysisResult.substring(0, 500));
+      
+      // Try to salvage what we can from the response
+      const fallbackParsed = this.tryExtractScoresFromText(analysisResult);
+      if (fallbackParsed) {
+        parsed = fallbackParsed;
+        console.log("Used fallback parsing for AI response");
+      } else {
+        console.log("Falling back to default result due to parse error");
+        return defaultResult;
+      }
     }
 
-    // Validate and ensure all required fields exist
-    const result = {
-      qualityScore: this.validateScore(parsed.qualityScore),
-      readabilityScore: this.validateScore(parsed.readabilityScore),
+    // Validate and ensure all required fields exist with safe defaults
+    const result: ContentAnalysisResult = {
+      qualityScore: this.safeValidateScore(parsed.qualityScore, 70),
+      readabilityScore: this.safeValidateScore(parsed.readabilityScore, 70),
       keywordOptimization: {
         primaryKeywordDensity: Math.max(
           0,
-          Math.min(100, parsed.keywordOptimization?.primaryKeywordDensity || 0)
+          Math.min(100, Number(parsed.keywordOptimization?.primaryKeywordDensity) || 2)
         ),
         keywordDistribution: ["poor", "good", "excellent"].includes(
           parsed.keywordOptimization?.keywordDistribution
         )
           ? parsed.keywordOptimization.keywordDistribution
-          : "poor",
+          : "good",
         missingKeywords: Array.isArray(
           parsed.keywordOptimization?.missingKeywords
         )
@@ -776,12 +884,16 @@ Return ONLY valid JSON with this exact structure:
           : [],
       },
       eatScore: {
-        expertise: this.validateScore(parsed.eatScore?.expertise),
-        authoritativeness: this.validateScore(
-          parsed.eatScore?.authoritativeness
+        expertise: this.safeValidateScore(parsed.eatScore?.expertise, 70),
+        authoritativeness: this.safeValidateScore(
+          parsed.eatScore?.authoritativeness,
+          70
         ),
-        trustworthiness: this.validateScore(parsed.eatScore?.trustworthiness),
-        overall: this.validateScore(parsed.eatScore?.overall),
+        trustworthiness: this.safeValidateScore(
+          parsed.eatScore?.trustworthiness,
+          70
+        ),
+        overall: this.safeValidateScore(parsed.eatScore?.overall, 70),
       },
       contentGaps: Array.isArray(parsed.contentGaps)
         ? parsed.contentGaps
@@ -789,34 +901,38 @@ Return ONLY valid JSON with this exact structure:
       semanticKeywords: Array.isArray(parsed.semanticKeywords)
         ? parsed.semanticKeywords
         : [],
-      contentStructureScore: this.validateScore(parsed.contentStructureScore),
-      uniquenessScore: this.validateScore(parsed.uniquenessScore),
-      userIntentAlignment: this.validateScore(parsed.userIntentAlignment),
+      contentStructureScore: this.safeValidateScore(
+        parsed.contentStructureScore,
+        70
+      ),
+      uniquenessScore: this.safeValidateScore(parsed.uniquenessScore, 70),
+      userIntentAlignment: this.safeValidateScore(
+        parsed.userIntentAlignment,
+        70
+      ),
     };
 
-    // Track AI usage
+    // Track AI usage if successful
     if (userId && tokensUsed > 0) {
-      const provider = anthropic ? "anthropic" : "openai";
-      const costPerToken = provider === "anthropic" ? 0.003 : 0.005;
-      const costUsd = (tokensUsed * costPerToken) / 1000;
+      const costPerToken = aiProvider === "openai" ? 0.01 / 1000 : 0.003 / 1000;
+      const costUsd = tokensUsed * costPerToken;
 
       try {
         await storage.trackAiUsage({
-          websiteId: websiteId || "", // ← Use actual websiteId, fallback to empty string
+          websiteId: websiteId || "",
           userId,
-          model:
-            provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4",
+          model: aiProvider === "openai" ? "gpt-4-turbo-preview" : "claude-3-5-sonnet-latest",
           tokensUsed,
-          costUsd: Math.round(costUsd * 100), // Store as cents
+          costUsd: Math.round(costUsd * 100),
           operation: "seo_content_analysis",
         });
       } catch (trackingError) {
         console.warn("Failed to track AI usage:", trackingError.message);
-        // Don't fail the entire analysis if tracking fails
       }
     }
 
     console.log("AI content analysis completed:", {
+      provider: aiProvider,
       quality: result.qualityScore,
       readability: result.readabilityScore,
       eatOverall: result.eatScore.overall,
@@ -826,17 +942,78 @@ Return ONLY valid JSON with this exact structure:
     });
 
     return result;
+  } catch (error) {
+    console.error("AI content analysis failed:", error);
+    console.log("Returning default analysis result");
+    return defaultResult;
   }
+}
+
+
+// Add new helper method for safe score validation
+private safeValidateScore(score: any, defaultValue: number = 70): number {
+  try {
+    return this.validateScore(score);
+  } catch (error) {
+    console.warn(`Score validation failed for value: ${score}, using default: ${defaultValue}`);
+    return defaultValue;
+  }
+}
+
+// Add fallback text extraction method
+private tryExtractScoresFromText(text: string): any | null {
+  try {
+    const result: any = {
+      qualityScore: 70,
+      readabilityScore: 70,
+      keywordOptimization: {
+        primaryKeywordDensity: 2,
+        keywordDistribution: "good",
+        missingKeywords: [],
+        keywordCannibalization: false,
+        lsiKeywords: []
+      },
+      eatScore: {
+        expertise: 70,
+        authoritativeness: 70,
+        trustworthiness: 70,
+        overall: 70
+      },
+      contentGaps: [],
+      semanticKeywords: [],
+      contentStructureScore: 70,
+      uniquenessScore: 70,
+      userIntentAlignment: 70
+    };
+
+    // Try to extract numbers from text using regex
+    const qualityMatch = text.match(/quality[:\s]+(\d+)/i);
+    if (qualityMatch) result.qualityScore = parseInt(qualityMatch[1]);
+
+    const readabilityMatch = text.match(/readability[:\s]+(\d+)/i);
+    if (readabilityMatch) result.readabilityScore = parseInt(readabilityMatch[1]);
+
+    const expertiseMatch = text.match(/expertise[:\s]+(\d+)/i);
+    if (expertiseMatch) result.eatScore.expertise = parseInt(expertiseMatch[1]);
+
+    const trustMatch = text.match(/trust[:\s]+(\d+)/i);
+    if (trustMatch) result.eatScore.trustworthiness = parseInt(trustMatch[1]);
+
+    return result;
+  } catch (error) {
+    return null;
+  }
+}
 
   private validateScore(score: any): number {
-    const num = Number(score);
-    if (isNaN(num)) {
-      throw new Error(
-        `Invalid score value: ${score}. Expected a number between 0-100.`
-      );
-    }
-    return Math.max(0, Math.min(100, Math.round(num)));
+  const num = Number(score);
+  if (isNaN(num)) {
+    throw new Error(
+      `Invalid score value: ${score}. Expected a number between 0-100.`
+    );
   }
+  return Math.max(0, Math.min(100, Math.round(num)));
+}
 
   private extractTextContent(html: string): string {
     const $ = cheerio.load(html);
@@ -1169,7 +1346,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "The page is missing a title tag, which is crucial for SEO and user experience.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1179,7 +1356,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Title Tag Too Long",
         description: `Title tag is ${technicalDetails.metaTags.titleLength} characters. Keep it under 60 characters for optimal display.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1189,7 +1366,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Title Tag Too Short",
         description: `Title tag is only ${technicalDetails.metaTags.titleLength} characters. Consider expanding for better SEO.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1200,7 +1377,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "The page lacks a meta description, which impacts search result click-through rates.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true
       });
     }
 
@@ -1210,7 +1387,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Meta Description Too Long",
         description: `Meta description is ${technicalDetails.metaTags.descriptionLength} characters. Keep it under 160 characters.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1222,7 +1399,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "The page doesn't have an H1 tag, which should contain the main topic/keyword.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1232,7 +1409,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Multiple H1 Tags",
         description: `Found ${technicalDetails.headings.h1Count} H1 tags. Use only one H1 per page.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1243,7 +1420,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "Heading tags are not in proper hierarchical order (H1, H2, H3, etc.).",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1254,7 +1431,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Images Missing Alt Text",
         description: `${technicalDetails.images.withoutAlt} out of ${technicalDetails.images.total} images are missing alt text.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1266,7 +1443,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "The page lacks a viewport meta tag, affecting mobile responsiveness.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1288,7 +1465,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "No structured data found. Schema markup helps search engines understand your content.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1300,7 +1477,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "Open Graph tags improve how your content appears when shared on social media.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1311,7 +1488,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Low Content Quality",
         description: `Content quality score is ${contentAnalysis.qualityScore}/100. Content lacks depth, expertise, or value for users.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1321,7 +1498,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Poor Readability",
         description: `Readability score is ${contentAnalysis.readabilityScore}/100. Content is difficult to read and understand.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1344,7 +1521,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "Keywords are not well distributed throughout the content. Improve keyword placement in headings, body text, and meta tags.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1356,7 +1533,7 @@ Return ONLY valid JSON with this exact structure:
           1
         )}%. Consider reducing to 1-3% to avoid penalties.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1367,7 +1544,7 @@ Return ONLY valid JSON with this exact structure:
         description: `Consider adding these relevant keywords: ${contentAnalysis.keywordOptimization.missingKeywords
           .join(", ")}`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1378,7 +1555,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Poor Content Structure",
         description: `Content structure score is ${contentAnalysis.contentStructureScore}/100. Improve organization, use more headings, and create better content flow.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 

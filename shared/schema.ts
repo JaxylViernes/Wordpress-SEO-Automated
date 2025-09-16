@@ -126,6 +126,13 @@ export const content = pgTable(
     wordpressUrl: text("wordpress_url"),
     publishError: text("publish_error"),
 
+     images: jsonb("images").default([]),
+    cloudinaryData: jsonb("cloudinary_data").default({}),
+    featuredImageUrl: text("featured_image_url"),
+    featuredImageCloudinaryId: text("featured_image_cloudinary_id"),
+    hasImages: boolean("has_images").default(false),
+    totalImageCost: integer("total_image_cost").default(0),
+
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -305,6 +312,13 @@ export const contentSchedule = pgTable(
     keywords: text("keywords").array().notNull().default([]),
     status: text("status").notNull().default("planned"), // planned, generating, ready, published
     contentId: varchar("content_id").references(() => content.id),
+
+
+     hasImages: boolean("has_images").default(false),
+    imageCount: integer("image_count").default(0),
+    cloudinaryImageIds: text("cloudinary_image_ids").array().default([]),
+
+
     abTestVariant: text("ab_test_variant"), // A, B, or null
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -351,6 +365,8 @@ export const insertWebsiteSchema = createInsertSchema(websites).pick({
   targetAudience: true,
   // userId will be added automatically in the backend
 });
+
+
 
 export const insertContentSchema = createInsertSchema(content).pick({
   websiteId: true,
@@ -481,18 +497,35 @@ export const contentImages = pgTable(
       .references(() => websites.id, { onDelete: "cascade" }),
 
     // DALL-E generated image info
-    originalUrl: text("original_url").notNull(), // DALL-E temporary URL
+    originalUrl: text("original_url").notNull(),
     filename: text("filename").notNull(),
     altText: text("alt_text").notNull(),
     generationPrompt: text("generation_prompt").notNull(),
-    costCents: integer("cost_cents").notNull(), // Cost in cents
-    imageStyle: text("image_style").notNull(), // natural, digital_art, etc.
+    costCents: integer("cost_cents").notNull(),
+    imageStyle: text("image_style").notNull(),
     size: text("size").notNull().default("1024x1024"),
+
+    // Cloudinary storage fields (NEW)
+    cloudinaryUrl: text("cloudinary_url"),
+    cloudinarySecureUrl: text("cloudinary_secure_url"),
+    cloudinaryPublicId: text("cloudinary_public_id"),
+    cloudinaryFormat: varchar("cloudinary_format", { length: 20 }),
+    cloudinaryWidth: integer("cloudinary_width"),
+    cloudinaryHeight: integer("cloudinary_height"),
+    cloudinaryBytes: integer("cloudinary_bytes"),
+    cloudinaryVersion: varchar("cloudinary_version", { length: 20 }),
+    cloudinaryThumbnailUrl: text("cloudinary_thumbnail_url"),
+    cloudinaryOptimizedUrl: text("cloudinary_optimized_url"),
+    cloudinaryUploadedAt: timestamp("cloudinary_uploaded_at"),
+    
+    // Image ordering and featuring (NEW)
+    imageOrder: integer("image_order").default(0),
+    isFeatured: boolean("is_featured").default(false),
 
     // WordPress upload info
     wordpressMediaId: integer("wordpress_media_id"),
     wordpressUrl: text("wordpress_url"),
-    status: text("status").notNull().default("generated"), // generated, uploaded, failed
+    status: text("status").notNull().default("generated"),
     uploadError: text("upload_error"),
 
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -501,8 +534,115 @@ export const contentImages = pgTable(
   (table) => [
     index("idx_content_images_content_id").on(table.contentId),
     index("idx_content_images_user_id").on(table.userId),
+    index("idx_content_images_cloudinary_public_id").on(table.cloudinaryPublicId),
+    index("idx_content_images_order").on(table.contentId, table.imageOrder),
   ]
 );
+
+// 2. ADD new cloudinaryUsage table
+export const cloudinaryUsage = pgTable(
+  "cloudinary_usage",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Usage metrics
+    month: timestamp("month").notNull(),
+    imagesUploaded: integer("images_uploaded").default(0),
+    totalBytesStored: integer("total_bytes_stored").default(0),
+    bandwidthUsed: integer("bandwidth_used").default(0),
+    creditsUsed: integer("credits_used").default(0),
+    transformationsCount: integer("transformations_count").default(0),
+    
+    // Cost tracking (in cents)
+    estimatedCostCents: integer("estimated_cost_cents").default(0),
+    
+    // Timestamps
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_cloudinary_usage_user_website").on(table.userId, table.websiteId),
+    index("idx_cloudinary_usage_month").on(table.month),
+  ]
+);
+
+// 3. ADD new failedImageUploads table
+export const failedImageUploads = pgTable(
+  "failed_image_uploads",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    contentId: varchar("content_id")
+      .references(() => content.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Original request data
+    dalleUrl: text("dalle_url"),
+    cloudinaryError: text("cloudinary_error"),
+    filename: varchar("filename", { length: 255 }),
+    altText: text("alt_text"),
+    prompt: text("prompt"),
+    
+    // Error tracking
+    errorMessage: text("error_message"),
+    errorCode: varchar("error_code", { length: 50 }),
+    retryCount: integer("retry_count").default(0),
+    maxRetries: integer("max_retries").default(3),
+    
+    // Status
+    status: text("status").default("pending_retry"), // pending_retry, retrying, resolved, abandoned
+    
+    // Timestamps
+    failedAt: timestamp("failed_at").notNull().defaultNow(),
+    lastRetryAt: timestamp("last_retry_at"),
+    resolvedAt: timestamp("resolved_at"),
+  },
+  (table) => [
+    index("idx_failed_uploads_status").on(table.status),
+    index("idx_failed_uploads_content").on(table.contentId),
+  ]
+);
+
+
+export const insertCloudinaryUsageSchema = createInsertSchema(cloudinaryUsage).pick({
+  websiteId: true,
+  month: true,
+  imagesUploaded: true,
+  totalBytesStored: true,
+  bandwidthUsed: true,
+  creditsUsed: true,
+  transformationsCount: true,
+  estimatedCostCents: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertFailedImageUploadSchema = createInsertSchema(failedImageUploads).pick({
+  contentId: true,
+  websiteId: true,
+  dalleUrl: true,
+  cloudinaryError: true,
+  filename: true,
+  altText: true,
+  prompt: true,
+  errorMessage: true,
+  errorCode: true,
+  retryCount: true,
+  maxRetries: true,
+  status: true,
+  // userId will be added automatically in the backend
+});
 
 // Add insert schema
 export const insertContentImageSchema = createInsertSchema(contentImages).pick({
@@ -515,6 +655,23 @@ export const insertContentImageSchema = createInsertSchema(contentImages).pick({
   costCents: true,
   imageStyle: true,
   size: true,
+  
+  // Cloudinary fields (NEW)
+  cloudinaryUrl: true,
+  cloudinarySecureUrl: true,
+  cloudinaryPublicId: true,
+  cloudinaryFormat: true,
+  cloudinaryWidth: true,
+  cloudinaryHeight: true,
+  cloudinaryBytes: true,
+  cloudinaryVersion: true,
+  cloudinaryThumbnailUrl: true,
+  cloudinaryOptimizedUrl: true,
+  cloudinaryUploadedAt: true,
+  imageOrder: true,
+  isFeatured: true,
+  
+  // WordPress fields
   wordpressMediaId: true,
   wordpressUrl: true,
   status: true,
@@ -1004,6 +1161,11 @@ export type Backup = typeof backups.$inferSelect;
 export type UpsertUser = typeof users.$inferInsert;
 
 export type InsertContentImage = z.infer<typeof insertContentImageSchema>;
+export type InsertCloudinaryUsage = z.infer<typeof insertCloudinaryUsageSchema>;
+export type CloudinaryUsage = typeof cloudinaryUsage.$inferSelect;
+
+export type InsertFailedImageUpload = z.infer<typeof insertFailedImageUploadSchema>;
+export type FailedImageUpload = typeof failedImageUploads.$inferSelect;
 export type ContentImage = typeof contentImages.$inferSelect;
 
 export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;

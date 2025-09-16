@@ -21,9 +21,25 @@ import {
   Cpu,
   Brain,
   Loader2,
+  Image as ImageIcon,
 } from "lucide-react";
 //nadagdag
 import AutoContentScheduler from "./auto-content-scheduler";
+
+interface ContentImage {
+  id: string;
+  filename: string;
+  altText: string;
+  cloudinaryUrl?: string;       // Permanent Cloudinary URL
+  cloudinarySecureUrl?: string;  // Secure Cloudinary URL
+  cloudinaryPublicId?: string;   // Cloudinary public ID
+  originalUrl?: string;          // Temporary DALL-E URL (don't use this)
+  wordpressUrl?: string;         // WordPress URL after publishing
+  status: string;
+  imageOrder?: number;
+  isFeatured?: boolean;
+  url?: string;                  // Primary URL to use
+}
 
 // API utility functions
 const api = {
@@ -200,6 +216,42 @@ const getErrorSeverity = (error) => {
   return "error";
 };
 
+// Helper function to ensure we use Cloudinary URLs when available
+const getImageUrl = (image: ContentImage): string => {
+  // Priority: cloudinaryUrl > cloudinarySecureUrl > url > originalUrl
+  return image.cloudinaryUrl || image.cloudinarySecureUrl || image.url || image.originalUrl || '';
+};
+
+// Helper function to process content and replace image URLs with Cloudinary URLs
+const processContentImages = (content: string, images?: ContentImage[]): string => {
+  if (!images || images.length === 0) return content;
+  
+  let processedContent = content;
+  
+  images.forEach(image => {
+    const cloudinaryUrl = getImageUrl(image);
+    
+    if (cloudinaryUrl && image.originalUrl && image.originalUrl !== cloudinaryUrl) {
+      // Replace DALL-E URLs with Cloudinary URLs
+      processedContent = processedContent.replace(
+        new RegExp(image.originalUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+        cloudinaryUrl
+      );
+    }
+    
+    // Also replace any placeholder image sources
+    if (image.filename) {
+      const placeholderPattern = new RegExp(`src="[^"]*${image.filename}[^"]*"`, 'g');
+      processedContent = processedContent.replace(
+        placeholderPattern,
+        `src="${cloudinaryUrl}"`
+      );
+    }
+  });
+  
+  return processedContent;
+};
+
 export default function AIContent() {
   // State management
   const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
@@ -298,7 +350,15 @@ export default function AIContent() {
     try {
       setIsLoadingContent(true);
       const contentData = await api.getWebsiteContent(selectedWebsite);
-      setContent(contentData);
+      
+      // Process content to ensure Cloudinary URLs are used
+      const processedContent = contentData.map(item => ({
+        ...item,
+        body: processContentImages(item.body, item.images),
+        content: processContentImages(item.content, item.images),
+      }));
+      
+      setContent(processedContent);
     } catch (error) {
       showToast(
         "Failed to Load Content",
@@ -444,7 +504,7 @@ export default function AIContent() {
         } else if (newProgress < 85) {
           setGenerationPhase(
             formData.includeImages
-              ? "Generating AI images..."
+              ? "Generating AI images and uploading to Cloudinary..."
               : "Finalizing content..."
           );
           setEstimatedTimeRemaining(3);
@@ -579,12 +639,20 @@ export default function AIContent() {
     }
   };
 
-  // ENHANCED: Open edit dialog with image data initialization
+  // ENHANCED: Open edit dialog with image data initialization and Cloudinary URLs
   const openEditDialog = (contentItem) => {
-    setEditingContent(contentItem);
+    // Process content to use Cloudinary URLs
+    const processedBody = processContentImages(contentItem.body || contentItem.content, contentItem.images);
+    
+    setEditingContent({
+      ...contentItem,
+      body: processedBody,
+      content: processedBody,
+    });
+    
     setEditFormData({
       title: contentItem.title || "",
-      body: contentItem.body || "",
+      body: processedBody,
       excerpt: contentItem.excerpt || "",
       keywords: Array.isArray(contentItem.seoKeywords)
         ? contentItem.seoKeywords.join(", ")
@@ -738,7 +806,7 @@ export default function AIContent() {
         if (regen.imagesRegenerated && regen.newImageCount > 0) {
           successMessage += `. Generated ${regen.newImageCount} new image${
             regen.newImageCount > 1 ? "s" : ""
-          } with DALL-E for $${regen.imageCostUsd.toFixed(4)}`;
+          } with DALL-E and uploaded to Cloudinary for $${regen.imageCostUsd.toFixed(4)}`;
         } else if (editingContent.hasImages && !regen.imagesRegenerated) {
           successMessage += `. Kept existing images`;
         }
@@ -846,6 +914,26 @@ export default function AIContent() {
   return (
     <div className="py-6 bg-gray-50 min-h-screen">
       {/* PROGRESS BAR ADDITION: Add CSS for animated stripes inline */}
+      <style jsx>{`
+        @keyframes stripes {
+          0% { background-position: 0 0; }
+          100% { background-position: 40px 0; }
+        }
+        .bg-stripes {
+          background-image: linear-gradient(
+            45deg,
+            rgba(255, 255, 255, 0.15) 25%,
+            transparent 25%,
+            transparent 50%,
+            rgba(255, 255, 255, 0.15) 50%,
+            rgba(255, 255, 255, 0.15) 75%,
+            transparent 75%,
+            transparent
+          );
+          background-size: 40px 40px;
+          animation: stripes 1s linear infinite;
+        }
+      `}</style>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
         {/* Enhanced Toast Notification */}
@@ -1290,8 +1378,8 @@ export default function AIContent() {
                             </div>
 
                             <p className="text-xs text-gray-600 mb-3">
-                              Images are generated using OpenAI's DALL-E 3
-                              regardless of your content AI provider choice.
+                              Images are generated using OpenAI's DALL-E 3 and uploaded to Cloudinary
+                              for permanent storage.
                             </p>
 
                             {formData.includeImages && (
@@ -1351,23 +1439,26 @@ export default function AIContent() {
                                   </div>
                                 </div>
 
-                                <div className="text-xs text-gray-600 bg-white p-2 rounded border">
-                                  <strong>Content AI:</strong>{" "}
-                                  {getProviderName(formData.aiProvider)} (Est:
-                                  $0.001-$0.005)
-                                  <br />
-                                  <strong>Image AI:</strong> DALL-E 3 ($
-                                  {(formData.imageCount * 0.04).toFixed(2)} - $
-                                  {(formData.imageCount * 0.12).toFixed(2)})
-                                  <br />
-                                  <strong>Total Estimated Cost:</strong> $
-                                  {(0.001 + formData.imageCount * 0.04).toFixed(
-                                    3
-                                  )}{" "}
-                                  - $
-                                  {(0.005 + formData.imageCount * 0.12).toFixed(
-                                    3
-                                  )}
+                                <div className="text-xs text-gray-600 bg-white p-2 rounded border flex items-center">
+                                  <ImageIcon className="w-4 h-4 mr-2 text-blue-600" />
+                                  <div className="flex-1">
+                                    <strong>Content AI:</strong>{" "}
+                                    {getProviderName(formData.aiProvider)} (Est:
+                                    $0.001-$0.005)
+                                    <br />
+                                    <strong>Image AI:</strong> DALL-E 3 → Cloudinary ($
+                                    {(formData.imageCount * 0.04).toFixed(2)} - $
+                                    {(formData.imageCount * 0.12).toFixed(2)})
+                                    <br />
+                                    <strong>Total Estimated Cost:</strong> $
+                                    {(0.001 + formData.imageCount * 0.04).toFixed(
+                                      3
+                                    )}{" "}
+                                    - $
+                                    {(0.005 + formData.imageCount * 0.12).toFixed(
+                                      3
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             )}
@@ -1447,7 +1538,7 @@ export default function AIContent() {
                             <span className="font-medium">
                               Generating {formData.imageCount} image
                               {formData.imageCount > 1 ? "s" : ""} with DALL-E
-                              3...
+                              3 and uploading to Cloudinary...
                             </span>
                           </div>
                         )}
@@ -1499,7 +1590,7 @@ export default function AIContent() {
           </div>
         )}
 
-        {/* ENHANCED: Edit Content Dialog with Image Regeneration Options */}
+        {/* ENHANCED: Edit Content Dialog with Image Regeneration Options and Cloudinary Preview */}
         {isEditDialogOpen && editingContent && (
           <div className="fixed inset-0 z-50 overflow-y-auto">
             <div className="flex items-start justify-center min-h-screen pt-4 px-4 pb-20">
@@ -1531,7 +1622,7 @@ export default function AIContent() {
 
                 {/* Main Content - Side by Side Layout */}
                 <div className="flex h-[calc(100vh-200px)]">
-                  {/* Left Side - WordPress Preview */}
+                  {/* Left Side - WordPress Preview with Cloudinary Images */}
                   <div className="flex-1 p-6 bg-gray-50 overflow-y-auto border-r border-gray-200">
                     <div className="max-w-4xl mx-auto">
                       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
@@ -1560,13 +1651,36 @@ export default function AIContent() {
                           )}
                         </div>
 
-                        {/* WordPress Post Content */}
+                        {/* Show image status if content has images */}
+                        {editingContent && editingContent.images && editingContent.images.length > 0 && (
+                          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                            <div className="flex items-center">
+                              <ImageIcon className="w-5 h-5 text-green-600 mr-2" />
+                              <span className="text-sm font-medium text-green-800">
+                                {editingContent.images.length} image{editingContent.images.length > 1 ? 's' : ''} stored in Cloudinary
+                              </span>
+                            </div>
+                            {editingContent.images.map((img, idx) => {
+                              const imageUrl = getImageUrl(img);
+                              return (
+                                <div key={idx} className="mt-2 text-xs text-green-700">
+                                  <span className="font-medium">Image {idx + 1}:</span> {img.filename}
+                                  {imageUrl && !imageUrl.includes('oaidalleapi') && (
+                                    <span className="ml-2 text-green-600">✓ Cloudinary</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* WordPress Post Content with processed Cloudinary images */}
                         <div className="prose prose-lg max-w-none">
                           <div
                             className="wordpress-content"
                             dangerouslySetInnerHTML={{
                               __html:
-                                editFormData.body ||
+                                processContentImages(editFormData.body, editingContent?.images) ||
                                 "<p>Start typing your content...</p>",
                             }}
                             style={{
@@ -1699,7 +1813,7 @@ export default function AIContent() {
                         )}
                       </div>
 
-                      {/* Current Image Information */}
+                      {/* Current Image Information with Cloudinary status */}
                       {editingContent &&
                         (editingContent.hasImages ||
                           editingContent.imageCount > 0) && (
@@ -1716,12 +1830,12 @@ export default function AIContent() {
                               </span>
                             </div>
                             <p className="text-xs text-gray-600 mb-3">
-                              This content currently has{" "}
+                              This content has{" "}
                               {editingContent.imageCount || 0} AI-generated
                               image
                               {(editingContent.imageCount || 0) !== 1
                                 ? "s"
-                                : ""}
+                                : ""} stored in Cloudinary
                               {editingContent.imageCostCents &&
                                 ` (Cost: $${(
                                   editingContent.imageCostCents / 100
@@ -1729,12 +1843,13 @@ export default function AIContent() {
                             </p>
 
                             <div className="flex items-center space-x-2 text-xs">
-                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded">
-                                Images Available
+                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded flex items-center">
+                                <ImageIcon className="w-3 h-3 mr-1" />
+                                Cloudinary Storage Active
                               </span>
                               {editingContent.imageCostCents > 0 && (
                                 <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded">
-                                  Previous Cost: $
+                                  $
                                   {(
                                     editingContent.imageCostCents / 100
                                   ).toFixed(4)}
@@ -1751,13 +1866,12 @@ export default function AIContent() {
                             Image Options
                           </h4>
                           <span className="text-xs text-orange-600">
-                            DALL-E 3 Only
+                            DALL-E 3 → Cloudinary
                           </span>
                         </div>
 
                         <p className="text-xs text-gray-600 mb-3">
-                          Images are always generated with DALL-E 3, regardless
-                          of your content AI provider choice.
+                          Images are generated with DALL-E 3 and automatically uploaded to Cloudinary for permanent storage.
                         </p>
 
                         {/* Option 1: Keep existing images */}
@@ -1787,7 +1901,7 @@ export default function AIContent() {
                                 {editingContent && editingContent.hasImages
                                   ? `Keep existing ${
                                       editingContent.imageCount || 0
-                                    } images`
+                                    } Cloudinary images`
                                   : "No images (text content only)"}
                               </p>
                               <span className="inline-block mt-1 text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
@@ -1817,8 +1931,7 @@ export default function AIContent() {
                                   Regenerate Images
                                 </span>
                                 <p className="text-xs text-gray-600">
-                                  Create completely new AI-generated images for
-                                  this content
+                                  Create new images and upload to Cloudinary
                                 </p>
                                 <span className="inline-block mt-1 text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">
                                   $0.04 per image
@@ -1851,8 +1964,7 @@ export default function AIContent() {
                                   Add New Images
                                 </span>
                                 <p className="text-xs text-gray-600">
-                                  Generate images for content that doesn't
-                                  currently have any
+                                  Generate images and store in Cloudinary
                                 </p>
                                 <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
                                   $0.04 per image
@@ -1935,10 +2047,10 @@ export default function AIContent() {
                                     )}
                                   </span>
                                 </div>
-                                <p className="text-orange-700 mt-1">
-                                  {editFormData.imageCount} new image
-                                  {editFormData.imageCount > 1 ? "s" : ""} will
-                                  be generated and embedded in your content
+                                <p className="text-orange-700 mt-1 flex items-center">
+                                  <ImageIcon className="w-3 h-3 mr-1" />
+                                  {editFormData.imageCount} image
+                                  {editFormData.imageCount > 1 ? "s" : ""} → DALL-E 3 → Cloudinary
                                 </p>
                               </div>
                             </div>
@@ -2153,12 +2265,12 @@ export default function AIContent() {
                     >
                       {isSaving ? (
                         <>
-                          <Save className="w-4 h-4 mr-2 animate-pulse" />
+                          <Save className="w-4 h-4 mr-2 animate-pulse inline" />
                           Saving...
                         </>
                       ) : (
                         <>
-                          <Save className="w-4 h-4 mr-2" />
+                          <Save className="w-4 h-4 mr-2 inline" />
                           Save Changes
                         </>
                       )}
@@ -2173,7 +2285,7 @@ export default function AIContent() {
                     >
                       {isRegenerating ? (
                         <>
-                          <Brain className="w-4 h-4 mr-2 animate-spin" />
+                          <Brain className="w-4 h-4 mr-2 animate-spin inline" />
                           Regenerating
                           {editFormData.regenerateImages ||
                           editFormData.includeImages
@@ -2183,7 +2295,7 @@ export default function AIContent() {
                         </>
                       ) : (
                         <>
-                          <RefreshCw className="w-4 h-4 mr-2" />
+                          <RefreshCw className="w-4 h-4 mr-2 inline" />
                           Regenerate with{" "}
                           {getProviderName(editFormData.aiProvider)}
                           {(editFormData.regenerateImages ||
@@ -2349,7 +2461,7 @@ export default function AIContent() {
           </div>
         )}
 
-        {/* ENHANCED: Content List with Image Information */}
+        {/* ENHANCED: Content List with Image Information and Cloudinary Status */}
         {selectedWebsite ? (
           <div className="bg-white shadow overflow-hidden sm:rounded-md">
             <div className="px-4 py-5 sm:p-6">
@@ -2421,11 +2533,14 @@ export default function AIContent() {
                                 </span>
                               </span>
                             )}
-                            {/* Image indicator */}
+                            {/* Enhanced image indicator with Cloudinary status */}
                             {item.hasImages && item.imageCount > 0 && (
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
-                                🖼️ {item.imageCount} image
-                                {item.imageCount > 1 ? "s" : ""}
+                                <ImageIcon className="w-3 h-3 mr-1" />
+                                {item.imageCount} {item.imageCount > 1 ? "images" : "image"}
+                                {item.images?.[0]?.cloudinaryUrl && (
+                                  <span className="ml-1 text-green-600">✓</span>
+                                )}
                               </span>
                             )}
                           </div>
@@ -2553,9 +2668,15 @@ export default function AIContent() {
                               : "N/A"}
                           </span>
                           {item.hasImages && item.imageCostCents && (
-                            <span>
+                            <span className="flex items-center">
+                              <ImageIcon className="w-3 h-3 mr-1" />
                               Image Cost: $
                               {(item.imageCostCents / 100).toFixed(4)}
+                              {item.images?.[0]?.cloudinaryUrl && (
+                                <span className="ml-1 text-green-600" title="Stored in Cloudinary">
+                                  ☁️
+                                </span>
+                              )}
                             </span>
                           )}
                           {item.seoKeywords && item.seoKeywords.length > 0 && (

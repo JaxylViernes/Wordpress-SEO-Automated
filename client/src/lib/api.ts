@@ -154,103 +154,11 @@ export const api = {
     return response.json();
   },
 
-  // MOVED: Iterative AI fix method (was incorrectly in seoHelpers)
-  iterativeFixWithAI: async (websiteId: string, options?: {
-    targetScore?: number;
-    maxIterations?: number;
-    minImprovementThreshold?: number;
-    fixTypes?: string[];
-    maxChangesPerIteration?: number;
-    skipBackup?: boolean;
-  }) => {
-    const response = await fetch(`/api/user/websites/${websiteId}/iterative-ai-fix`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(options || {})
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Iterative AI fix failed' }));
-      throw new Error(error.message || 'Failed to complete iterative AI fixes');
-    }
-    
-    return response.json();
-  },
-
   // Get available AI fix types
   getAvailableAIFixes: async (websiteId: string) => {
     const response = await fetch(`/api/user/websites/${websiteId}/available-fixes`);
     if (!response.ok) throw new Error('Failed to get available fixes');
     return response.json();
-  },
-
-  // Helper method to validate iterative fix options
-  validateIterativeFixOptions: (options: {
-    targetScore?: number;
-    maxIterations?: number;
-    minImprovementThreshold?: number;
-  }): { valid: boolean; errors: string[] } => {
-    const errors: string[] = [];
-    
-    if (options.targetScore !== undefined) {
-      if (options.targetScore < 50 || options.targetScore > 100) {
-        errors.push('Target score must be between 50 and 100');
-      }
-    }
-    
-    if (options.maxIterations !== undefined) {
-      if (options.maxIterations < 1 || options.maxIterations > 10) {
-        errors.push('Max iterations must be between 1 and 10');
-      }
-    }
-    
-    if (options.minImprovementThreshold !== undefined) {
-      if (options.minImprovementThreshold < 0.5 || options.minImprovementThreshold > 10) {
-        errors.push('Min improvement threshold must be between 0.5 and 10');
-      }
-    }
-    
-    return {
-      valid: errors.length === 0,
-      errors
-    };
-  },
-
-  // Method to get iterative fix recommendations
-  getIterativeFixRecommendations: async (websiteId: string) => {
-    const [website, reports, availableFixes] = await Promise.all([
-      api.getWebsite(websiteId),
-      api.getSeoReports(websiteId),
-      api.getAvailableAIFixes(websiteId)
-    ]);
-    
-    const currentScore = reports[0]?.score || 0;
-    
-    // Determine recommended target score based on current score
-    let recommendedTarget = 85;
-    if (currentScore >= 80) recommendedTarget = 95;
-    else if (currentScore >= 60) recommendedTarget = 85;
-    else if (currentScore >= 40) recommendedTarget = 70;
-    else recommendedTarget = 60;
-    
-    // Estimate iterations needed
-    const averageImprovementPerIteration = 8; // Based on typical improvements
-    const pointsNeeded = Math.max(0, recommendedTarget - currentScore);
-    const estimatedIterations = Math.min(5, Math.ceil(pointsNeeded / averageImprovementPerIteration));
-    
-    return {
-      websiteId,
-      websiteName: website.name,
-      currentScore,
-      recommendedTarget,
-      estimatedIterations,
-      availableFixTypes: availableFixes.availableFixes || [],
-      totalFixableIssues: availableFixes.totalFixableIssues || 0,
-      estimatedTime: estimatedIterations > 0 ? 
-        `${estimatedIterations * 8}-${estimatedIterations * 12} minutes` : '0 minutes',
-      difficulty: currentScore < 40 ? 'high' : currentScore < 70 ? 'medium' : 'low',
-      priority: currentScore < 50 ? 'critical' : currentScore < 75 ? 'high' : 'medium'
-    };
   },
 
   // ===============================
@@ -445,28 +353,6 @@ export const api = {
     
     return response.json();
   },
-
-  //WAG ALISIN
-  // generateClientReport: (websiteId: string, data?: { reportType?: 'weekly' | 'monthly' | 'quarterly' }) => {
-  //   const reportType = data?.reportType || 'monthly';
-  //   console.log(`Generating ${reportType} report for website: ${websiteId}`);
-    
-  //   return fetch(`/api/user/websites/${websiteId}/reports/generate`, {
-  //     method: 'POST',
-  //     headers: { 'Content-Type': 'application/json' },
-  //     body: JSON.stringify({ reportType })
-  //   }).then(res => {
-  //     console.log(`Generate report response status: ${res.status}`);
-  //     if (!res.ok) {
-  //       console.error(`Failed to generate report: ${res.status} ${res.statusText}`);
-  //       throw new Error('Failed to generate report');
-  //     }
-  //     return res.json();
-  //   }).then(result => {
-  //     console.log(`Report generated successfully:`, result);
-  //     return result;
-  //   });
-  // },
 
   generateBulkReports: async (websiteIds: string[], reportType: 'weekly' | 'monthly' | 'quarterly' = 'monthly') => {
     console.log(`Generating bulk reports for ${websiteIds.length} websites`);
