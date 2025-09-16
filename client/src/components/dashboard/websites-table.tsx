@@ -182,9 +182,7 @@ export default function WebsitesTable() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Last Updated
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
+            
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -233,23 +231,7 @@ export default function WebsitesTable() {
                       addSuffix: true,
                     })}
                   </td>
-                  <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-1 sm:space-x-2">
-                      <button className="text-primary-600 hover:text-primary-500 p-1">
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button className="text-gray-600 hover:text-gray-500 p-1">
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        className="text-red-600 hover:text-red-500 p-1"
-                        onClick={() => deleteWebsite.mutate(website.id)}
-                        disabled={deleteWebsite.isPending}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
+                
                 </tr>
               );
             })}

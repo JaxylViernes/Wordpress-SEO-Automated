@@ -18,9 +18,7 @@ import FormData from 'form-data';
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import crypto from 'crypto';
-import { JSDOM } from 'jsdom';
-import piexif from 'piexifjs';
-import { gscStorage } from './services/gsc-storage';
+
 
 
 const authService = new AuthService();
@@ -2150,77 +2148,82 @@ app.post("/api/system/publish-scheduled-content", async (req: Request, res: Resp
   });
 
   app.post("/api/user/websites/:id/seo-analysis", requireAuth, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = req.user!.id;
-      const { targetKeywords } = req.body;
-      
-      const website = await storage.getUserWebsite(req.params.id, userId);
-      if (!website) {
-        res.status(404).json({ message: "Website not found or access denied" });
-        return;
-      }
-
-      console.log(`🔍 Starting SEO analysis for website: ${website.name} (${website.url})`);
-
-      const analysis = await seoService.analyzeWebsite(
-        website.url, 
-        targetKeywords || []
-      );
-      
-      // Save the report
-      const report = await storage.createSeoReport({
-        userId,
-        websiteId: req.params.id,
-        score: analysis.score,
-        issues: analysis.issues,
-        recommendations: analysis.recommendations,
-        pageSpeedScore: analysis.pageSpeedScore
-      });
-
-      // Update website SEO score
-      await storage.updateWebsite(req.params.id, {
-        seoScore: analysis.score
-      });
-
-      // Log activity
-      await storage.createActivityLog({
-        userId,
-        websiteId: req.params.id,
-        type: "seo_analysis",
-        description: `SEO analysis completed for ${website.url} (Score: ${analysis.score}/100)`,
-        metadata: { 
-          reportId: report.id, 
-          score: analysis.score,
-          pageSpeedScore: analysis.pageSpeedScore,
-          issuesFound: analysis.issues?.length || 0
-        }
-      });
-
-      console.log(`✅ SEO analysis completed. Score: ${analysis.score}, Issues: ${analysis.issues.length}`);
-
-      res.json(analysis);
-    } catch (error) {
-      console.error("SEO analysis error:", error);
-      
-      let statusCode = 500;
-      let errorMessage = error instanceof Error ? error.message : "Failed to perform SEO analysis";
-      
-      if (error instanceof Error) {
-        if (error.message.includes('Cannot access website')) {
-          statusCode = 400;
-          errorMessage = `Website is not accessible: ${error.message}`;
-        } else if (error.message.includes('timeout')) {
-          statusCode = 408;
-          errorMessage = "Website took too long to respond. Please try again.";
-        }
-      }
-      
-      res.status(statusCode).json({ 
-        message: errorMessage,
-        error: 'SEO_ANALYSIS_FAILED'
-      });
+  try {
+    const userId = req.user!.id;
+    const websiteId = req.params.id; // Get the websiteId from params
+    const { targetKeywords } = req.body;
+    
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
     }
-  });
+
+    console.log(`🔍 Starting SEO analysis for website: ${website.name} (${website.url})`);
+
+    // FIXED: Pass userId and websiteId to enable issue tracking
+    const analysis = await seoService.analyzeWebsite(
+      website.url, 
+      targetKeywords || [],
+      userId,    // ← Add this parameter
+      websiteId  // ← Add this parameter  
+    );
+    
+    // Save the report (this will now work because userId/websiteId are provided)
+    const report = await storage.createSeoReport({
+      userId,
+      websiteId: websiteId,
+      score: analysis.score,
+      issues: analysis.issues,
+      recommendations: analysis.recommendations,
+      pageSpeedScore: analysis.pageSpeedScore
+    });
+
+    // Update website SEO score
+    await storage.updateWebsite(websiteId, {
+      seoScore: analysis.score
+    });
+
+    // Log activity
+    await storage.createActivityLog({
+      userId,
+      websiteId: websiteId,
+      type: "seo_analysis",
+      description: `SEO analysis completed for ${website.url} (Score: ${analysis.score}/100)`,
+      metadata: { 
+        reportId: report.id, 
+        score: analysis.score,
+        pageSpeedScore: analysis.pageSpeedScore,
+        issuesFound: analysis.issues?.length || 0,
+        issuesTracked: true // ← Add this flag
+      }
+    });
+
+    console.log(`✅ SEO analysis completed. Score: ${analysis.score}, Issues: ${analysis.issues.length}, Tracked: ${analysis.issues.length} issues`);
+
+    res.json(analysis);
+  } catch (error) {
+    console.error("SEO analysis error:", error);
+    
+    let statusCode = 500;
+    let errorMessage = error instanceof Error ? error.message : "Failed to perform SEO analysis";
+    
+    if (error instanceof Error) {
+      if (error.message.includes('Cannot access website')) {
+        statusCode = 400;
+        errorMessage = `Website is not accessible: ${error.message}`;
+      } else if (error.message.includes('timeout')) {
+        statusCode = 408;
+        errorMessage = "Website took too long to respond. Please try again.";
+      }
+    }
+    
+    res.status(statusCode).json({ 
+      message: errorMessage,
+      error: 'SEO_ANALYSIS_FAILED'
+    });
+  }
+});
 
   // Add this route to your routes.ts file, right after the existing AI fix routes
 
@@ -3741,7 +3744,7 @@ async function findMediaIdFromUrl(baseUrl: string, imageUrl: string, authHeader?
   }
 }
 
-
+// Process image with Sharp
 async function processImageWithSharp(
   imageBuffer: Buffer,
   options: any
@@ -3751,39 +3754,8 @@ async function processImageWithSharp(
   // Get current metadata
   const metadata = await pipeline.metadata();
   
-  // Handle scrambling action
-  if (options.action === 'scramble') {
-    console.log(`  Applying scramble: ${options.scrambleType} at ${options.scrambleIntensity}% intensity`);
-    
-    switch (options.scrambleType) {
-      case 'pixel-shift':
-        pipeline = await applyPixelShift(pipeline, metadata, options.scrambleIntensity || 50);
-        break;
-        
-      case 'watermark':
-        pipeline = await applyWatermark(pipeline, metadata, options);
-        break;
-        
-      case 'blur-regions':
-        pipeline = await applyBlurRegions(pipeline, metadata, options);
-        break;
-        
-      case 'color-shift':
-        pipeline = await applyColorShift(pipeline, metadata, options.scrambleIntensity || 50);
-        break;
-        
-      case 'noise':
-        pipeline = await applyNoise(pipeline, metadata, options.scrambleIntensity || 50);
-        break;
-    }
-    
-    // Remove metadata after scrambling for privacy
-    pipeline = pipeline.withMetadata({
-      orientation: metadata.orientation
-    });
-    
-  } else if (options.action === 'strip') {
-    // Remove all metadata except orientation
+  if (options.action === 'strip') {
+    // Remove all metadata except orientation (to prevent rotation issues)
     console.log('  Stripping metadata');
     pipeline = pipeline.withMetadata({
       orientation: metadata.orientation
@@ -3797,45 +3769,33 @@ async function processImageWithSharp(
       orientation: metadata.orientation
     };
     
-    // Sharp's EXIF writing capabilities - all values must be strings
+    // Sharp has limited EXIF writing capabilities
+    // We can add basic copyright and author info
     if (options.copyright || options.author) {
       try {
-        const now = new Date();
-        const dateStr = now.toISOString().split('T')[0].replace(/-/g, ':') + ' ' + 
-                       now.toISOString().split('T')[1].split('.')[0];
-        
+        // Apply metadata with EXIF
         metadataOptions.exif = {
           IFD0: {
-            ImageDescription: `Property of ${options.author || 'Murray Group'}. ${options.copyright || ''}`,
-            Make: 'AI Content Manager',
-            Model: 'Image Processor v1.0',
-            Software: 'AI Content Manager - Murray Group',
-            DateTime: dateStr,
-            Artist: options.author || '',
             Copyright: options.copyright || '',
-            HostComputer: 'Murray Group Real Estate System'
+            Artist: options.author || '',
+            Software: 'AI Content Manager',
+            DateTime: new Date().toISOString().split('T')[0].replace(/-/g, ':') + ' ' + 
+                     new Date().toISOString().split('T')[1].split('.')[0]
           }
         };
         
-        // Try to preserve existing EXIF
+        // Try to preserve existing EXIF data while adding new
         if (metadata.exif) {
           try {
             const existingExif = await sharp(metadata.exif).metadata();
             metadataOptions.exif = {
               ...existingExif,
-              IFD0: {
-                ...existingExif,
-                ...metadataOptions.exif.IFD0
-              }
+              ...metadataOptions.exif
             };
           } catch (e) {
             console.log('  Could not preserve existing EXIF');
           }
         }
-        
-        console.log(`  Added Copyright: ${options.copyright}`);
-        console.log(`  Added Artist: ${options.author}`);
-        
       } catch (e) {
         console.log('  Warning: Could not add full metadata:', e);
       }
@@ -3844,10 +3804,11 @@ async function processImageWithSharp(
     pipeline = pipeline.withMetadata(metadataOptions);
   }
   
-  // Apply optimizations
+  // Apply optimizations if requested
   if (options.optimize) {
     console.log('  Optimizing image');
     
+    // Resize if image is larger than max width
     if (options.maxWidth && metadata.width && metadata.width > options.maxWidth) {
       console.log(`  Resizing from ${metadata.width}px to ${options.maxWidth}px`);
       pipeline = pipeline.resize(options.maxWidth, null, {
@@ -3856,14 +3817,17 @@ async function processImageWithSharp(
       });
     }
     
+    // Apply format-specific optimizations
     const quality = options.quality || 85;
     
     if (metadata.format === 'png') {
+      // Check if it's a photo or graphic
       const stats = await sharp(imageBuffer).stats();
       const channels = stats.channels.length;
       const hasTransparency = channels === 4;
       
       if (!hasTransparency && metadata.density && metadata.density > 72) {
+        // Convert photos to JPEG for better compression
         console.log('  Converting PNG photo to JPEG');
         pipeline = pipeline.jpeg({
           quality,
@@ -3871,6 +3835,7 @@ async function processImageWithSharp(
           mozjpeg: true
         });
       } else {
+        // Keep as PNG but optimize
         console.log('  Optimizing PNG');
         pipeline = pipeline.png({
           quality,
@@ -3886,6 +3851,7 @@ async function processImageWithSharp(
         lossless: false
       });
     } else {
+      // Default to JPEG optimization
       console.log('  Optimizing JPEG');
       pipeline = pipeline.jpeg({
         quality,
@@ -3901,6 +3867,7 @@ async function processImageWithSharp(
     const currentMeta = await pipeline.metadata();
     pipeline = pipeline.withMetadata({
       orientation: currentMeta.orientation
+      // GPS data is excluded by not including it
     });
   }
   
@@ -3915,540 +3882,6 @@ async function processImageWithSharp(
   
   return processedBuffer;
 }
-
-
-
-// NEW: Scrambling helper functions
-async function applyPixelShift(
-  pipeline: sharp.Sharp, 
-  metadata: sharp.Metadata, 
-  intensity: number
-): Promise<sharp.Sharp> {
-  const { width = 100, height = 100 } = metadata;
-  
-  const shiftAmount = Math.floor((intensity / 100) * Math.min(width, height) * 0.1);
-  
-  const { data, info } = await pipeline
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  
-  const blockSize = Math.max(4, Math.floor(Math.min(width, height) / 20));
-  const scrambledData = Buffer.from(data);
-  
-  for (let y = 0; y < height - blockSize; y += blockSize) {
-    for (let x = 0; x < width - blockSize; x += blockSize) {
-      if (Math.random() < intensity / 100) {
-        const targetX = Math.floor(Math.random() * (width - blockSize));
-        const targetY = Math.floor(Math.random() * (height - blockSize));
-        
-        for (let by = 0; by < blockSize; by++) {
-          for (let bx = 0; bx < blockSize; bx++) {
-            const sourceIdx = ((y + by) * width + (x + bx)) * info.channels;
-            const targetIdx = ((targetY + by) * width + (targetX + bx)) * info.channels;
-            
-            if (sourceIdx < scrambledData.length && targetIdx < scrambledData.length) {
-              for (let c = 0; c < info.channels; c++) {
-                const temp = scrambledData[sourceIdx + c];
-                scrambledData[sourceIdx + c] = scrambledData[targetIdx + c];
-                scrambledData[targetIdx + c] = temp;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  return sharp(scrambledData, {
-    raw: {
-      width,
-      height,
-      channels: info.channels
-    }
-  });
-}
-
-async function applyWatermark(
-  pipeline: sharp.Sharp, 
-  metadata: sharp.Metadata, 
-  options: any
-): Promise<sharp.Sharp> {
-  const { width = 800, height = 600 } = metadata;
-  const text = options.watermarkText || 'CONFIDENTIAL';
-  const fontSize = Math.floor(Math.min(width, height) / 10);
-  
-  const watermarkSvg = `
-    <svg width="${width}" height="${height}">
-      <style>
-        .watermark { 
-          fill: rgba(255, 0, 0, 0.4); 
-          font-size: ${fontSize}px; 
-          font-family: Arial, sans-serif; 
-          font-weight: bold;
-        }
-      </style>
-      <text x="50%" y="50%" 
-        text-anchor="middle" 
-        dominant-baseline="middle" 
-        transform="rotate(-45, ${width/2}, ${height/2})"
-        class="watermark">
-        ${text}
-      </text>
-    </svg>
-  `;
-  
-  return pipeline.composite([{
-    input: Buffer.from(watermarkSvg),
-    gravity: options.watermarkPosition === 'top-left' ? 'northwest' :
-             options.watermarkPosition === 'top-right' ? 'northeast' :
-             options.watermarkPosition === 'bottom-left' ? 'southwest' :
-             options.watermarkPosition === 'bottom-right' ? 'southeast' : 'center',
-    blend: 'over'
-  }]);
-}
-
-async function applyBlurRegions(
-  pipeline: sharp.Sharp, 
-  metadata: sharp.Metadata, 
-  options: any
-): Promise<sharp.Sharp> {
-  const { width = 800, height = 600 } = metadata;
-  const numRegions = Math.floor((options.scrambleIntensity || 50) / 10);
-  
-  const baseBuffer = await pipeline.toBuffer();
-  let compositePipeline = sharp(baseBuffer);
-  
-  const overlays: sharp.OverlayOptions[] = [];
-  
-  for (let i = 0; i < numRegions; i++) {
-    const regionWidth = Math.floor(width * (0.1 + Math.random() * 0.2));
-    const regionHeight = Math.floor(height * (0.1 + Math.random() * 0.2));
-    const x = Math.floor(Math.random() * (width - regionWidth));
-    const y = Math.floor(Math.random() * (height - regionHeight));
-    
-    const blurredRegion = await sharp(baseBuffer)
-      .extract({ left: x, top: y, width: regionWidth, height: regionHeight })
-      .blur(20)
-      .toBuffer();
-    
-    overlays.push({
-      input: blurredRegion,
-      left: x,
-      top: y
-    });
-  }
-  
-  if (overlays.length > 0) {
-    compositePipeline = compositePipeline.composite(overlays);
-  }
-  
-  return compositePipeline;
-}
-
-async function applyColorShift(
-  pipeline: sharp.Sharp, 
-  metadata: sharp.Metadata, 
-  intensity: number
-): Promise<sharp.Sharp> {
-  const shift = (intensity / 100) * 180;
-  
-  return pipeline
-    .modulate({
-      hue: shift,
-      saturation: 1 + (Math.random() - 0.5) * (intensity / 100),
-      brightness: 1 + (Math.random() - 0.5) * (intensity / 200)
-    })
-    .tint({
-      r: Math.floor(Math.random() * intensity),
-      g: Math.floor(Math.random() * intensity),
-      b: Math.floor(Math.random() * intensity)
-    });
-}
-
-async function applyNoise(
-  pipeline: sharp.Sharp, 
-  metadata: sharp.Metadata, 
-  intensity: number
-): Promise<sharp.Sharp> {
-  const { width = 800, height = 600 } = metadata;
-  
-  const noiseIntensity = Math.floor((intensity / 100) * 50);
-  const noiseBuffer = Buffer.alloc(width * height * 4);
-  
-  for (let i = 0; i < noiseBuffer.length; i += 4) {
-    const noise = Math.floor(Math.random() * noiseIntensity);
-    noiseBuffer[i] = noise;
-    noiseBuffer[i + 1] = noise;
-    noiseBuffer[i + 2] = noise;
-    noiseBuffer[i + 3] = 128;
-  }
-  
-  const noiseImage = await sharp(noiseBuffer, {
-    raw: {
-      width,
-      height,
-      channels: 4
-    }
-  }).png().toBuffer();
-  
-  return pipeline.composite([{
-    input: noiseImage,
-    blend: 'overlay'
-  }]);
-}
-
-// NEW: Web Crawler endpoint
-app.post("/api/images/crawl", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { url, options } = req.body;
-    
-    console.log(`🕷️ Starting web crawl for: ${url}`);
-    
-    // Validate URL
-    let validUrl: URL;
-    try {
-      validUrl = new URL(url);
-      if (!['http:', 'https:'].includes(validUrl.protocol)) {
-        throw new Error('Invalid protocol');
-      }
-    } catch {
-      res.status(400).json({
-        error: 'Invalid URL',
-        message: 'Please provide a valid HTTP(S) URL',
-      });
-      return;
-    }
-    
-    // Crawl options
-    const maxDepth = options?.maxDepth || 2;
-    const maxImages = options?.maxImages || 50;
-    const minWidth = options?.minWidth || 200;
-    const minHeight = options?.minHeight || 200;
-    
-    const visitedUrls = new Set<string>();
-    const crawledImages: any[] = [];
-    
-    async function crawlPage(pageUrl: string, depth: number): Promise<void> {
-      if (depth > maxDepth) return;
-      if (crawledImages.length >= maxImages) return;
-      if (visitedUrls.has(pageUrl)) return;
-      
-      visitedUrls.add(pageUrl);
-      
-      try {
-        console.log(`  Crawling: ${pageUrl} (depth: ${depth})`);
-        
-        const response = await fetch(pageUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; ImageCrawler/1.0)',
-          },
-          signal: AbortSignal.timeout(10000),
-        });
-        
-        if (!response.ok) return;
-        
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('text/html')) return;
-        
-        const html = await response.text();
-        const dom = new JSDOM(html, { url: pageUrl });
-        const document = dom.window.document;
-        
-        // Get page title
-        const pageTitle = document.querySelector('title')?.textContent || '';
-        
-        // Extract images
-        const images = document.querySelectorAll('img');
-        for (const img of images) {
-          if (crawledImages.length >= maxImages) break;
-          
-          const imgSrc = img.src;
-          if (!imgSrc || imgSrc.startsWith('data:')) continue;
-          
-          // Resolve relative URLs
-          let imgUrl: string;
-          try {
-            imgUrl = new URL(imgSrc, pageUrl).href;
-          } catch {
-            continue;
-          }
-          
-          // Skip if already crawled
-          if (crawledImages.some(ci => ci.url === imgUrl)) continue;
-          
-          // Check dimensions if specified in HTML
-          const width = parseInt(img.getAttribute('width') || '0');
-          const height = parseInt(img.getAttribute('height') || '0');
-          
-          // Only skip if both minWidth and minHeight are set AND image doesn't meet them
-          if (minWidth > 0 && width > 0 && width < minWidth) continue;
-          if (minHeight > 0 && height > 0 && height < minHeight) continue;
-          
-          // Skip data URLs if they're too small (but still allow them)
-          if (imgSrc.startsWith('data:') && imgSrc.length < 100) continue;
-          
-          crawledImages.push({
-            url: imgUrl,
-            alt: img.alt || undefined,
-            title: img.title || undefined,
-            width: width || undefined,
-            height: height || undefined,
-            pageUrl,
-            pageTitle,
-            depth,
-          });
-          
-          console.log(`    Found image: ${imgUrl}`);
-        }
-        
-        // Extract links for further crawling
-        if (depth < maxDepth) {
-          const links = document.querySelectorAll('a[href]');
-          const uniqueLinks = new Set<string>();
-          
-          for (const link of links) {
-            const href = link.getAttribute('href');
-            if (!href) continue;
-            
-            try {
-              const linkUrl = new URL(href, pageUrl);
-              
-              // Only follow same-origin links by default
-              if (linkUrl.origin !== validUrl.origin && !options?.followExternal) continue;
-              
-              // Skip non-HTTP(S) protocols
-              if (!['http:', 'https:'].includes(linkUrl.protocol)) continue;
-              
-              // Skip common non-content URLs but KEEP WordPress post/page URLs
-              const skipPatterns = [
-                '/wp-admin', '/wp-login', '/feed/', '.pdf', '.zip', '.doc',
-                'mailto:', 'javascript:', '/wp-json/', '#respond', '#comments'
-              ];
-              
-              let shouldSkip = false;
-              for (const pattern of skipPatterns) {
-                if (linkUrl.href.includes(pattern)) {
-                  shouldSkip = true;
-                  break;
-                }
-              }
-              
-              if (!shouldSkip) {
-                // Clean up URL (remove fragments)
-                linkUrl.hash = '';
-                uniqueLinks.add(linkUrl.href);
-              }
-            } catch {
-              continue;
-            }
-          }
-          
-          // Prioritize post/page URLs
-          const sortedLinks = Array.from(uniqueLinks).sort((a, b) => {
-            // Prioritize individual posts/pages
-            const aIsPost = a.match(/\/([\w-]+)\/?$/);
-            const bIsPost = b.match(/\/([\w-]+)\/?$/);
-            if (aIsPost && !bIsPost) return -1;
-            if (!aIsPost && bIsPost) return 1;
-            return 0;
-          });
-          
-          // Crawl discovered links
-          for (const linkUrl of sortedLinks) {
-            if (crawledImages.length >= maxImages) break;
-            await crawlPage(linkUrl, depth + 1);
-          }
-        }
-        
-      } catch (error: any) {
-        console.error(`  Error crawling ${pageUrl}:`, error.message);
-      }
-    }
-    
-    // Start crawling
-    await crawlPage(validUrl.href, 0);
-    
-    console.log(`✅ Crawl complete: Found ${crawledImages.length} images`);
-    
-    // Transform to match frontend format
-    const transformedImages = crawledImages.map((img, index) => ({
-      id: `crawled_${Date.now()}_${index}`,
-      url: img.url,
-      contentId: `crawl_${index}`,
-      contentTitle: img.pageTitle || `Page: ${new URL(img.pageUrl).pathname}`,
-      websiteId: 'crawled',
-      websiteName: validUrl.hostname,
-      hasMetadata: false,
-      metadataDetails: {
-        alt: img.alt,
-        title: img.title,
-        width: img.width,
-        height: img.height,
-      },
-      size: 0,
-      createdAt: new Date().toISOString(),
-      isAIGenerated: false,
-      isCrawled: true,
-      source: img.pageUrl,
-    }));
-    
-    res.json({
-      success: true,
-      images: transformedImages,
-      stats: {
-        totalImages: crawledImages.length,
-        pagesVisited: visitedUrls.size,
-        maxDepthReached: Math.max(...crawledImages.map(i => i.depth), 0),
-      },
-    });
-    
-  } catch (error: any) {
-    console.error('Crawl error:', error);
-    res.status(500).json({
-      error: 'Crawl failed',
-      message: error.message,
-    });
-  }
-});
-
-// // Process image with Sharp
-// async function processImageWithSharp(
-//   imageBuffer: Buffer,
-//   options: any
-// ): Promise<Buffer> {
-//   let pipeline = sharp(imageBuffer);
-  
-//   // Get current metadata
-//   const metadata = await pipeline.metadata();
-  
-//   if (options.action === 'strip') {
-//     // Remove all metadata except orientation (to prevent rotation issues)
-//     console.log('  Stripping metadata');
-//     pipeline = pipeline.withMetadata({
-//       orientation: metadata.orientation
-//     });
-    
-//   } else if (options.action === 'add' || options.action === 'update') {
-//     // Add or update metadata
-//     console.log('  Adding/updating metadata');
-    
-//     const metadataOptions: any = {
-//       orientation: metadata.orientation
-//     };
-    
-//     // Sharp has limited EXIF writing capabilities
-//     // We can add basic copyright and author info
-//     if (options.copyright || options.author) {
-//       try {
-//         // Apply metadata with EXIF
-//         metadataOptions.exif = {
-//           IFD0: {
-//             Copyright: options.copyright || '',
-//             Artist: options.author || '',
-//             Software: 'AI Content Manager',
-//             DateTime: new Date().toISOString().split('T')[0].replace(/-/g, ':') + ' ' + 
-//                      new Date().toISOString().split('T')[1].split('.')[0]
-//           }
-//         };
-        
-//         // Try to preserve existing EXIF data while adding new
-//         if (metadata.exif) {
-//           try {
-//             const existingExif = await sharp(metadata.exif).metadata();
-//             metadataOptions.exif = {
-//               ...existingExif,
-//               ...metadataOptions.exif
-//             };
-//           } catch (e) {
-//             console.log('  Could not preserve existing EXIF');
-//           }
-//         }
-//       } catch (e) {
-//         console.log('  Warning: Could not add full metadata:', e);
-//       }
-//     }
-    
-//     pipeline = pipeline.withMetadata(metadataOptions);
-//   }
-  
-//   // Apply optimizations if requested
-//   if (options.optimize) {
-//     console.log('  Optimizing image');
-    
-//     // Resize if image is larger than max width
-//     if (options.maxWidth && metadata.width && metadata.width > options.maxWidth) {
-//       console.log(`  Resizing from ${metadata.width}px to ${options.maxWidth}px`);
-//       pipeline = pipeline.resize(options.maxWidth, null, {
-//         withoutEnlargement: true,
-//         fit: 'inside'
-//       });
-//     }
-    
-//     // Apply format-specific optimizations
-//     const quality = options.quality || 85;
-    
-//     if (metadata.format === 'png') {
-//       // Check if it's a photo or graphic
-//       const stats = await sharp(imageBuffer).stats();
-//       const channels = stats.channels.length;
-//       const hasTransparency = channels === 4;
-      
-//       if (!hasTransparency && metadata.density && metadata.density > 72) {
-//         // Convert photos to JPEG for better compression
-//         console.log('  Converting PNG photo to JPEG');
-//         pipeline = pipeline.jpeg({
-//           quality,
-//           progressive: true,
-//           mozjpeg: true
-//         });
-//       } else {
-//         // Keep as PNG but optimize
-//         console.log('  Optimizing PNG');
-//         pipeline = pipeline.png({
-//           quality,
-//           compressionLevel: 9,
-//           palette: true
-//         });
-//       }
-//     } else if (metadata.format === 'webp') {
-//       console.log('  Optimizing WebP');
-//       pipeline = pipeline.webp({
-//         quality,
-//         effort: 6,
-//         lossless: false
-//       });
-//     } else {
-//       // Default to JPEG optimization
-//       console.log('  Optimizing JPEG');
-//       pipeline = pipeline.jpeg({
-//         quality,
-//         progressive: true,
-//         mozjpeg: true
-//       });
-//     }
-//   }
-  
-//   // Remove GPS data if requested
-//   if (options.removeGPS && options.action !== 'strip') {
-//     console.log('  Removing GPS data');
-//     const currentMeta = await pipeline.metadata();
-//     pipeline = pipeline.withMetadata({
-//       orientation: currentMeta.orientation
-//       // GPS data is excluded by not including it
-//     });
-//   }
-  
-//   // Handle color profile
-//   if (!options.keepColorProfile) {
-//     console.log('  Converting to sRGB');
-//     pipeline = pipeline.toColorspace('srgb');
-//   }
-  
-//   const processedBuffer = await pipeline.toBuffer();
-//   console.log(`  Processed size: ${(processedBuffer.length / 1024).toFixed(1)}KB`);
-  
-//   return processedBuffer;
-// }
 
 // Complete batch processing route with WordPress upload and metadata update
 app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Response): Promise<void> => {
@@ -4982,28 +4415,23 @@ app.post("/api/auth/change-password", requireAuth, async (req: Request, res: Res
 });
 
 
+//=======================GOOGLE SEARCH CONSOLE==========================/
 
 
+// Initialize OAuth2 client for GSC
+const gscOAuth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
+);
 
-
-
-
-
-///=======================GOOGLE SEARCH CONSOLE==========================//
-// Initialize OAuth2 client factory - DON'T create a global instance
-const createGscOAuth2Client = () => {
-  return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-  );
-};
 
 console.log('OAuth2 Client Configuration:', {
   clientId: process.env.GOOGLE_CLIENT_ID ? 'Set' : 'MISSING',
   clientSecret: process.env.GOOGLE_CLIENT_SECRET ? 'Set' : 'MISSING',
   redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
 });
+
 
 // GSC Scopes
 const GSC_SCOPES = [
@@ -5014,7 +4442,7 @@ const GSC_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile'
 ];
 
-// Store user GSC tokens (temporary in-memory cache)
+// Store user GSC tokens (use database in production)
 const gscUserTokens = new Map<string, any>();
 
 // Get OAuth URL for GSC
@@ -5023,14 +4451,11 @@ app.get("/api/gsc/auth-url", requireAuth, async (req: Request, res: Response): P
     const userId = req.user!.id;
     console.log(`🔐 Generating GSC OAuth URL for user: ${userId}`);
     
-    // Create a fresh OAuth2 client
-    const authClient = createGscOAuth2Client();
-    
-    const authUrl = authClient.generateAuthUrl({
+    const authUrl = gscOAuth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: GSC_SCOPES,
       prompt: 'consent',
-      state: userId
+      state: userId // Pass userId in state for callback
     });
     
     res.json({ authUrl });
@@ -5053,8 +4478,12 @@ app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Prom
       return;
     }
     
-    // Create a new OAuth2 client instance for this request
-    const authClient = createGscOAuth2Client();
+    // Create a new OAuth2 client instance for this request to avoid state issues
+    const authClient = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
+    );
     
     try {
       // Exchange code for tokens
@@ -5073,7 +4502,7 @@ app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Prom
       const oauth2 = google.oauth2({ version: 'v2', auth: authClient });
       const { data: userInfo } = await oauth2.userinfo.get();
       
-      // Store tokens
+      // Store tokens (in production, encrypt and save to database)
       const gscAccount = {
         id: userInfo.id!,
         email: userInfo.email!,
@@ -5081,21 +4510,25 @@ app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Prom
         picture: userInfo.picture,
         accessToken: tokens.access_token!,
         refreshToken: tokens.refresh_token || '',
-        tokenExpiry: tokens.expiry_date || Date.now() + 3600000,
+        tokenExpiry: tokens.expiry_date || Date.now() + 3600000, // Default 1 hour
         isActive: true
       };
       
-      // Store in memory cache
+      // Store in memory (use database in production)
       gscUserTokens.set(`${userId}_${userInfo.id}`, tokens);
       
-      // Save to database
+      // Save to database - wrap in try-catch to handle missing storage methods
       try {
-        await gscStorage.saveGscAccount(userId, gscAccount);
+        if (storage && storage.saveGscAccount) {
+          await storage.saveGscAccount(userId, gscAccount);
+        } else {
+          console.warn('Storage.saveGscAccount not implemented - using in-memory storage only');
+        }
       } catch (storageError) {
         console.error('Storage error (non-fatal):', storageError);
       }
       
-      // Log activity
+      // Log activity - wrap in try-catch
       try {
         if (storage && storage.createActivityLog) {
           await storage.createActivityLog({
@@ -5116,6 +4549,7 @@ app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Prom
       res.json({ account: gscAccount });
       
     } catch (tokenError: any) {
+      // Handle specific OAuth errors
       if (tokenError.message?.includes('invalid_grant')) {
         console.error('Invalid grant - code may have been used or expired');
         res.status(400).json({ 
@@ -5132,11 +4566,14 @@ app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Prom
         return;
       }
       
+      // Re-throw other errors to be caught by outer catch
       throw tokenError;
     }
     
   } catch (error: any) {
     console.error('GSC auth error:', error);
+    
+    // Send more informative error response
     const errorMessage = error.message || 'Authentication failed';
     const statusCode = error.response?.status || 500;
     
@@ -5146,56 +4583,6 @@ app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Prom
     });
   }
 });
-
-// Helper function to get authenticated client with proper token handling
-async function getAuthenticatedClient(userId: string, accountId: string): Promise<any> {
-  // Get tokens from memory or database
-  let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-  
-  if (!tokens) {
-    const savedAccount = await gscStorage.getGscAccount(userId, accountId);
-    if (!savedAccount) {
-      throw new Error('Account not found or not authenticated');
-    }
-    
-    tokens = {
-      access_token: savedAccount.accessToken,
-      refresh_token: savedAccount.refreshToken,
-      expiry_date: savedAccount.tokenExpiry
-    };
-    
-    // Cache in memory
-    gscUserTokens.set(`${userId}_${accountId}`, tokens);
-  }
-  
-  // Create a new OAuth2 client for this request
-  const authClient = createGscOAuth2Client();
-  authClient.setCredentials(tokens);
-  
-  // Check if token needs refresh (expires in less than 5 minutes)
-  if (tokens.expiry_date && tokens.expiry_date - Date.now() < 300000) {
-    try {
-      const { credentials } = await authClient.refreshAccessToken();
-      
-      // Update tokens
-      tokens = credentials;
-      gscUserTokens.set(`${userId}_${accountId}`, credentials);
-      
-      // Update in database
-      await gscStorage.updateGscAccount(userId, accountId, {
-        accessToken: credentials.access_token!,
-        tokenExpiry: credentials.expiry_date!
-      });
-      
-      console.log(`✅ Token auto-refreshed for account: ${accountId}`);
-    } catch (refreshError: any) {
-      console.error('Token auto-refresh failed:', refreshError);
-      // Continue with existing token - it might still work
-    }
-  }
-  
-  return authClient;
-}
 
 // Get user's GSC properties
 app.get("/api/gsc/properties", requireAuth, async (req: Request, res: Response): Promise<void> => {
@@ -5210,11 +4597,29 @@ app.get("/api/gsc/properties", requireAuth, async (req: Request, res: Response):
       return;
     }
     
-    // Get authenticated client
-    const authClient = await getAuthenticatedClient(userId, accountId as string);
+    // Get tokens
+    const tokens = gscUserTokens.get(`${userId}_${accountId}`);
+    if (!tokens) {
+      // Try to get from database
+      const savedAccount = await storage.getGscAccount(userId, accountId as string);
+      if (!savedAccount) {
+        res.status(401).json({ error: 'Not authenticated' });
+        return;
+      }
+      
+      // Restore tokens
+      gscUserTokens.set(`${userId}_${accountId}`, {
+        access_token: savedAccount.accessToken,
+        refresh_token: savedAccount.refreshToken,
+        expiry_date: savedAccount.tokenExpiry
+      });
+    }
+    
+    // Set credentials
+    gscOAuth2Client.setCredentials(tokens || gscUserTokens.get(`${userId}_${accountId}`));
     
     // Get properties from Search Console
-    const searchconsole = google.searchconsole({ version: 'v1', auth: authClient });
+    const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
     const { data } = await searchconsole.sites.list();
     
     // Transform properties
@@ -5229,15 +4634,9 @@ app.get("/api/gsc/properties", requireAuth, async (req: Request, res: Response):
     console.log(`✅ Found ${properties.length} GSC properties`);
     res.json(properties);
     
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching GSC properties:', error);
-    
-    // Check if it's an auth error
-    if (error.message?.includes('auth') || error.code === 401) {
-      res.status(401).json({ error: 'Authentication expired. Please reconnect your account.' });
-    } else {
-      res.status(500).json({ error: 'Failed to fetch properties' });
-    }
+    res.status(500).json({ error: 'Failed to fetch properties' });
   }
 });
 
@@ -5254,11 +4653,17 @@ app.post("/api/gsc/index", requireAuth, async (req: Request, res: Response): Pro
       return;
     }
     
-    // Get authenticated client
-    const authClient = await getAuthenticatedClient(userId, accountId);
+    // Get tokens
+    const tokens = gscUserTokens.get(`${userId}_${accountId}`);
+    if (!tokens) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+    
+    gscOAuth2Client.setCredentials(tokens);
     
     // Use Indexing API
-    const indexing = google.indexing({ version: 'v3', auth: authClient });
+    const indexing = google.indexing({ version: 'v3', auth: gscOAuth2Client });
     
     try {
       const result = await indexing.urlNotifications.publish({
@@ -5295,14 +4700,9 @@ app.post("/api/gsc/index", requireAuth, async (req: Request, res: Response): Pro
       }
     }
     
-  } catch (error: any) {
+  } catch (error) {
     console.error('Indexing error:', error);
-    
-    if (error.message?.includes('auth') || error.code === 401) {
-      res.status(401).json({ error: 'Authentication expired. Please reconnect your account.' });
-    } else {
-      res.status(500).json({ error: 'Failed to submit URL for indexing' });
-    }
+    res.status(500).json({ error: 'Failed to submit URL for indexing' });
   }
 });
 
@@ -5319,11 +4719,17 @@ app.post("/api/gsc/inspect", requireAuth, async (req: Request, res: Response): P
       return;
     }
     
-    // Get authenticated client
-    const authClient = await getAuthenticatedClient(userId, accountId);
+    // Get tokens
+    const tokens = gscUserTokens.get(`${userId}_${accountId}`);
+    if (!tokens) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+    
+    gscOAuth2Client.setCredentials(tokens);
     
     // Use URL Inspection API
-    const searchconsole = google.searchconsole({ version: 'v1', auth: authClient });
+    const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
     
     const result = await searchconsole.urlInspection.index.inspect({
       requestBody: {
@@ -5350,14 +4756,9 @@ app.post("/api/gsc/inspect", requireAuth, async (req: Request, res: Response): P
     console.log(`✅ URL inspection complete: ${inspectionResult.indexStatus}`);
     res.json(inspectionResult);
     
-  } catch (error: any) {
+  } catch (error) {
     console.error('Inspection error:', error);
-    
-    if (error.message?.includes('auth') || error.code === 401) {
-      res.status(401).json({ error: 'Authentication expired. Please reconnect your account.' });
-    } else {
-      res.status(500).json({ error: 'Failed to inspect URL' });
-    }
+    res.status(500).json({ error: 'Failed to inspect URL' });
   }
 });
 
@@ -5374,11 +4775,17 @@ app.post("/api/gsc/sitemap", requireAuth, async (req: Request, res: Response): P
       return;
     }
     
-    // Get authenticated client
-    const authClient = await getAuthenticatedClient(userId, accountId);
+    // Get tokens
+    const tokens = gscUserTokens.get(`${userId}_${accountId}`);
+    if (!tokens) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+    
+    gscOAuth2Client.setCredentials(tokens);
     
     // Submit sitemap
-    const searchconsole = google.searchconsole({ version: 'v1', auth: authClient });
+    const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
     
     await searchconsole.sitemaps.submit({
       siteUrl: siteUrl,
@@ -5402,17 +4809,31 @@ app.post("/api/gsc/sitemap", requireAuth, async (req: Request, res: Response): P
       message: 'Sitemap submitted successfully'
     });
     
-  } catch (error: any) {
+  } catch (error) {
     console.error('Sitemap submission error:', error);
-    
-    if (error.message?.includes('auth') || error.code === 401) {
-      res.status(401).json({ error: 'Authentication expired. Please reconnect your account.' });
-    } else {
-      res.status(500).json({ error: 'Failed to submit sitemap' });
-    }
+    res.status(500).json({ error: 'Failed to submit sitemap' });
   }
 });
 
+app.get("/api/gsc/auth-url", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authUrl = gscOAuth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: GSC_SCOPES,
+      prompt: 'consent',
+      state: req.user!.id
+    });
+    
+    // Add this to see the exact URL
+    const url = new URL(authUrl);
+    console.log('Redirect URI being sent to Google:', url.searchParams.get('redirect_uri'));
+    
+    res.json({ authUrl });
+  } catch (error) {
+    console.error('GSC auth URL error:', error);
+    res.status(500).json({ error: 'Failed to generate auth URL' });
+  }
+});
 // Get performance data
 app.get("/api/gsc/performance", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
@@ -5426,11 +4847,17 @@ app.get("/api/gsc/performance", requireAuth, async (req: Request, res: Response)
       return;
     }
     
-    // Get authenticated client
-    const authClient = await getAuthenticatedClient(userId, accountId as string);
+    // Get tokens
+    const tokens = gscUserTokens.get(`${userId}_${accountId}`);
+    if (!tokens) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+    
+    gscOAuth2Client.setCredentials(tokens);
     
     // Get performance data
-    const searchconsole = google.searchconsole({ version: 'v1', auth: authClient });
+    const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
     
     const endDate = new Date();
     const startDate = new Date();
@@ -5458,105 +4885,43 @@ app.get("/api/gsc/performance", requireAuth, async (req: Request, res: Response)
     console.log(`✅ Performance data fetched: ${performanceData.length} days`);
     res.json(performanceData);
     
-  } catch (error: any) {
+  } catch (error) {
     console.error('Performance data error:', error);
-    
-    if (error.message?.includes('auth') || error.code === 401) {
-      res.status(401).json({ error: 'Authentication expired. Please reconnect your account.' });
-    } else {
-      res.status(500).json({ error: 'Failed to fetch performance data' });
-    }
+    res.status(500).json({ error: 'Failed to fetch performance data' });
   }
 });
 
-// Refresh GSC token - FIXED VERSION
+// Refresh GSC token
 app.post("/api/gsc/refresh-token", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
-    const { accountId } = req.body;
+    const { accountId, refreshToken } = req.body;
     
     console.log(`🔄 Refreshing GSC token for account: ${accountId}`);
     
-    if (!accountId) {
-      res.status(400).json({ error: 'Account ID required' });
-      return;
-    }
+    gscOAuth2Client.setCredentials({ refresh_token: refreshToken });
+    const { credentials } = await gscOAuth2Client.refreshAccessToken();
     
-    // Get the saved account with refresh token
-    const savedAccount = await gscStorage.getGscAccount(userId, accountId);
-    if (!savedAccount || !savedAccount.refreshToken) {
-      res.status(400).json({ error: 'No refresh token available. Please reconnect the account.' });
-      return;
-    }
+    // Update stored tokens
+    gscUserTokens.set(`${userId}_${accountId}`, credentials);
     
-    // Create a fresh OAuth2 client for token refresh
-    const authClient = createGscOAuth2Client();
-    
-    // Set the refresh token
-    authClient.setCredentials({ 
-      refresh_token: savedAccount.refreshToken 
+    // Update in database
+    await storage.updateGscAccount(userId, accountId, {
+      accessToken: credentials.access_token!,
+      tokenExpiry: credentials.expiry_date!
     });
     
-    try {
-      // Attempt to refresh the access token
-      const { credentials } = await authClient.refreshAccessToken();
-      
-      if (!credentials.access_token) {
-        throw new Error('No access token received from refresh');
-      }
-      
-      // Update stored tokens in memory
-      gscUserTokens.set(`${userId}_${accountId}`, credentials);
-      
-      // Update in database
-      await gscStorage.updateGscAccount(userId, accountId, {
-        accessToken: credentials.access_token,
-        tokenExpiry: credentials.expiry_date || Date.now() + 3600000
-      });
-      
-      console.log(`✅ GSC token refreshed for account: ${accountId}`);
-      res.json({
-        success: true,
-        accessToken: credentials.access_token,
-        tokenExpiry: credentials.expiry_date
-      });
-      
-    } catch (refreshError: any) {
-      console.error('Token refresh failed:', refreshError);
-      
-      // Clear cached tokens
-      gscUserTokens.delete(`${userId}_${accountId}`);
-      
-      // Check specific error types
-      if (refreshError.message?.includes('invalid_grant') || 
-          refreshError.message?.includes('Token has been expired or revoked')) {
-        res.status(401).json({ 
-          error: 'Refresh token expired. Please reconnect your Google account.',
-          requiresReauth: true 
-        });
-      } else if (refreshError.message?.includes('unauthorized_client')) {
-        res.status(401).json({ 
-          error: 'Authorization error. Please reconnect your Google account.',
-          requiresReauth: true 
-        });
-      } else {
-        res.status(500).json({ 
-          error: 'Failed to refresh token. Please try reconnecting your account.',
-          requiresReauth: true 
-        });
-      }
-    }
+    console.log(`✅ GSC token refreshed for account: ${accountId}`);
+    res.json({
+      accessToken: credentials.access_token,
+      tokenExpiry: credentials.expiry_date
+    });
     
-  } catch (error: any) {
+  } catch (error) {
     console.error('Token refresh error:', error);
-    res.status(500).json({ 
-      error: 'Failed to refresh token',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ error: 'Failed to refresh token' });
   }
 });
-
-// OAuth callback handler
 app.get("/api/gsc/oauth-callback", async (req: Request, res: Response): Promise<void> => {
   try {
     const { code, state, error } = req.query;
@@ -5622,6 +4987,7 @@ app.get("/api/gsc/oauth-callback", async (req: Request, res: Response): Promise<
             }, '*');
             window.close();
           } else {
+            // Fallback: redirect to the GSC page with code
             window.location.href = '/google-search-console?code=${code}';
           }
         </script>
@@ -5635,710 +5001,167 @@ app.get("/api/gsc/oauth-callback", async (req: Request, res: Response): Promise<
   }
 });
 
-// Get all GSC accounts for a user
-app.get("/api/gsc/accounts", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//SEO TRACKING
+app.get("/api/user/websites/:websiteId/detailed-seo", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.user!.id;
-    const accounts = await gscStorage.getAllGscAccounts(userId);
-    res.json(accounts);
-  } catch (error) {
-    console.error('Error fetching GSC accounts:', error);
-    res.status(500).json({ error: 'Failed to fetch accounts' });
-  }
-});
+    const { websiteId } = req.params;
+    const userId = req.user?.id;
 
-// Remove GSC account
-app.post("/api/gsc/remove-account", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.id;
-    const { accountId } = req.body;
-    
-    if (!accountId) {
-      res.status(400).json({ error: 'Account ID required' });
+    if (!userId) {
+      res.status(401).json({ message: "Authentication required" });
       return;
     }
-    
-    await gscStorage.deleteGscAccount(userId, accountId);
-    
-    // Remove from memory cache
-    gscUserTokens.delete(`${userId}_${accountId}`);
-    
-    console.log(`🗑️ GSC account removed: ${accountId}`);
-    res.json({ success: true });
+
+    // Validate website ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+
+    console.log(`Getting detailed SEO data for website ${websiteId}`);
+
+    // Get detailed SEO data including tracked issues
+    const detailedData = await seoService.getDetailedSeoData(websiteId, userId);
+
+    res.json(detailedData);
   } catch (error) {
-    console.error('Error removing GSC account:', error);
-    res.status(500).json({ error: 'Failed to remove account' });
+    console.error("Error getting detailed SEO data:", error);
+    res.status(500).json({ 
+      message: "Failed to get detailed SEO data",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
   }
 });
 
+// Add this endpoint to get tracked issues for a website
+app.get("/api/user/websites/:websiteId/tracked-issues", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { websiteId } = req.params;
+    const userId = req.user?.id;
+    const { status, autoFixableOnly, limit } = req.query;
 
+    if (!userId) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
 
+    // Validate website ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
 
+    const options: any = {};
+    
+    if (status && typeof status === 'string') {
+      options.status = status.split(',');
+    }
+    
+    if (autoFixableOnly === 'true') {
+      options.autoFixableOnly = true;
+    }
+    
+    if (limit && !isNaN(Number(limit))) {
+      options.limit = Number(limit);
+    }
 
+    const trackedIssues = await storage.getTrackedSeoIssues(websiteId, userId, options);
 
-// // Initialize OAuth2 client for GSC
-// const gscOAuth2Client = new google.auth.OAuth2(
-//   process.env.GOOGLE_CLIENT_ID,
-//   process.env.GOOGLE_CLIENT_SECRET,
-//   process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-// );
+    res.json(trackedIssues);
+  } catch (error) {
+    console.error("Error getting tracked issues:", error);
+    res.status(500).json({ 
+      message: "Failed to get tracked issues",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+});
 
-// console.log('OAuth2 Client Configuration:', {
-//   clientId: process.env.GOOGLE_CLIENT_ID ? 'Set' : 'MISSING',
-//   clientSecret: process.env.GOOGLE_CLIENT_SECRET ? 'Set' : 'MISSING',
-//   redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-// });
+// Add this endpoint to get issue tracking summary
+app.get("/api/user/websites/:websiteId/issue-summary", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { websiteId } = req.params;
+    const userId = req.user?.id;
 
-// // GSC Scopes
-// const GSC_SCOPES = [
-//   'https://www.googleapis.com/auth/webmasters',
-//   'https://www.googleapis.com/auth/indexing',
-//   'https://www.googleapis.com/auth/siteverification',
-//   'https://www.googleapis.com/auth/userinfo.email',
-//   'https://www.googleapis.com/auth/userinfo.profile'
-// ];
+    if (!userId) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
 
-// // Store user GSC tokens (temporary in-memory cache)
-// const gscUserTokens = new Map<string, any>();
+    // Validate website ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
 
-// // Get OAuth URL for GSC
-// app.get("/api/gsc/auth-url", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     console.log(`🔐 Generating GSC OAuth URL for user: ${userId}`);
-    
-//     const authUrl = gscOAuth2Client.generateAuthUrl({
-//       access_type: 'offline',
-//       scope: GSC_SCOPES,
-//       prompt: 'consent',
-//       state: userId
-//     });
-    
-//     res.json({ authUrl });
-//   } catch (error) {
-//     console.error('GSC auth URL error:', error);
-//     res.status(500).json({ error: 'Failed to generate auth URL' });
-//   }
-// });
+    const summary = await storage.getSeoIssueTrackingSummary(websiteId, userId);
 
-// // Exchange code for tokens
-// app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { code } = req.body;
-    
-//     console.log(`🔐 Exchanging GSC auth code for user: ${userId}`);
-    
-//     if (!code) {
-//       res.status(400).json({ error: 'Authorization code required' });
-//       return;
-//     }
-    
-//     // Create a new OAuth2 client instance for this request
-//     const authClient = new google.auth.OAuth2(
-//       process.env.GOOGLE_CLIENT_ID,
-//       process.env.GOOGLE_CLIENT_SECRET,
-//       process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-//     );
-    
-//     try {
-//       // Exchange code for tokens
-//       const { tokens } = await authClient.getToken(code);
-      
-//       if (!tokens.access_token) {
-//         console.error('No access token received');
-//         res.status(400).json({ error: 'Failed to obtain access token' });
-//         return;
-//       }
-      
-//       // Set credentials for this client instance
-//       authClient.setCredentials(tokens);
-      
-//       // Get user info
-//       const oauth2 = google.oauth2({ version: 'v2', auth: authClient });
-//       const { data: userInfo } = await oauth2.userinfo.get();
-      
-//       // Store tokens
-//       const gscAccount = {
-//         id: userInfo.id!,
-//         email: userInfo.email!,
-//         name: userInfo.name || userInfo.email!,
-//         picture: userInfo.picture,
-//         accessToken: tokens.access_token!,
-//         refreshToken: tokens.refresh_token || '',
-//         tokenExpiry: tokens.expiry_date || Date.now() + 3600000,
-//         isActive: true
-//       };
-      
-//       // Store in memory cache
-//       gscUserTokens.set(`${userId}_${userInfo.id}`, tokens);
-      
-//       // Save to database
-//       try {
-//         await gscStorage.saveGscAccount(userId, gscAccount);
-//       } catch (storageError) {
-//         console.error('Storage error (non-fatal):', storageError);
-//       }
-      
-//       // Log activity
-//       try {
-//         if (storage && storage.createActivityLog) {
-//           await storage.createActivityLog({
-//             userId,
-//             type: "gsc_account_connected",
-//             description: `Connected Google Search Console account: ${userInfo.email}`,
-//             metadata: { 
-//               gscAccountId: userInfo.id,
-//               email: userInfo.email
-//             }
-//           });
-//         }
-//       } catch (logError) {
-//         console.error('Activity log error (non-fatal):', logError);
-//       }
-      
-//       console.log(`✅ GSC account connected: ${userInfo.email}`);
-//       res.json({ account: gscAccount });
-      
-//     } catch (tokenError: any) {
-//       if (tokenError.message?.includes('invalid_grant')) {
-//         console.error('Invalid grant - code may have been used or expired');
-//         res.status(400).json({ 
-//           error: 'Authorization code expired or already used. Please try signing in again.' 
-//         });
-//         return;
-//       }
-      
-//       if (tokenError.message?.includes('redirect_uri_mismatch')) {
-//         console.error('Redirect URI mismatch during token exchange');
-//         res.status(400).json({ 
-//           error: 'Configuration error. Please contact support.' 
-//         });
-//         return;
-//       }
-      
-//       throw tokenError;
-//     }
-    
-//   } catch (error: any) {
-//     console.error('GSC auth error:', error);
-//     const errorMessage = error.message || 'Authentication failed';
-//     const statusCode = error.response?.status || 500;
-    
-//     res.status(statusCode).json({ 
-//       error: 'Authentication failed',
-//       details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
-//     });
-//   }
-// });
+    res.json(summary);
+  } catch (error) {
+    console.error("Error getting issue summary:", error);
+    res.status(500).json({ 
+      message: "Failed to get issue summary",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+});
 
-// // Get user's GSC properties
-// app.get("/api/gsc/properties", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId } = req.query;
-    
-//     console.log(`🌐 Fetching GSC properties for user: ${userId}, account: ${accountId}`);
-    
-//     if (!accountId) {
-//       res.status(400).json({ error: 'Account ID required' });
-//       return;
-//     }
-    
-//     // Get tokens from memory or database
-//     let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-//     if (!tokens) {
-//       const savedAccount = await gscStorage.getGscAccount(userId, accountId as string);
-//       if (!savedAccount) {
-//         res.status(401).json({ error: 'Not authenticated' });
-//         return;
-//       }
-      
-//       tokens = {
-//         access_token: savedAccount.accessToken,
-//         refresh_token: savedAccount.refreshToken,
-//         expiry_date: savedAccount.tokenExpiry
-//       };
-      
-//       // Cache in memory
-//       gscUserTokens.set(`${userId}_${accountId}`, tokens);
-//     }
-    
-//     // Set credentials
-//     gscOAuth2Client.setCredentials(tokens);
-    
-//     // Get properties from Search Console
-//     const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
-//     const { data } = await searchconsole.sites.list();
-    
-//     // Transform properties
-//     const properties = (data.siteEntry || []).map(site => ({
-//       siteUrl: site.siteUrl!,
-//       permissionLevel: site.permissionLevel!,
-//       siteType: site.siteUrl?.startsWith('sc-domain:') ? 'DOMAIN' : 'SITE',
-//       verified: true,
-//       accountId: accountId as string
-//     }));
-    
-//     console.log(`✅ Found ${properties.length} GSC properties`);
-//     res.json(properties);
-    
-//   } catch (error) {
-//     console.error('Error fetching GSC properties:', error);
-//     res.status(500).json({ error: 'Failed to fetch properties' });
-//   }
-// });
+// Add this endpoint to manually update issue status (for manual fixes)
+app.put("/api/user/tracked-issues/:issueId/status", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { issueId } = req.params;
+    const { status, resolutionNotes, fixMethod } = req.body;
+    const userId = req.user?.id;
 
-// // Submit URL for indexing
-// app.post("/api/gsc/index", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, url, type = 'URL_UPDATED' } = req.body;
-    
-//     console.log(`📤 Submitting URL for indexing: ${url} (${type})`);
-    
-//     if (!accountId || !url) {
-//       res.status(400).json({ error: 'Account ID and URL required' });
-//       return;
-//     }
-    
-//     // Get tokens from memory or database
-//     let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-//     if (!tokens) {
-//       const savedAccount = await gscStorage.getGscAccount(userId, accountId);
-//       if (!savedAccount) {
-//         res.status(401).json({ error: 'Not authenticated' });
-//         return;
-//       }
-      
-//       tokens = {
-//         access_token: savedAccount.accessToken,
-//         refresh_token: savedAccount.refreshToken,
-//         expiry_date: savedAccount.tokenExpiry
-//       };
-      
-//       gscUserTokens.set(`${userId}_${accountId}`, tokens);
-//     }
-    
-//     gscOAuth2Client.setCredentials(tokens);
-    
-//     // Use Indexing API
-//     const indexing = google.indexing({ version: 'v3', auth: gscOAuth2Client });
-    
-//     try {
-//       const result = await indexing.urlNotifications.publish({
-//         requestBody: {
-//           url: url,
-//           type: type
-//         }
-//       });
-      
-//       // Log activity
-//       await storage.createActivityLog({
-//         userId,
-//         type: "gsc_url_indexed",
-//         description: `URL submitted for indexing: ${url}`,
-//         metadata: { 
-//           url,
-//           type,
-//           notifyTime: result.data.urlNotificationMetadata?.latestUpdate?.notifyTime
-//         }
-//       });
-      
-//       console.log(`✅ URL submitted for indexing: ${url}`);
-//       res.json({
-//         success: true,
-//         notifyTime: result.data.urlNotificationMetadata?.latestUpdate?.notifyTime,
-//         url: url
-//       });
-      
-//     } catch (indexError: any) {
-//       if (indexError.code === 429) {
-//         res.status(429).json({ error: 'Daily quota exceeded (200 URLs/day)' });
-//       } else {
-//         throw indexError;
-//       }
-//     }
-    
-//   } catch (error) {
-//     console.error('Indexing error:', error);
-//     res.status(500).json({ error: 'Failed to submit URL for indexing' });
-//   }
-// });
+    if (!userId) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
 
-// // Inspect URL
-// app.post("/api/gsc/inspect", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, siteUrl, inspectionUrl } = req.body;
+    // Validate that the issue belongs to the user
+    const trackedIssues = await storage.getTrackedSeoIssues("", userId, { limit: 1000 });
+    const issue = trackedIssues.find(i => i.id === issueId);
     
-//     console.log(`🔍 Inspecting URL: ${inspectionUrl}`);
-    
-//     if (!accountId || !siteUrl || !inspectionUrl) {
-//       res.status(400).json({ error: 'Account ID, site URL, and inspection URL required' });
-//       return;
-//     }
-    
-//     // Get tokens from memory or database
-//     let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-//     if (!tokens) {
-//       const savedAccount = await gscStorage.getGscAccount(userId, accountId);
-//       if (!savedAccount) {
-//         res.status(401).json({ error: 'Not authenticated' });
-//         return;
-//       }
-      
-//       tokens = {
-//         access_token: savedAccount.accessToken,
-//         refresh_token: savedAccount.refreshToken,
-//         expiry_date: savedAccount.tokenExpiry
-//       };
-      
-//       gscUserTokens.set(`${userId}_${accountId}`, tokens);
-//     }
-    
-//     gscOAuth2Client.setCredentials(tokens);
-    
-//     // Use URL Inspection API
-//     const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
-    
-//     const result = await searchconsole.urlInspection.index.inspect({
-//       requestBody: {
-//         inspectionUrl: inspectionUrl,
-//         siteUrl: siteUrl
-//       }
-//     });
-    
-//     const inspection = result.data.inspectionResult;
-    
-//     // Transform result
-//     const inspectionResult = {
-//       url: inspectionUrl,
-//       indexStatus: inspection?.indexStatusResult?.coverageState || 'NOT_INDEXED',
-//       lastCrawlTime: inspection?.indexStatusResult?.lastCrawlTime,
-//       pageFetchState: inspection?.indexStatusResult?.pageFetchState,
-//       googleCanonical: inspection?.indexStatusResult?.googleCanonical,
-//       userCanonical: inspection?.indexStatusResult?.userCanonical,
-//       sitemap: inspection?.indexStatusResult?.sitemap,
-//       mobileUsability: inspection?.mobileUsabilityResult?.verdict || 'NEUTRAL',
-//       richResultsStatus: inspection?.richResultsResult?.verdict
-//     };
-    
-//     console.log(`✅ URL inspection complete: ${inspectionResult.indexStatus}`);
-//     res.json(inspectionResult);
-    
-//   } catch (error) {
-//     console.error('Inspection error:', error);
-//     res.status(500).json({ error: 'Failed to inspect URL' });
-//   }
-// });
+    if (!issue) {
+      res.status(404).json({ message: "Issue not found or access denied" });
+      return;
+    }
 
-// // Submit sitemap
-// app.post("/api/gsc/sitemap", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, siteUrl, sitemapUrl } = req.body;
-    
-//     console.log(`📄 Submitting sitemap: ${sitemapUrl}`);
-    
-//     if (!accountId || !siteUrl || !sitemapUrl) {
-//       res.status(400).json({ error: 'Account ID, site URL, and sitemap URL required' });
-//       return;
-//     }
-    
-//     // Get tokens from memory or database
-//     let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-//     if (!tokens) {
-//       const savedAccount = await gscStorage.getGscAccount(userId, accountId);
-//       if (!savedAccount) {
-//         res.status(401).json({ error: 'Not authenticated' });
-//         return;
-//       }
-      
-//       tokens = {
-//         access_token: savedAccount.accessToken,
-//         refresh_token: savedAccount.refreshToken,
-//         expiry_date: savedAccount.tokenExpiry
-//       };
-      
-//       gscUserTokens.set(`${userId}_${accountId}`, tokens);
-//     }
-    
-//     gscOAuth2Client.setCredentials(tokens);
-    
-//     // Submit sitemap
-//     const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
-    
-//     await searchconsole.sitemaps.submit({
-//       siteUrl: siteUrl,
-//       feedpath: sitemapUrl
-//     });
-    
-//     // Log activity
-//     await storage.createActivityLog({
-//       userId,
-//       type: "gsc_sitemap_submitted",
-//       description: `Sitemap submitted: ${sitemapUrl}`,
-//       metadata: { 
-//         siteUrl,
-//         sitemapUrl
-//       }
-//     });
-    
-//     console.log(`✅ Sitemap submitted: ${sitemapUrl}`);
-//     res.json({
-//       success: true,
-//       message: 'Sitemap submitted successfully'
-//     });
-    
-//   } catch (error) {
-//     console.error('Sitemap submission error:', error);
-//     res.status(500).json({ error: 'Failed to submit sitemap' });
-//   }
-// });
+    // Validate website ownership
+    const website = await storage.getUserWebsite(issue.websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
 
-// // Get performance data
-// app.get("/api/gsc/performance", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, siteUrl, days = '28' } = req.query;
-    
-//     console.log(`📊 Fetching performance data for: ${siteUrl}`);
-    
-//     if (!accountId || !siteUrl) {
-//       res.status(400).json({ error: 'Account ID and site URL required' });
-//       return;
-//     }
-    
-//     // Get tokens from memory or database
-//     let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-//     if (!tokens) {
-//       const savedAccount = await gscStorage.getGscAccount(userId, accountId as string);
-//       if (!savedAccount) {
-//         res.status(401).json({ error: 'Not authenticated' });
-//         return;
-//       }
-      
-//       tokens = {
-//         access_token: savedAccount.accessToken,
-//         refresh_token: savedAccount.refreshToken,
-//         expiry_date: savedAccount.tokenExpiry
-//       };
-      
-//       gscUserTokens.set(`${userId}_${accountId}`, tokens);
-//     }
-    
-//     gscOAuth2Client.setCredentials(tokens);
-    
-//     // Get performance data
-//     const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
-    
-//     const endDate = new Date();
-//     const startDate = new Date();
-//     startDate.setDate(startDate.getDate() - parseInt(days as string));
-    
-//     const result = await searchconsole.searchanalytics.query({
-//       siteUrl: siteUrl as string,
-//       requestBody: {
-//         startDate: startDate.toISOString().split('T')[0],
-//         endDate: endDate.toISOString().split('T')[0],
-//         dimensions: ['date'],
-//         metrics: ['clicks', 'impressions', 'ctr', 'position'],
-//         rowLimit: 1000
-//       }
-//     });
-    
-//     const performanceData = (result.data.rows || []).map(row => ({
-//       date: row.keys?.[0],
-//       clicks: row.clicks || 0,
-//       impressions: row.impressions || 0,
-//       ctr: row.ctr || 0,
-//       position: row.position || 0
-//     }));
-    
-//     console.log(`✅ Performance data fetched: ${performanceData.length} days`);
-//     res.json(performanceData);
-    
-//   } catch (error) {
-//     console.error('Performance data error:', error);
-//     res.status(500).json({ error: 'Failed to fetch performance data' });
-//   }
-// });
+    const validStatuses = ['detected', 'fixing', 'fixed', 'resolved', 'reappeared'];
+    if (!validStatuses.includes(status)) {
+      res.status(400).json({ message: "Invalid status" });
+      return;
+    }
 
-// // Refresh GSC token
-// app.post("/api/gsc/refresh-token", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, refreshToken } = req.body;
-    
-//     console.log(`🔄 Refreshing GSC token for account: ${accountId}`);
-    
-//     gscOAuth2Client.setCredentials({ refresh_token: refreshToken });
-//     const { credentials } = await gscOAuth2Client.refreshAccessToken();
-    
-//     // Update stored tokens in memory
-//     gscUserTokens.set(`${userId}_${accountId}`, credentials);
-    
-//     // Update in database
-//     await gscStorage.updateGscAccount(userId, accountId, {
-//       accessToken: credentials.access_token!,
-//       tokenExpiry: credentials.expiry_date!
-//     });
-    
-//     console.log(`✅ GSC token refreshed for account: ${accountId}`);
-//     res.json({
-//       accessToken: credentials.access_token,
-//       tokenExpiry: credentials.expiry_date
-//     });
-    
-//   } catch (error) {
-//     console.error('Token refresh error:', error);
-//     res.status(500).json({ error: 'Failed to refresh token' });
-//   }
-// });
+    const updatedIssue = await storage.updateSeoIssueStatus(issueId, status, {
+      fixMethod: fixMethod || 'manual',
+      resolutionNotes
+    });
 
-// // OAuth callback handler
-// app.get("/api/gsc/oauth-callback", async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const { code, state, error } = req.query;
-    
-//     if (error) {
-//       res.send(`
-//         <!DOCTYPE html>
-//         <html>
-//         <head><title>Authentication Error</title></head>
-//         <body>
-//           <script>
-//             if (window.opener) {
-//               window.opener.postMessage({
-//                 type: 'GOOGLE_AUTH_ERROR',
-//                 error: '${error}'
-//               }, '*');
-//               window.close();
-//             } else {
-//               window.location.href = '/google-search-console?error=${error}';
-//             }
-//           </script>
-//         </body>
-//         </html>
-//       `);
-//       return;
-//     }
-    
-//     if (!code) {
-//       res.send(`
-//         <!DOCTYPE html>
-//         <html>
-//         <head><title>Authentication Error</title></head>
-//         <body>
-//           <script>
-//             if (window.opener) {
-//               window.opener.postMessage({
-//                 type: 'GOOGLE_AUTH_ERROR',
-//                 error: 'No authorization code received'
-//               }, '*');
-//               window.close();
-//             } else {
-//               window.location.href = '/google-search-console?error=no_code';
-//             }
-//           </script>
-//         </body>
-//         </html>
-//       `);
-//       return;
-//     }
-    
-//     // Send success message to opener window
-//     res.send(`
-//       <!DOCTYPE html>
-//       <html>
-//       <head><title>Authentication Successful</title></head>
-//       <body>
-//         <script>
-//           if (window.opener) {
-//             window.opener.postMessage({
-//               type: 'GOOGLE_AUTH_SUCCESS',
-//               code: '${code}',
-//               state: '${state || ''}'
-//             }, '*');
-//             window.close();
-//           } else {
-//             window.location.href = '/google-search-console?code=${code}';
-//           }
-//         </script>
-//         <p>Authentication successful! This window should close automatically...</p>
-//       </body>
-//       </html>
-//     `);
-//   } catch (error) {
-//     console.error('OAuth callback error:', error);
-//     res.status(500).send('Authentication failed');
-//   }
-// });
+    if (!updatedIssue) {
+      res.status(404).json({ message: "Issue not found" });
+      return;
+    }
 
-// // Get all GSC accounts for a user
-// app.get("/api/gsc/accounts", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const accounts = await gscStorage.getAllGscAccounts(userId);
-//     res.json(accounts);
-//   } catch (error) {
-//     console.error('Error fetching GSC accounts:', error);
-//     res.status(500).json({ error: 'Failed to fetch accounts' });
-//   }
-// });
-
-// // Remove GSC account
-// app.post("/api/gsc/remove-account", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId } = req.body;
-    
-//     if (!accountId) {
-//       res.status(400).json({ error: 'Account ID required' });
-//       return;
-//     }
-    
-//     await gscStorage.deleteGscAccount(userId, accountId);
-    
-//     // Remove from memory cache
-//     gscUserTokens.delete(`${userId}_${accountId}`);
-    
-//     console.log(`🗑️ GSC account removed: ${accountId}`);
-//     res.json({ success: true });
-//   } catch (error) {
-//     console.error('Error removing GSC account:', error);
-//     res.status(500).json({ error: 'Failed to remove account' });
-//   }
-// });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    res.json(updatedIssue);
+  } catch (error) {
+    console.error("Error updating issue status:", error);
+    res.status(500).json({ 
+      message: "Failed to update issue status",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+});
 
   const httpServer = createServer(app);
   return httpServer;

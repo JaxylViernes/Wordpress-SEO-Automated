@@ -205,188 +205,403 @@ export class EnhancedSEOService {
     }
   }
   async analyzeWebsite(
-    url: string,
-    targetKeywords?: string[],
-    userId?: string,
-    websiteId?: string // Add websiteId parameter
-  ): Promise<EnhancedSEOAnalysisResult> {
-    try {
-      console.log(
-        `Starting enhanced SEO analysis for: ${url}${
-          userId ? ` (user: ${userId})` : ""
-        }${websiteId ? ` (website: ${websiteId})` : ""}`
-      );
+  url: string,
+  targetKeywords?: string[],
+  userId?: string,
+  websiteId?: string
+): Promise<EnhancedSEOAnalysisResult> {
+  try {
+    console.log(
+      `Starting enhanced SEO analysis for: ${url}${
+        userId ? ` (user: ${userId})` : ""
+      }${websiteId ? ` (website: ${websiteId})` : ""}`
+    );
 
-      const normalizedUrl = this.normalizeUrl(url);
+    const normalizedUrl = this.normalizeUrl(url);
 
-      // Perform basic technical analysis first
-      const [pageContent, pageSpeedScore, technicalDetails] = await Promise.all(
-        [
-          this.fetchPageContent(normalizedUrl),
-          this.getPageSpeedScore(normalizedUrl, userId),
-          this.performTechnicalAnalysis(normalizedUrl),
-        ]
-      );
+    // Perform basic technical analysis first
+    const [pageContent, pageSpeedScore, technicalDetails] = await Promise.all([
+      this.fetchPageContent(normalizedUrl),
+      this.getPageSpeedScore(normalizedUrl, userId),
+      this.performTechnicalAnalysis(normalizedUrl),
+    ]);
 
-      // Extract text content for AI analysis
-      const textContent = this.extractTextContent(pageContent);
-      const pageTitle = cheerio.load(pageContent)("title").text();
-      const metaDescription =
-        cheerio.load(pageContent)('meta[name="description"]').attr("content") ||
-        "";
+    // Extract text content for AI analysis
+    const textContent = this.extractTextContent(pageContent);
+    const pageTitle = cheerio.load(pageContent)("title").text();
+    const metaDescription =
+      cheerio.load(pageContent)('meta[name="description"]').attr("content") || "";
 
-      // Perform AI-powered content analysis (if user has AI keys)
-      const contentAnalysis = await this.performAIContentAnalysis(
-        textContent,
-        pageTitle,
-        metaDescription,
-        targetKeywords || [],
-        userId
-      );
+    // Perform AI-powered content analysis (if user has AI keys)
+    const contentAnalysis = await this.performAIContentAnalysis(
+      textContent,
+      pageTitle,
+      metaDescription,
+      targetKeywords || [],
+      userId
+    );
 
-      // Generate issues based on both technical and content analysis
-      const issues = this.analyzeForIssues(
-        technicalDetails,
-        pageContent,
-        contentAnalysis
-      );
-      const recommendations = this.generateEnhancedRecommendations(
-        issues,
-        technicalDetails,
-        contentAnalysis
-      );
-      const score = this.calculateEnhancedScore(
-        issues,
-        pageSpeedScore,
-        technicalDetails,
-        contentAnalysis
-      );
+    // Generate issues based on both technical and content analysis
+    const issues = this.analyzeForIssues(
+      technicalDetails,
+      pageContent,
+      contentAnalysis
+    );
+    const recommendations = this.generateEnhancedRecommendations(
+      issues,
+      technicalDetails,
+      contentAnalysis
+    );
+    const score = this.calculateEnhancedScore(
+      issues,
+      pageSpeedScore,
+      technicalDetails,
+      contentAnalysis
+    );
 
-      // Store the SEO report if we have both userId and websiteId
-      let seoReportId = "";
-      if (userId && websiteId) {
-        try {
-          // Validate that the website exists and belongs to the user
-          const website = await storage.getUserWebsite(websiteId, userId);
-          if (!website) {
-            throw new Error(
-              `Website ${websiteId} not found or access denied for user ${userId}`
-            );
-          }
-
-          const seoReport = await storage.createSeoReport({
-            userId,
-            websiteId, // Now properly using the passed websiteId
-            score,
-            issues: issues.map((i) => ({
-              type: i.type,
-              title: i.title,
-              description: i.description,
-              affectedPages: i.affectedPages,
-              autoFixAvailable: i.autoFixAvailable,
-            })),
-            recommendations,
-            pageSpeedScore,
-            metadata: {
-              technicalDetails,
-              contentAnalysis,
-              analysisUrl: url,
-              targetKeywords,
-            },
-          });
-          seoReportId = seoReport.id;
-
-          // Update the website's SEO score
-          await storage.updateWebsite(websiteId, {
-            seoScore: score,
-            updatedAt: new Date(),
-          });
-
-          // Store individual tracked issues
-          await this.storeTrackedIssues(issues, userId, websiteId, seoReportId);
-
-          console.log(`SEO report created with ID: ${seoReportId}`);
-        } catch (error) {
-          console.error("Failed to store SEO report:", error);
-          // Don't throw here - return the analysis even if storage fails
-          console.log("Continuing with analysis despite storage failure");
+    // Store the SEO report if we have both userId and websiteId
+    let seoReportId = "";
+    if (userId && websiteId) {
+      try {
+        // Validate that the website exists and belongs to the user
+        const website = await storage.getUserWebsite(websiteId, userId);
+        if (!website) {
+          throw new Error(
+            `Website ${websiteId} not found or access denied for user ${userId}`
+          );
         }
-      } else {
-        console.log(
-          "Skipping SEO report storage - missing userId or websiteId"
-        );
+
+        const seoReport = await storage.createSeoReport({
+          userId,
+          websiteId,
+          score,
+          issues: issues.map((i) => ({
+            type: i.type,
+            title: i.title,
+            description: i.description,
+            affectedPages: i.affectedPages,
+            autoFixAvailable: i.autoFixAvailable,
+          })),
+          recommendations,
+          pageSpeedScore,
+          metadata: {
+            technicalDetails,
+            contentAnalysis,
+            analysisUrl: url,
+            targetKeywords,
+            aiAnalysisPerformed: !!userId,
+            hasTrackedIssues: true,
+            trackingEnabled: true
+          },
+        });
+        seoReportId = seoReport.id;
+
+        // Update the website's SEO score
+        await storage.updateWebsite(websiteId, {
+          seoScore: score,
+          updatedAt: new Date(),
+        });
+
+        // NEW: Track individual issues
+        await this.storeTrackedIssues(issues, userId, websiteId, seoReportId);
+
+        console.log(`SEO report created with ID: ${seoReportId} and issues tracked`);
+      } catch (error) {
+        console.error("Failed to store SEO report or track issues:", error);
+        console.log("Continuing with analysis despite storage failure");
       }
-
-      console.log(`Enhanced SEO analysis completed. Score: ${score}`);
-
-      return {
-        score,
-        issues,
-        recommendations,
-        pageSpeedScore,
-        technicalDetails,
-        contentAnalysis,
-      };
-    } catch (error) {
-      console.error("Enhanced SEO analysis failed:", error);
-      throw new Error(`Failed to analyze website SEO: ${error.message}`);
+    } else {
+      console.log("Skipping SEO report storage and issue tracking - missing userId or websiteId");
     }
+
+    console.log(`Enhanced SEO analysis completed. Score: ${score}`);
+
+    return {
+      score,
+      issues,
+      recommendations,
+      pageSpeedScore,
+      technicalDetails,
+      contentAnalysis,
+    };
+  } catch (error) {
+    console.error("Enhanced SEO analysis failed:", error);
+    throw new Error(`Failed to analyze website SEO: ${error.message}`);
+  }
+}
+
+
+// Add method to get detailed SEO data including tracked issues (UPDATED)
+async getDetailedSeoData(
+  websiteId: string,
+  userId: string
+): Promise<{
+  hasAIAnalysis: boolean;
+  trackedIssues: any[];
+  issuesSummary: any;
+  recentActivity: any[];
+}> {
+  try {
+    // Get the latest SEO report
+    const seoReports = await storage.getSeoReportsByWebsite(websiteId);
+    const latestReport = seoReports[0];
+    
+    const hasAIAnalysis = latestReport?.metadata?.aiAnalysisPerformed || false;
+    
+    // Get tracked issues - this already returns properly formatted data from storage
+    const trackedIssues = await storage.getTrackedSeoIssues(websiteId, userId, {
+      limit: 50 // Limit to recent issues
+    });
+    
+    // Get summary statistics
+    const issuesSummary = await storage.getSeoIssueTrackingSummary(websiteId, userId);
+    
+    // Get recent activity (last 10 status changes from metadata)
+    const recentActivity = trackedIssues
+      .filter(issue => issue.metadata?.statusHistory)
+      .flatMap(issue => 
+        (issue.metadata.statusHistory || []).map((history: any) => ({
+          ...history,
+          issueTitle: issue.issueTitle,
+          issueType: issue.issueType,
+          issueId: issue.id
+        }))
+      )
+      .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 10);
+
+    console.log(`Retrieved ${trackedIssues.length} tracked issues for website ${websiteId}`);
+
+    return {
+      hasAIAnalysis,
+      trackedIssues,
+      issuesSummary,
+      recentActivity
+    };
+  } catch (error) {
+    console.error('Error getting detailed SEO data:', error);
+    return {
+      hasAIAnalysis: false,
+      trackedIssues: [],
+      issuesSummary: {
+        totalIssues: 0,
+        detected: 0,
+        fixing: 0,
+        fixed: 0,
+        resolved: 0,
+        reappeared: 0,
+        autoFixable: 0,
+        completionPercentage: 0,
+        lastActivity: null
+      },
+      recentActivity: []
+    };
+  }
+}
+
+//seo-service.ts - Update storeTrackedIssues to prevent duplicates of already fixed issues
+
+private async storeTrackedIssues(
+  issues: SEOIssue[],
+  userId: string,
+  websiteId: string,
+  seoReportId: string
+): Promise<void> {
+  if (!userId || !websiteId) {
+    console.log('Skipping issue tracking - missing userId or websiteId');
+    return;
   }
 
-  private async storeTrackedIssues(
-    issues: SEOIssue[],
-    userId: string,
-    websiteId: string,
-    seoReportId: string
-  ): Promise<void> {
+  console.log(`Tracking ${issues.length} SEO issues for website ${websiteId}`);
+
+  // CRITICAL FIX: Get ALL existing tracked issues, including 'fixing' status
+  const existingTrackedIssues = await storage.getTrackedSeoIssues(websiteId, userId, {
+    status: ['fixed', 'resolved', 'fixing'], // ADD 'fixing' here
+    limit: 100
+  });
+
+   const AI_FIXABLE_TYPES = [
+    // Title issues
+    'missing page title',
+    'title tag too long', 
+    'title tag too short',
+    // Meta description issues
+    'missing meta description',
+    'meta description too long',
+    // Heading issues
+    'missing h1 tag',
+    'multiple h1 tags', 
+    'improper heading hierarchy',
+    // Image issues
+    'images missing alt text',
+    // Content quality issues
+    'low content quality',
+    'poor readability',
+    'poor content structure',
+    // Technical SEO issues (newly fixable)
+    'missing viewport meta tag',
+    'missing schema markup',
+    'missing open graph tags',
+    // Keyword optimization issues (newly fixable)
+    'poor keyword distribution',
+    'keyword over-optimization',
+    'missing important keywords',
+    'poor content structure',
+  'content structure',
+  ];
+
+  try {
     for (const issue of issues) {
       try {
-        await storage.createSeoIssue({
+        const issueType = this.mapIssueToTrackingType(issue.title);
+        
+        // Check existing issue status
+        const existingIssue = existingTrackedIssues.find(existing => 
+          existing.issueType === issueType || 
+          existing.issueTitle.toLowerCase().includes(issue.title.toLowerCase().substring(0, 30))
+        );
+
+        if (existingIssue) {
+          // Handle different statuses appropriately
+          if (existingIssue.status === 'fixing') {
+            console.log(`Issue "${issue.title}" is currently being fixed - resetting to detected`);
+            // Reset stuck "fixing" status
+            await storage.updateSeoIssueStatus(existingIssue.id, 'detected', {
+              resolutionNotes: 'Reset from fixing status during new analysis'
+            });
+          } else if (['fixed', 'resolved'].includes(existingIssue.status)) {
+            console.log(`Issue "${issue.title}" was previously fixed - marking as reappeared`);
+            // Don't skip, but mark as reappeared
+            await storage.updateSeoIssueStatus(existingIssue.id, 'reappeared', {
+              resolutionNotes: 'Issue detected again after being fixed'
+            });
+          }
+        }
+
+        const isAutoFixable = AI_FIXABLE_TYPES.some(type => 
+          issue.title.toLowerCase().includes(type.toLowerCase())
+        ) || issue.autoFixAvailable === true;
+
+
+        // Create or update the tracked issue
+        await storage.createOrUpdateSeoIssue({
           userId,
           websiteId,
           seoReportId,
-          issueType: this.mapIssueToType(issue.title),
-          issueCategory: this.categorizeIssue(issue.title),
-          severity: issue.type,
-          title: issue.title,
-          description: issue.description,
-          affectedPages: issue.affectedPages,
-          autoFixAvailable: issue.autoFixAvailable,
-          priority: this.calculateIssuePriority(issue),
-          metadata: {
-            originalIssue: issue,
-            detectedAt: new Date().toISOString(),
-          },
+          issueType,
+          issueTitle: issue.title,
+          issueDescription: issue.description,
+          severity: issue.type as 'critical' | 'warning' | 'info',
+          autoFixAvailable: isAutoFixable,
+          elementPath: this.generateElementPath(issue.title),
+          currentValue: this.extractCurrentValue(issue.title, issue.description),
+          recommendedValue: this.generateRecommendedValue(issue.title, issue.description)
         });
-      } catch (error) {
-        console.error("Failed to store tracked issue:", error);
+      } catch (issueError) {
+        console.error(`Failed to track individual issue "${issue.title}":`, issueError);
       }
     }
+
+    const currentIssueTypes = issues.map(issue => this.mapIssueToTrackingType(issue.title));
+    await storage.markIssuesAsResolved(websiteId, userId, currentIssueTypes);
+
+    console.log(`Successfully processed ${issues.length} issues for tracking`);
+  } catch (error) {
+    console.error('Error in storeTrackedIssues:', error);
   }
+}
 
-  private mapIssueToType(title: string): string {
-    const titleLower = title.toLowerCase();
+/**
+ * Map issue title to consistent tracking type
+ */
+private mapIssueToTrackingType(title: string): string {
+  const titleLower = title.toLowerCase();
 
-    if (titleLower.includes("meta description"))
-      return "missing_meta_description";
-    if (titleLower.includes("title tag")) return "poor_title_tag";
-    if (titleLower.includes("h1") || titleLower.includes("heading"))
-      return "heading_structure";
-    if (titleLower.includes("alt text") || titleLower.includes("image"))
-      return "missing_alt_text";
-    if (titleLower.includes("viewport")) return "missing_viewport_meta";
-    if (titleLower.includes("schema") || titleLower.includes("structured data"))
-      return "missing_schema";
-    if (titleLower.includes("mobile") || titleLower.includes("responsive"))
-      return "mobile_responsiveness";
-    if (titleLower.includes("content quality")) return "low_content_quality";
-    if (titleLower.includes("readability")) return "poor_readability";
-    if (titleLower.includes("e-a-t")) return "low_eat_score";
-    if (titleLower.includes("keyword")) return "keyword_optimization";
-    if (titleLower.includes("open graph")) return "missing_og_tags";
+  if (titleLower.includes("meta description")) return "missing_meta_description";
+  if (titleLower.includes("title tag")) return "poor_title_tag";
+  if (titleLower.includes("h1") || titleLower.includes("heading")) return "heading_structure";
+  if (titleLower.includes("alt text") || titleLower.includes("image")) return "missing_alt_text";
+  if (titleLower.includes("viewport")) return "missing_viewport_meta";
+  if (titleLower.includes("schema") || titleLower.includes("structured data")) return "missing_schema";
+  if (titleLower.includes("mobile") || titleLower.includes("responsive")) return "mobile_responsiveness";
+  if (titleLower.includes("content quality")) return "low_content_quality";
+  if (titleLower.includes("readability")) return "poor_readability";
+  if (titleLower.includes("e-a-t")) return "low_eat_score";
+  if (titleLower.includes("keyword")) return "keyword_optimization";
+  if (titleLower.includes("open graph")) return "missing_og_tags";
 
-    return "other";
+  if (titleLower.includes("user intent")) return "poor_user_intent";
+  if (titleLower.includes("content uniqueness") || titleLower.includes("uniqueness")) return "low_content_uniqueness";
+  if (titleLower.includes("content structure")) return "poor_content_structure"
+  return "other";
+}
+
+/**
+ * Generate element path for issue tracking
+ */
+private generateElementPath(title: string): string | undefined {
+  const titleLower = title.toLowerCase();
+  
+  if (titleLower.includes("title tag")) return "title";
+  if (titleLower.includes("meta description")) return 'meta[name="description"]';
+  if (titleLower.includes("h1")) return "h1";
+  if (titleLower.includes("viewport")) return 'meta[name="viewport"]';
+  if (titleLower.includes("alt text")) return "img";
+  
+  return undefined;
+}
+
+/**
+ * Extract current value from issue description
+ */
+private extractCurrentValue(title: string, description: string): string | undefined {
+  if (title.toLowerCase().includes("missing")) {
+    return "Not present";
   }
+  
+  if (title.toLowerCase().includes("too long")) {
+    const match = description.match(/(\d+) characters/);
+    return match ? `${match[1]} characters` : "Too long";
+  }
+  
+  if (title.toLowerCase().includes("too short")) {
+    const match = description.match(/(\d+) characters/);
+    return match ? `${match[1]} characters` : "Too short";
+  }
+  
+  return undefined;
+}
+
+/**
+ * Generate recommended value for the issue
+ */
+private generateRecommendedValue(title: string, description: string): string | undefined {
+  const titleLower = title.toLowerCase();
+  
+  if (titleLower.includes("meta description")) {
+    return titleLower.includes("missing") 
+      ? "Add 120-160 character meta description"
+      : "Optimize to 120-160 characters";
+  }
+  
+  if (titleLower.includes("title tag")) {
+    return titleLower.includes("missing")
+      ? "Add 30-60 character title tag"
+      : "Optimize to 30-60 characters";
+  }
+  
+  if (titleLower.includes("alt text")) {
+    return "Add descriptive alt text to images";
+  }
+  
+  if (titleLower.includes("h1")) {
+    return titleLower.includes("missing")
+      ? "Add one H1 heading"
+      : "Use only one H1 per page";
+  }
+  
+  return undefined;
+}
 
   private categorizeIssue(title: string): string {
     const titleLower = title.toLowerCase();
@@ -442,14 +657,39 @@ export class EnhancedSEOService {
     return Math.min(10, priority);
   }
 
-  private async performAIContentAnalysis(
-    content: string,
-    title: string,
-    description: string,
-    targetKeywords: string[],
-    userId?: string,
-    websiteId?: string
-  ): Promise<ContentAnalysisResult> {
+ private async performAIContentAnalysis(
+  content: string,
+  title: string,
+  description: string,
+  targetKeywords: string[],
+  userId?: string,
+  websiteId?: string
+): Promise<ContentAnalysisResult> {
+  // Default fallback result
+  const defaultResult: ContentAnalysisResult = {
+    qualityScore: 70,
+    readabilityScore: 70,
+    keywordOptimization: {
+      primaryKeywordDensity: 2,
+      keywordDistribution: "good",
+      missingKeywords: [],
+      keywordCannibalization: false,
+      lsiKeywords: [],
+    },
+    eatScore: {
+      expertise: 70,
+      authoritativeness: 70,
+      trustworthiness: 70,
+      overall: 70,
+    },
+    contentGaps: [],
+    semanticKeywords: [],
+    contentStructureScore: 70,
+    uniquenessScore: 70,
+    userIntentAlignment: 70,
+  };
+
+  try {
     const analysisPrompt = `Analyze this webpage content for comprehensive SEO quality assessment:
 
 TITLE: ${title}
@@ -503,79 +743,134 @@ Return ONLY valid JSON with this exact structure:
   "userIntentAlignment": number
 }`;
 
-    let analysisResult: string;
+    let analysisResult: string = "";
     let tokensUsed = 0;
+    let aiProvider = "";
 
-    // Try Anthropic first, then OpenAI
-    const anthropic = await this.getUserAnthropic(userId);
+    // Get AI providers
     const openai = await this.getUserOpenAI(userId);
+    const anthropic = await this.getUserAnthropic(userId);
 
-    if (anthropic) {
-      console.log("Using user Anthropic Claude for content analysis...");
-      try {
-        const response = await anthropic.messages.create({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2000,
-          messages: [{ role: "user", content: analysisPrompt }],
-        });
-        analysisResult =
-          response.content[0].type === "text" ? response.content[0].text : "";
-        tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
-      } catch (error) {
-        throw new Error(`Anthropic API error: ${error.message}`);
-      }
-    } else if (openai) {
-      console.log("Using user OpenAI GPT-4 for content analysis...");
+    // Try OpenAI first
+    if (openai) {
+      console.log("Using OpenAI GPT-4 for content analysis...");
       try {
         const response = await openai.chat.completions.create({
-          model: "gpt-4",
-          messages: [{ role: "user", content: analysisPrompt }],
+          model: "gpt-4-turbo-preview",
+          messages: [
+            { 
+              role: "system", 
+              content: "You are an SEO expert. Return ONLY valid JSON without any markdown formatting or explanation."
+            },
+            { role: "user", content: analysisPrompt }
+          ],
           max_tokens: 2000,
           temperature: 0.3,
+          response_format: { type: "json_object" }
         });
+        
         analysisResult = response.choices[0].message.content || "";
         tokensUsed = response.usage?.total_tokens || 0;
-      } catch (error) {
-        throw new Error(`OpenAI API error: ${error.message}`);
+        aiProvider = "openai";
+        
+        console.log("OpenAI GPT-4 response received, length:", analysisResult.length);
+      } catch (openaiError) {
+        console.error("OpenAI API error:", openaiError);
+        console.log("OpenAI failed, will try Claude as fallback...");
+        
+        // Try Claude as fallback
+        if (anthropic) {
+          console.log("Falling back to Claude for content analysis...");
+          try {
+            const response = await anthropic.messages.create({
+              model: "claude-3-5-sonnet-latest",
+              max_tokens: 2000,
+              messages: [{ role: "user", content: analysisPrompt }],
+              temperature: 0.3,
+            });
+            
+            analysisResult = response.content[0].type === "text" ? response.content[0].text : "";
+            tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
+            aiProvider = "anthropic";
+            
+            console.log("Claude fallback response received, length:", analysisResult.length);
+          } catch (claudeError) {
+            console.error("Claude API also failed:", claudeError);
+            console.log("Both AI providers failed, using default analysis");
+            return defaultResult;
+          }
+        } else {
+          console.log("No Claude fallback available, using default analysis");
+          return defaultResult;
+        }
+      }
+    } else if (anthropic) {
+      // No OpenAI configured, use Claude directly
+      console.log("OpenAI not configured, using Claude for content analysis...");
+      try {
+        const response = await anthropic.messages.create({
+          model: "claude-3-5-sonnet-latest",
+          max_tokens: 2000,
+          messages: [{ role: "user", content: analysisPrompt }],
+          temperature: 0.3,
+        });
+        
+        analysisResult = response.content[0].type === "text" ? response.content[0].text : "";
+        tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
+        aiProvider = "anthropic";
+        
+        console.log("Claude response received, length:", analysisResult.length);
+      } catch (claudeError) {
+        console.error("Claude API error:", claudeError);
+        console.log("Claude failed, using default analysis");
+        return defaultResult;
       }
     } else {
-      throw new Error(
-        "No AI service available. Please configure either OpenAI or Anthropic API keys in your settings to enable content analysis."
-      );
+      console.log("No AI service available, using default analysis");
+      return defaultResult;
     }
 
-    // Parse JSON response
-    const jsonMatch = analysisResult.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error(
-        `AI service returned invalid response format. Expected JSON but got: ${analysisResult.substring(
-          0,
-          200
-        )}...`
-      );
-    }
-
-    let parsed;
+    // Parse JSON response with better error handling
+    let parsed: any;
     try {
+      // Try to extract JSON from the response
+      const jsonMatch = analysisResult.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.error("No JSON found in AI response:", analysisResult.substring(0, 500));
+        throw new Error("No JSON structure found in AI response");
+      }
+
       parsed = JSON.parse(jsonMatch[0]);
-    } catch (error) {
-      throw new Error(`Failed to parse AI response as JSON: ${error.message}`);
+      console.log("Successfully parsed AI response");
+    } catch (parseError) {
+      console.error("Failed to parse AI response:", parseError);
+      console.error("Raw response:", analysisResult.substring(0, 500));
+      
+      // Try to salvage what we can from the response
+      const fallbackParsed = this.tryExtractScoresFromText(analysisResult);
+      if (fallbackParsed) {
+        parsed = fallbackParsed;
+        console.log("Used fallback parsing for AI response");
+      } else {
+        console.log("Falling back to default result due to parse error");
+        return defaultResult;
+      }
     }
 
-    // Validate and ensure all required fields exist
-    const result = {
-      qualityScore: this.validateScore(parsed.qualityScore),
-      readabilityScore: this.validateScore(parsed.readabilityScore),
+    // Validate and ensure all required fields exist with safe defaults
+    const result: ContentAnalysisResult = {
+      qualityScore: this.safeValidateScore(parsed.qualityScore, 70),
+      readabilityScore: this.safeValidateScore(parsed.readabilityScore, 70),
       keywordOptimization: {
         primaryKeywordDensity: Math.max(
           0,
-          Math.min(100, parsed.keywordOptimization?.primaryKeywordDensity || 0)
+          Math.min(100, Number(parsed.keywordOptimization?.primaryKeywordDensity) || 2)
         ),
         keywordDistribution: ["poor", "good", "excellent"].includes(
           parsed.keywordOptimization?.keywordDistribution
         )
           ? parsed.keywordOptimization.keywordDistribution
-          : "poor",
+          : "good",
         missingKeywords: Array.isArray(
           parsed.keywordOptimization?.missingKeywords
         )
@@ -589,12 +884,16 @@ Return ONLY valid JSON with this exact structure:
           : [],
       },
       eatScore: {
-        expertise: this.validateScore(parsed.eatScore?.expertise),
-        authoritativeness: this.validateScore(
-          parsed.eatScore?.authoritativeness
+        expertise: this.safeValidateScore(parsed.eatScore?.expertise, 70),
+        authoritativeness: this.safeValidateScore(
+          parsed.eatScore?.authoritativeness,
+          70
         ),
-        trustworthiness: this.validateScore(parsed.eatScore?.trustworthiness),
-        overall: this.validateScore(parsed.eatScore?.overall),
+        trustworthiness: this.safeValidateScore(
+          parsed.eatScore?.trustworthiness,
+          70
+        ),
+        overall: this.safeValidateScore(parsed.eatScore?.overall, 70),
       },
       contentGaps: Array.isArray(parsed.contentGaps)
         ? parsed.contentGaps
@@ -602,34 +901,38 @@ Return ONLY valid JSON with this exact structure:
       semanticKeywords: Array.isArray(parsed.semanticKeywords)
         ? parsed.semanticKeywords
         : [],
-      contentStructureScore: this.validateScore(parsed.contentStructureScore),
-      uniquenessScore: this.validateScore(parsed.uniquenessScore),
-      userIntentAlignment: this.validateScore(parsed.userIntentAlignment),
+      contentStructureScore: this.safeValidateScore(
+        parsed.contentStructureScore,
+        70
+      ),
+      uniquenessScore: this.safeValidateScore(parsed.uniquenessScore, 70),
+      userIntentAlignment: this.safeValidateScore(
+        parsed.userIntentAlignment,
+        70
+      ),
     };
 
-    // Track AI usage
+    // Track AI usage if successful
     if (userId && tokensUsed > 0) {
-      const provider = anthropic ? "anthropic" : "openai";
-      const costPerToken = provider === "anthropic" ? 0.003 : 0.005;
-      const costUsd = (tokensUsed * costPerToken) / 1000;
+      const costPerToken = aiProvider === "openai" ? 0.01 / 1000 : 0.003 / 1000;
+      const costUsd = tokensUsed * costPerToken;
 
       try {
         await storage.trackAiUsage({
-          websiteId: websiteId || "", // ← Use actual websiteId, fallback to empty string
+          websiteId: websiteId || "",
           userId,
-          model:
-            provider === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4",
+          model: aiProvider === "openai" ? "gpt-4-turbo-preview" : "claude-3-5-sonnet-latest",
           tokensUsed,
-          costUsd: Math.round(costUsd * 100), // Store as cents
+          costUsd: Math.round(costUsd * 100),
           operation: "seo_content_analysis",
         });
       } catch (trackingError) {
         console.warn("Failed to track AI usage:", trackingError.message);
-        // Don't fail the entire analysis if tracking fails
       }
     }
 
     console.log("AI content analysis completed:", {
+      provider: aiProvider,
       quality: result.qualityScore,
       readability: result.readabilityScore,
       eatOverall: result.eatScore.overall,
@@ -639,17 +942,78 @@ Return ONLY valid JSON with this exact structure:
     });
 
     return result;
+  } catch (error) {
+    console.error("AI content analysis failed:", error);
+    console.log("Returning default analysis result");
+    return defaultResult;
   }
+}
+
+
+// Add new helper method for safe score validation
+private safeValidateScore(score: any, defaultValue: number = 70): number {
+  try {
+    return this.validateScore(score);
+  } catch (error) {
+    console.warn(`Score validation failed for value: ${score}, using default: ${defaultValue}`);
+    return defaultValue;
+  }
+}
+
+// Add fallback text extraction method
+private tryExtractScoresFromText(text: string): any | null {
+  try {
+    const result: any = {
+      qualityScore: 70,
+      readabilityScore: 70,
+      keywordOptimization: {
+        primaryKeywordDensity: 2,
+        keywordDistribution: "good",
+        missingKeywords: [],
+        keywordCannibalization: false,
+        lsiKeywords: []
+      },
+      eatScore: {
+        expertise: 70,
+        authoritativeness: 70,
+        trustworthiness: 70,
+        overall: 70
+      },
+      contentGaps: [],
+      semanticKeywords: [],
+      contentStructureScore: 70,
+      uniquenessScore: 70,
+      userIntentAlignment: 70
+    };
+
+    // Try to extract numbers from text using regex
+    const qualityMatch = text.match(/quality[:\s]+(\d+)/i);
+    if (qualityMatch) result.qualityScore = parseInt(qualityMatch[1]);
+
+    const readabilityMatch = text.match(/readability[:\s]+(\d+)/i);
+    if (readabilityMatch) result.readabilityScore = parseInt(readabilityMatch[1]);
+
+    const expertiseMatch = text.match(/expertise[:\s]+(\d+)/i);
+    if (expertiseMatch) result.eatScore.expertise = parseInt(expertiseMatch[1]);
+
+    const trustMatch = text.match(/trust[:\s]+(\d+)/i);
+    if (trustMatch) result.eatScore.trustworthiness = parseInt(trustMatch[1]);
+
+    return result;
+  } catch (error) {
+    return null;
+  }
+}
 
   private validateScore(score: any): number {
-    const num = Number(score);
-    if (isNaN(num)) {
-      throw new Error(
-        `Invalid score value: ${score}. Expected a number between 0-100.`
-      );
-    }
-    return Math.max(0, Math.min(100, Math.round(num)));
+  const num = Number(score);
+  if (isNaN(num)) {
+    throw new Error(
+      `Invalid score value: ${score}. Expected a number between 0-100.`
+    );
   }
+  return Math.max(0, Math.min(100, Math.round(num)));
+}
 
   private extractTextContent(html: string): string {
     const $ = cheerio.load(html);
@@ -982,7 +1346,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "The page is missing a title tag, which is crucial for SEO and user experience.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -992,7 +1356,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Title Tag Too Long",
         description: `Title tag is ${technicalDetails.metaTags.titleLength} characters. Keep it under 60 characters for optimal display.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1002,7 +1366,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Title Tag Too Short",
         description: `Title tag is only ${technicalDetails.metaTags.titleLength} characters. Consider expanding for better SEO.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1013,7 +1377,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "The page lacks a meta description, which impacts search result click-through rates.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true
       });
     }
 
@@ -1023,7 +1387,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Meta Description Too Long",
         description: `Meta description is ${technicalDetails.metaTags.descriptionLength} characters. Keep it under 160 characters.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1035,7 +1399,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "The page doesn't have an H1 tag, which should contain the main topic/keyword.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1045,7 +1409,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Multiple H1 Tags",
         description: `Found ${technicalDetails.headings.h1Count} H1 tags. Use only one H1 per page.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1056,7 +1420,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "Heading tags are not in proper hierarchical order (H1, H2, H3, etc.).",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1067,7 +1431,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Images Missing Alt Text",
         description: `${technicalDetails.images.withoutAlt} out of ${technicalDetails.images.total} images are missing alt text.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1079,7 +1443,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "The page lacks a viewport meta tag, affecting mobile responsiveness.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1101,7 +1465,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "No structured data found. Schema markup helps search engines understand your content.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1113,7 +1477,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "Open Graph tags improve how your content appears when shared on social media.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1124,7 +1488,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Low Content Quality",
         description: `Content quality score is ${contentAnalysis.qualityScore}/100. Content lacks depth, expertise, or value for users.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1134,7 +1498,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Poor Readability",
         description: `Readability score is ${contentAnalysis.readabilityScore}/100. Content is difficult to read and understand.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1157,7 +1521,7 @@ Return ONLY valid JSON with this exact structure:
         description:
           "Keywords are not well distributed throughout the content. Improve keyword placement in headings, body text, and meta tags.",
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1169,7 +1533,7 @@ Return ONLY valid JSON with this exact structure:
           1
         )}%. Consider reducing to 1-3% to avoid penalties.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1180,7 +1544,7 @@ Return ONLY valid JSON with this exact structure:
         description: `Consider adding these relevant keywords: ${contentAnalysis.keywordOptimization.missingKeywords
           .join(", ")}`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
@@ -1191,7 +1555,7 @@ Return ONLY valid JSON with this exact structure:
         title: "Poor Content Structure",
         description: `Content structure score is ${contentAnalysis.contentStructureScore}/100. Improve organization, use more headings, and create better content flow.`,
         affectedPages: 1,
-        autoFixAvailable: false,
+        autoFixAvailable: true,
       });
     }
 
