@@ -1,3 +1,5 @@
+
+//client/src/pages/dashboard.tsx
 import { useQuery } from "@tanstack/react-query";
 import { Globe, Bot, Search, Calendar, TrendingUp } from "lucide-react";
 import { api } from "@/lib/api";
@@ -131,8 +133,8 @@ export default function Dashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-2">
-            <PerformanceChart />
+         <div className="lg:col-span-2">
+            <PerformanceChart stats={stats} isLoading={statsLoading} />
           </div>
           <div>
             <RecentActivity />

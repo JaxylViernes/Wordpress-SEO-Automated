@@ -1,3 +1,5 @@
+
+//client/src/lib/api/imageApi.ts
 export const imageApi = {
   async generateAndProcessImages(
     contentId: string,

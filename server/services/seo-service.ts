@@ -238,7 +238,9 @@ export class EnhancedSEOService {
       pageTitle,
       metaDescription,
       targetKeywords || [],
-      userId
+      userId,
+      //nadagdag
+      websiteId
     );
 
     // Generate issues based on both technical and content analysis
@@ -756,7 +758,9 @@ Return ONLY valid JSON with this exact structure:
       console.log("Using OpenAI GPT-4 for content analysis...");
       try {
         const response = await openai.chat.completions.create({
-          model: "gpt-4-turbo-preview",
+          //nadagdag
+          //gpt-4o-previw dati
+          model: "gpt-4o" ,
           messages: [
             { 
               role: "system", 
@@ -913,23 +917,51 @@ Return ONLY valid JSON with this exact structure:
     };
 
     // Track AI usage if successful
-    if (userId && tokensUsed > 0) {
-      const costPerToken = aiProvider === "openai" ? 0.01 / 1000 : 0.003 / 1000;
-      const costUsd = tokensUsed * costPerToken;
+    //nadagdag
+    if (userId && websiteId && tokensUsed > 0) {
+  const costPerToken = aiProvider === "openai" ? 0.01 / 1000 : 0.003 / 1000;
+  const costUsd = tokensUsed * costPerToken;
 
-      try {
-        await storage.trackAiUsage({
-          websiteId: websiteId || "",
-          userId,
-          model: aiProvider === "openai" ? "gpt-4-turbo-preview" : "claude-3-5-sonnet-latest",
-          tokensUsed,
-          costUsd: Math.round(costUsd * 100),
-          operation: "seo_content_analysis",
-        });
-      } catch (trackingError) {
-        console.warn("Failed to track AI usage:", trackingError.message);
-      }
+  try {
+    // First verify the website exists
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (website) {
+      await storage.trackAiUsage({
+        websiteId: websiteId,
+        userId,
+        model: aiProvider === "openai" ? "gpt-4-turbo" : "claude-3-5-sonnet-latest",  // Also update model name here
+        tokensUsed,
+        costUsd: Math.round(costUsd * 100),
+        operation: "seo_content_analysis",
+      });
+    } else {
+      console.warn(`Website ${websiteId} not found for user ${userId}, skipping AI usage tracking`);
     }
+  } catch (trackingError) {
+    console.warn("Failed to track AI usage:", trackingError.message);
+  }
+}
+
+
+    
+    //wag alisin
+    // if (userId && tokensUsed > 0) {
+    //   const costPerToken = aiProvider === "openai" ? 0.01 / 1000 : 0.003 / 1000;
+    //   const costUsd = tokensUsed * costPerToken;
+
+    //   try {
+    //     await storage.trackAiUsage({
+    //       websiteId: websiteId || "",
+    //       userId,
+    //       model: aiProvider === "openai" ? "gpt-4-turbo-preview" : "claude-3-5-sonnet-latest",
+    //       tokensUsed,
+    //       costUsd: Math.round(costUsd * 100),
+    //       operation: "seo_content_analysis",
+    //     });
+    //   } catch (trackingError) {
+    //     console.warn("Failed to track AI usage:", trackingError.message);
+    //   }
+    // }
 
     console.log("AI content analysis completed:", {
       provider: aiProvider,
@@ -1831,3 +1863,6 @@ private tryExtractScoresFromText(text: string): any | null {
 }
 
 export const seoService = new EnhancedSEOService();
+
+
+

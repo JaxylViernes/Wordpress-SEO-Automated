@@ -14,6 +14,12 @@ export default function handler(
   res.status(200).json([]);
 }
 
+
+
+
+
+
+
 // // client/src/pages/api/images/content-images.ts
 // import { NextApiRequest, NextApiResponse } from 'next';
 // import { db } from '../../../../../server/db';

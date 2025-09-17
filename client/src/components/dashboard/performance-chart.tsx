@@ -77,21 +77,24 @@ export default function PerformanceChart() {
         display: false,
       },
     },
-    scales: {
-      y: {
-        beginAtZero: false,
-        min: 70,
-        max: 100,
-        grid: {
-          color: "#f3f4f6",
-        },
-      },
-      x: {
-        grid: {
-          display: false,
-        },
-      },
+   scales: {
+  y: {
+    beginAtZero: true,   // Change to true
+    min: 0,              // Change to 0
+    max: 100,
+    grid: {
+      color: "#f3f4f6",
     },
+    ticks: {
+      stepSize: 20,      // Add this for 0, 20, 40, 60, 80, 100 ticks
+    },
+  },
+  x: {
+    grid: {
+      display: false,
+    },
+  },
+},
   };
 
   return (

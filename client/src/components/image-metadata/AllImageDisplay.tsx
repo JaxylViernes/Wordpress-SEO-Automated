@@ -1,3 +1,6 @@
+
+
+//client/src/components/image-metadata/AllImageDisplay.tsx
 import React from 'react';
 import { Image, DollarSign } from 'lucide-react';
 
