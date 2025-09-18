@@ -302,7 +302,7 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
           )}
         </div>
 
-        <div>
+        {/* <div>
           <Label htmlFor="aiModel">
             AI Model Preference (for auto-generate and auto-posting)
           </Label>
@@ -317,12 +317,12 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
               <SelectItem value="gpt-4o">GPT-4 (Recommended)</SelectItem>
               <SelectItem value="claude-3">Claude-3 (Creative)</SelectItem>
               <SelectItem value="gemini">Gemini</SelectItem>
-              {/* <SelectItem value="auto-select">Auto-Select Best</SelectItem> */}
+             
             </SelectContent>
           </Select>
-        </div>
+        </div> */}
 
-        <div>
+        {/* <div>
           <Label htmlFor="brandVoice">
             Brand Voice (for auto-generate and auto-posting)
           </Label>
@@ -342,9 +342,9 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
               <SelectItem value="authoritative">Authoritative</SelectItem>
             </SelectContent>
           </Select>
-        </div>
+        </div> */}
 
-        <div>
+        {/* <div>
           <Label htmlFor="targetAudience">
             Target Audience (for auto-generate and auto-posting)
           </Label>
@@ -353,9 +353,9 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
             {...register("targetAudience")}
             placeholder="e.g., small business owners, developers, shoppers"
           />
-        </div>
+        </div> */}
 
-        <div>
+        {/* <div>
           <Label htmlFor="contentGuidelines">
             Content Guidelines (for auto-generate and auto-posting) (Optional)
           </Label>
@@ -364,9 +364,9 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
             {...register("contentGuidelines")}
             placeholder="e.g., Always include call-to-action, focus on benefits"
           />
-        </div>
+        </div> */}
 
-        <div className="space-y-3">
+        {/* <div className="space-y-3">
           <div className="flex items-center space-x-2">
             <Checkbox
               id="requireApproval"
@@ -378,9 +378,9 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
             <Label htmlFor="requireApproval" className="text-sm">
               Require manual approval before publishing (Recommended)
             </Label>
-          </div>
+          </div> */}
 
-          <div className="flex items-center space-x-2">
+          {/* <div className="flex items-center space-x-2">
             <Checkbox
               id="autoPosting"
               checked={watch("autoPosting")}
@@ -390,7 +390,7 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
               Enable automatic scheduling (2x per week)
             </Label>
           </div>
-        </div>
+        </div> */}
 
         {/* Connection Test Preview */}
         {watch("url") &&

@@ -442,92 +442,91 @@ export class DatabaseStorage implements IStorage {
   // ===============================
 
   async createContentImage(data: InsertContentImage & { userId: string }): Promise<ContentImage> {
-    const validatedData = insertContentImageSchema.parse(data);
-    const imageWithUserId = { ...validatedData, userId: data.userId };
-    
-    const [image] = await db.insert(contentImages).values(imageWithUserId).returning();
-    return image;
-  }
+  const validatedData = insertContentImageSchema.parse(data);
+  const imageWithUserId = { ...validatedData, userId: data.userId };
+  
+  const [image] = await db.insert(contentImages).values(imageWithUserId).returning();
+  return image;
+}
 
-  // Get images for a specific content piece
-  async getContentImages(contentId: string): Promise<ContentImage[]> {
-    return db
-      .select()
-      .from(contentImages)
-      .where(eq(contentImages.contentId, contentId))
-      .orderBy(contentImages.createdAt);
-  }
+async getContentImages(contentId: string): Promise<ContentImage[]> {
+  return db
+    .select()
+    .from(contentImages)
+    .where(eq(contentImages.contentId, contentId))
+    .orderBy(contentImages.createdAt);
+}
 
-  // Update content image (for WordPress upload info)
-  async updateContentImage(imageId: string, updates: Partial<{
-    wordpressMediaId: number;
-    wordpressUrl: string;
-    status: string;
-    uploadError: string;
-  }>): Promise<ContentImage | null> {
-    const [updated] = await db
-      .update(contentImages)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(contentImages.id, imageId))
-      .returning();
-    
-    return updated || null;
-  }
+// Update content image (for WordPress upload info)
+async updateContentImage(imageId: string, updates: Partial<{
+  wordpressMediaId: number;
+  wordpressUrl: string;
+  status: string;
+  uploadError: string;
+}>): Promise<ContentImage | null> {
+  const [updated] = await db
+    .update(contentImages)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(eq(contentImages.id, imageId))
+    .returning();
+  
+  return updated || null;
+}
 
-  // Get images by user (for dashboard/analytics)
-  async getUserContentImages(userId: string, limit: number = 50): Promise<ContentImage[]> {
-    return db
-      .select()
-      .from(contentImages)
-      .where(eq(contentImages.userId, userId))
-      .orderBy(desc(contentImages.createdAt))
-      .limit(limit);
-  }
+// Get images by user (for dashboard/analytics)
+async getUserContentImages(userId: string, limit: number = 50): Promise<ContentImage[]> {
+  return db
+    .select()
+    .from(contentImages)
+    .where(eq(contentImages.userId, userId))
+    .orderBy(desc(contentImages.createdAt))
+    .limit(limit);
+}
 
-  // FIXED: Changed this.db to db
-  async deleteContentImages(contentId: string): Promise<void> {
-    await db.delete(contentImages).where(eq(contentImages.contentId, contentId));
-  }
+// Delete content images (cascade when content is deleted)
+async deleteContentImages(contentId: string): Promise<void> {
+  await this.db.delete(contentImages).where(eq(contentImages.contentId, contentId));
+}
 
-  // FIXED: Properly use sum with Drizzle ORM
-  async getUserImageStats(userId: string): Promise<{
-    totalImages: number;
-    totalCostCents: number;
-    imagesThisMonth: number;
-    costThisMonthCents: number;
-  }> {
-    const thisMonth = new Date();
-    thisMonth.setDate(1);
-    thisMonth.setHours(0, 0, 0, 0);
+// Get image usage statistics for a user
+async getUserImageStats(userId: string): Promise<{
+  totalImages: number;
+  totalCostCents: number;
+  imagesThisMonth: number;
+  costThisMonthCents: number;
+}> {
+  const thisMonth = new Date();
+  thisMonth.setDate(1);
+  thisMonth.setHours(0, 0, 0, 0);
 
-    const [allTimeStats] = await db
-      .select({
-        totalImages: count(),
-        totalCostCents: sum(contentImages.costCents)
-      })
-      .from(contentImages)
-      .where(eq(contentImages.userId, userId));
+  const [allTimeStats] = await this.db
+    .select({
+      totalImages: count(),
+      totalCostCents: sum(contentImages.costCents)
+    })
+    .from(contentImages)
+    .where(eq(contentImages.userId, userId));
 
-    const [monthlyStats] = await db
-      .select({
-        imagesThisMonth: count(),
-        costThisMonthCents: sum(contentImages.costCents)
-      })
-      .from(contentImages)
-      .where(
-        and(
-          eq(contentImages.userId, userId),
-          gte(contentImages.createdAt, thisMonth)
-        )
-      );
+  const [monthlyStats] = await this.db
+    .select({
+      imagesThisMonth: count(),
+      costThisMonthCents: sum(contentImages.costCents)
+    })
+    .from(contentImages)
+    .where(
+      and(
+        eq(contentImages.userId, userId),
+        gte(contentImages.createdAt, thisMonth)
+      )
+    );
 
-    return {
-      totalImages: Number(allTimeStats.totalImages) || 0,
-      totalCostCents: Number(allTimeStats.totalCostCents) || 0,
-      imagesThisMonth: Number(monthlyStats.imagesThisMonth) || 0,
-      costThisMonthCents: Number(monthlyStats.costThisMonthCents) || 0
-    };
-  }
+  return {
+    totalImages: Number(allTimeStats.totalImages) || 0,
+    totalCostCents: Number(allTimeStats.totalCostCents) || 0,
+    imagesThisMonth: Number(monthlyStats.imagesThisMonth) || 0,
+    costThisMonthCents: Number(monthlyStats.costThisMonthCents) || 0
+  };
+}
 
   // ===============================
   // SEO REPORTS METHODS
@@ -735,52 +734,7 @@ export class DatabaseStorage implements IStorage {
     return backupRecord;
   }
 
-  
-// Dashboard stats
-async getUserDashboardStats(userId: string): Promise<{
-  websiteCount: number;
-  contentCount: number;
-  avgSeoScore: number;
-  recentActivity: number;
-  scheduledPosts: number;  // ADD THIS FIELD
-}> {
-  const userWebsites = await this.getUserWebsites(userId);
-  const userContent = await this.getUserContent(userId);
-  const recentLogs = await db
-    .select()
-    .from(activityLogs)
-    .where(
-      and(
-        eq(activityLogs.userId, userId),
-        // FIX: Change eq to gte for date comparison
-        gte(activityLogs.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
-      )
-    );
-  
-  // ADD: Count scheduled posts
-  const [scheduledCount] = await db
-    .select({ count: count() })
-    .from(contentSchedule)
-    .where(eq(contentSchedule.userId, userId));
 
-  return {
-    websiteCount: userWebsites.length,
-    contentCount: userContent.length,
-    avgSeoScore: userWebsites.length > 0 
-      ? Math.round(userWebsites.reduce((sum, w) => sum + w.seoScore, 0) / userWebsites.length)
-      : 0,
-    recentActivity: recentLogs.length,
-    scheduledPosts: Number(scheduledCount?.count) || 0  // ADD THIS LINE
-  };
-}
-
-async createContentImage(data: InsertContentImage & { userId: string }): Promise<ContentImage> {
-  const validatedData = insertContentImageSchema.parse(data);
-  const imageWithUserId = { ...validatedData, userId: data.userId };
-  
-  const [image] = await db.insert(contentImages).values(imageWithUserId).returning();
-  return image;
-}
 
   //WAG ALISIN
 //   // Dashboard stats
@@ -821,85 +775,6 @@ async createContentImage(data: InsertContentImage & { userId: string }): Promise
 //   return image;
 // }
 
-// Get images for a specific content piece
-async getContentImages(contentId: string): Promise<ContentImage[]> {
-  return db
-    .select()
-    .from(contentImages)
-    .where(eq(contentImages.contentId, contentId))
-    .orderBy(contentImages.createdAt);
-}
-
-// Update content image (for WordPress upload info)
-async updateContentImage(imageId: string, updates: Partial<{
-  wordpressMediaId: number;
-  wordpressUrl: string;
-  status: string;
-  uploadError: string;
-}>): Promise<ContentImage | null> {
-  const [updated] = await db
-    .update(contentImages)
-    .set({ ...updates, updatedAt: new Date() })
-    .where(eq(contentImages.id, imageId))
-    .returning();
-  
-  return updated || null;
-}
-
-// Get images by user (for dashboard/analytics)
-async getUserContentImages(userId: string, limit: number = 50): Promise<ContentImage[]> {
-  return db
-    .select()
-    .from(contentImages)
-    .where(eq(contentImages.userId, userId))
-    .orderBy(desc(contentImages.createdAt))
-    .limit(limit);
-}
-
-// Delete content images (cascade when content is deleted)
-async deleteContentImages(contentId: string): Promise<void> {
-  await this.db.delete(contentImages).where(eq(contentImages.contentId, contentId));
-}
-
-// Get image usage statistics for a user
-async getUserImageStats(userId: string): Promise<{
-  totalImages: number;
-  totalCostCents: number;
-  imagesThisMonth: number;
-  costThisMonthCents: number;
-}> {
-  const thisMonth = new Date();
-  thisMonth.setDate(1);
-  thisMonth.setHours(0, 0, 0, 0);
-
-  const [allTimeStats] = await this.db
-    .select({
-      totalImages: count(),
-      totalCostCents: sum(contentImages.costCents)
-    })
-    .from(contentImages)
-    .where(eq(contentImages.userId, userId));
-
-  const [monthlyStats] = await this.db
-    .select({
-      imagesThisMonth: count(),
-      costThisMonthCents: sum(contentImages.costCents)
-    })
-    .from(contentImages)
-    .where(
-      and(
-        eq(contentImages.userId, userId),
-        gte(contentImages.createdAt, thisMonth)
-      )
-    );
-
-  return {
-    totalImages: Number(allTimeStats.totalImages) || 0,
-    totalCostCents: Number(allTimeStats.totalCostCents) || 0,
-    imagesThisMonth: Number(monthlyStats.imagesThisMonth) || 0,
-    costThisMonthCents: Number(monthlyStats.costThisMonthCents) || 0
-  };
-}
 
   // ===============================
   // CONTENT SCHEDULING METHODS
@@ -1490,16 +1365,19 @@ async getUserImageStats(userId: string): Promise<{
   // API KEY MANAGEMENT METHODS
   // ===============================
 
-  async getUserApiKeys(userId: string): Promise<UserApiKey[]> {
-    return await db
+ async getUserApiKeys(userId: string): Promise<UserApiKey[]> {
+    const rawKeys = await db
       .select()
       .from(userApiKeys)
       .where(eq(userApiKeys.userId, userId))
       .orderBy(desc(userApiKeys.createdAt));
+    
+    // Transform snake_case database columns to camelCase to match UserApiKey interface
+    return rawKeys.map(row => this.normalizeApiKey(row));
   }
 
   async getUserApiKey(userId: string, keyId: string): Promise<UserApiKey | undefined> {
-    const [apiKey] = await db
+    const [rawKey] = await db
       .select()
       .from(userApiKeys)
       .where(
@@ -1508,7 +1386,28 @@ async getUserImageStats(userId: string): Promise<{
           eq(userApiKeys.id, keyId)
         )
       );
-    return apiKey;
+    
+    return rawKey ? this.normalizeApiKey(rawKey) : undefined;
+  }
+
+  // Private helper method to normalize the database row to match UserApiKey interface
+  private normalizeApiKey(row: any): UserApiKey {
+    return {
+      id: row.id,
+      userId: row.user_id || row.userId,
+      provider: row.provider,
+      keyName: row.key_name || row.keyName,
+      encryptedApiKey: row.encrypted_api_key || row.encryptedApiKey || row.encryptedKey,
+      maskedKey: row.masked_key || row.maskedKey,
+      isActive: row.is_active !== undefined ? row.is_active : row.isActive,
+      validationStatus: row.validation_status || row.validationStatus,
+      lastValidated: row.last_validated || row.lastValidated,
+      validationError: row.validation_error || row.validationError,
+      usageCount: row.usage_count !== undefined ? row.usage_count : row.usageCount,
+      lastUsed: row.last_used || row.lastUsed,
+      createdAt: row.created_at || row.createdAt,
+      updatedAt: row.updated_at || row.updatedAt,
+    };
   }
 
   async createUserApiKey(userId: string, data: {
@@ -1526,7 +1425,7 @@ async getUserImageStats(userId: string): Promise<{
     const encryptedApiKey = apiKeyEncryptionService.encrypt(data.apiKey);
     const maskedKey = apiKeyEncryptionService.createMaskedKey(data.apiKey);
 
-    const [apiKey] = await db
+    const [rawKey] = await db
       .insert(userApiKeys)
       .values({
         userId,
@@ -1538,7 +1437,8 @@ async getUserImageStats(userId: string): Promise<{
       })
       .returning();
 
-    return apiKey;
+    // Normalize the returned key to match UserApiKey interface
+    return this.normalizeApiKey(rawKey);
   }
 
   async updateUserApiKey(userId: string, keyId: string, updates: Partial<{
@@ -1550,12 +1450,39 @@ async getUserImageStats(userId: string): Promise<{
     usageCount: number;
     lastUsed: Date;
   }>): Promise<UserApiKey | undefined> {
-    const [apiKey] = await db
+    // Map camelCase updates to snake_case for database
+    const dbUpdates: any = {};
+    
+    if (updates.keyName !== undefined) dbUpdates.key_name = updates.keyName;
+    if (updates.isActive !== undefined) dbUpdates.is_active = updates.isActive;
+    if (updates.validationStatus !== undefined) dbUpdates.validation_status = updates.validationStatus;
+    if (updates.lastValidated !== undefined) dbUpdates.last_validated = updates.lastValidated;
+    if (updates.validationError !== undefined) dbUpdates.validation_error = updates.validationError;
+    if (updates.usageCount !== undefined) dbUpdates.usage_count = updates.usageCount;
+    if (updates.lastUsed !== undefined) dbUpdates.last_used = updates.lastUsed;
+    
+    // FIX: Check if we have any fields to update
+    if (Object.keys(dbUpdates).length === 0) {
+      console.warn('updateUserApiKey called with no valid fields to update');
+      // Return the existing key unchanged
+      const existingKey = await db
+        .select()
+        .from(userApiKeys)
+        .where(
+          and(
+            eq(userApiKeys.userId, userId),
+            eq(userApiKeys.id, keyId)
+          )
+        )
+        .limit(1);
+      return existingKey[0] ? this.normalizeApiKey(existingKey[0]) : undefined;
+    }
+    
+    dbUpdates.updated_at = new Date();
+
+    const [rawKey] = await db
       .update(userApiKeys)
-      .set({ 
-        ...updates, 
-        updatedAt: new Date() 
-      })
+      .set(dbUpdates)
       .where(
         and(
           eq(userApiKeys.userId, userId),
@@ -1563,7 +1490,8 @@ async getUserImageStats(userId: string): Promise<{
         )
       )
       .returning();
-    return apiKey;
+    
+    return rawKey ? this.normalizeApiKey(rawKey) : undefined;
   }
 
   async deleteUserApiKey(userId: string, keyId: string): Promise<boolean> {
@@ -1585,6 +1513,7 @@ async getUserImageStats(userId: string): Promise<{
     }
 
     try {
+      // Now we can use encryptedApiKey (camelCase) reliably
       return apiKeyEncryptionService.decrypt(apiKey.encryptedApiKey);
     } catch (error) {
       console.error('Failed to decrypt API key:', error);
@@ -1608,7 +1537,7 @@ async getUserImageStats(userId: string): Promise<{
       await this.updateUserApiKey(userId, keyId, {
         lastValidated: new Date(),
         validationStatus: 'valid',
-        validationError: null
+        validationError: undefined
       });
 
       return { valid: true };

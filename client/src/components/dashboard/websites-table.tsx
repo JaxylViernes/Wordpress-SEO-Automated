@@ -136,7 +136,7 @@ export default function WebsitesTable() {
             Managed Websites
           </h3>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:space-x-2">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            {/* <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full sm:w-32">
                 <SelectValue />
               </SelectTrigger>
@@ -146,7 +146,7 @@ export default function WebsitesTable() {
                 <SelectItem value="processing">Processing</SelectItem>
                 <SelectItem value="issues">Issues</SelectItem>
               </SelectContent>
-            </Select>
+            </Select> */}
 
             <Dialog open={isAddWebsiteOpen} onOpenChange={setIsAddWebsiteOpen}>
               <DialogTrigger asChild>

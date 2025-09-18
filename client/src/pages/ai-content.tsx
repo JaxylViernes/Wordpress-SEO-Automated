@@ -459,43 +459,6 @@ export default function AIContent() {
   };
 
 
-        // PROGRESS BAR ADDITION: Variable speed based on current progress
-        const increment = prev < 20 ? 3 : prev < 50 ? 2 : prev < 80 ? 1.5 : 0.5;
-        const newProgress = Math.min(prev + increment, 90);
-
-        // PROGRESS BAR ADDITION: Update phase messages based on progress
-        if (newProgress < 15) {
-          setGenerationPhase("Initializing AI...");
-          setEstimatedTimeRemaining(25);
-        } else if (newProgress < 30) {
-          setGenerationPhase("Analyzing topic and keywords...");
-          setEstimatedTimeRemaining(20);
-        } else if (newProgress < 45) {
-          setGenerationPhase(
-            "Generating content with " +
-              getProviderName(formData.aiProvider) +
-              "..."
-          );
-          setEstimatedTimeRemaining(15);
-        } else if (newProgress < 60) {
-          setGenerationPhase("Optimizing for SEO...");
-          setEstimatedTimeRemaining(10);
-        } else if (newProgress < 75) {
-          setGenerationPhase("Analyzing readability and brand voice...");
-          setEstimatedTimeRemaining(5);
-        } else if (newProgress < 85) {
-          setGenerationPhase(
-            formData.includeImages
-              ? "Generating AI images and uploading to Cloudinary..."
-              : "Finalizing content..."
-          );
-          setEstimatedTimeRemaining(3);
-        } else {
-          setGenerationPhase("Almost done...");
-          setEstimatedTimeRemaining(1);
-        }
-
-
 const generateContent = async () => {
   if (!validateForm()) return;
 
@@ -2309,7 +2272,7 @@ const generateContent = async () => {
                           {editingContent && editingContent.hasImages && (
                             <label className="flex items-start">
                               <input
-                                type="radio"
+                                type="radio"npm install sharp
                                 name="imageRegenOption"
                                 checked={editFormData.regenerateImages}
                                 onChange={() =>

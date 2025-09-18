@@ -281,10 +281,10 @@ export default function Websites() {
               className="pl-10"
             />
           </div>
-          <Button variant="outline" className="flex items-center">
+          {/* <Button variant="outline" className="flex items-center">
             <Filter className="w-4 h-4 mr-2" />
             Filters
-          </Button>
+          </Button> */}
         </div>
 
         {/* Website Stats */}

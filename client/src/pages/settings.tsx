@@ -534,7 +534,7 @@ const handlePasswordChange = () => {
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="integrations">API Keys</TabsTrigger>
             <TabsTrigger value="automation">Automation</TabsTrigger>
-            <TabsTrigger value="notifications">Notifications</TabsTrigger>
+            {/* <TabsTrigger value="notifications">Notifications</TabsTrigger> */}
             <TabsTrigger value="security">Security</TabsTrigger>
           </TabsList>
 
@@ -923,7 +923,7 @@ const handlePasswordChange = () => {
           </TabsContent>
 
           {/* Notifications */}
-          <TabsContent value="notifications" className="space-y-6">
+          {/* <TabsContent value="notifications" className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -992,7 +992,7 @@ const handlePasswordChange = () => {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
+          </TabsContent> */}
 
           {/* Security */}
           <TabsContent value="security" className="space-y-6">

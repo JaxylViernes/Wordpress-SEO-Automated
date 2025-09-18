@@ -328,7 +328,7 @@ const ProgressDialog: React.FC<ProgressDialogProps> = ({
                   <span className="inline-block w-1 h-1 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                   <span className="inline-block w-1 h-1 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
-                Processing...
+                Processing...(This may take some time)
               </div>
             </div>
           )}
