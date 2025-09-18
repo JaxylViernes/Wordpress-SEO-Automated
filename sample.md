@@ -2098,16 +2098,6 @@
 
 
 
-# GOOGLE_CLIENT_ID=79116181459-n1cntmbuiomfppcan8v5s3mep70aciml.apps.googleusercontent.com
-# GOOGLE_CLIENT_SECRET=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
-
-
-
-# GOOGLE_CLIENT_ID=747008179131-3glv0cq6il1k9j5gc8dmsaadmgqhlsup.apps.googleusercontent.com
-# GOOGLE_CLIENT_SECRET=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
-
-
-
 // console.log('OAuth2 Client Configuration:', {
 //   clientId: process.env.GOOGLE_CLIENT_ID ? 'Set' : 'MISSING',
 //   clientSecret: process.env.GOOGLE_CLIENT_SECRET ? 'Set' : 'MISSING',
