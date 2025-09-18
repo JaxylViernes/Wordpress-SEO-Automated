@@ -398,22 +398,6 @@ export default function AIContent() {
     setFormErrors({});
   };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const generateContent = async () => {
   if (!validateForm()) return;
 
@@ -2200,7 +2184,7 @@ const generateContent = async () => {
                           {editingContent && editingContent.hasImages && (
                             <label className="flex items-start">
                               <input
-                                type="radio"
+                                type="radio"npm install sharp
                                 name="imageRegenOption"
                                 checked={editFormData.regenerateImages}
                                 onChange={() =>

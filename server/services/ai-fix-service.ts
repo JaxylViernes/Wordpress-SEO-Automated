@@ -385,155 +385,318 @@ Provide the improved content:`;
   }
 
   private async performReanalysis(
-    website: any,
-    userId: string,
-    websiteId: string,
-    initialScore: number,
-    delay: number = 3000 // Reduced default delay
-  ): Promise<{
-    enabled: boolean;
-    initialScore: number;
-    finalScore: number;
-    scoreImprovement: number;
-    analysisTime: number;
-    success: boolean;
-    error?: string;
-    simulated?: boolean;
-  }> {
-    const reanalysisStartTime = Date.now();
-    
-    try {
-      if (delay > 0) {
-        this.addLog(`Waiting ${delay}ms for changes to propagate...`, "info");
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-      
-      this.addLog("Running fresh SEO analysis to measure improvement...", "info");
-      
-      // Run fresh SEO analysis with enhanced error handling
-      let newAnalysis;
-      try {
-        newAnalysis = await seoService.analyzeWebsite(website.url, [], userId);
-      } catch (analysisError) {
-        this.addLog(`SEO analysis failed during reanalysis: ${analysisError.message}`, "error");
-        
-        // Fallback: try without user ID in case of API key issues
-        try {
-          newAnalysis = await seoService.analyzeWebsite(website.url, []);
-          this.addLog("Fallback analysis (without user API keys) succeeded", "warning");
-        } catch (fallbackError) {
-          throw new Error(`Both primary and fallback reanalysis failed: ${fallbackError.message}`);
-        }
-      }
-      
-      const finalScore = newAnalysis.score;
-      const scoreImprovement = finalScore - initialScore;
-      const analysisTime = Date.now() - reanalysisStartTime;
-      
-      // Save the new analysis to database
-      try {
-        await storage.createSeoReport({
-          userId,
-          websiteId,
-          score: newAnalysis.score,
-          issues: newAnalysis.issues,
-          recommendations: newAnalysis.recommendations,
-          pageSpeedScore: newAnalysis.pageSpeedScore,
-          metadata: {
-            postAIFix: true,
-            previousScore: initialScore,
-            scoreImprovement,
-            fixSession: new Date().toISOString(),
-            reanalysisTime: analysisTime,
-          },
-        });
-        
-        this.addLog("New SEO report saved to database", "success");
-      } catch (saveError) {
-        this.addLog(`Failed to save reanalysis report: ${saveError.message}`, "warning");
-      }
-      
-      // Update website with new score
-      try {
-        await storage.updateWebsite(websiteId, {
-          seoScore: finalScore,
-          lastAnalyzed: new Date(),
-        });
-        
-        this.addLog("Website score updated", "success");
-      } catch (updateError) {
-        this.addLog(`Failed to update website score: ${updateError.message}`, "warning");
-      }
-      
-      this.addLog(
-        `Reanalysis complete: ${initialScore} → ${finalScore} (${
-          scoreImprovement >= 0 ? "+" : ""
-        }${scoreImprovement.toFixed(1)})`,
-        scoreImprovement > 0 ? "success" : scoreImprovement === 0 ? "info" : "warning"
-      );
-      
-      return {
-        enabled: true,
-        initialScore,
-        finalScore,
-        scoreImprovement: Number(scoreImprovement.toFixed(1)),
-        analysisTime: Math.round(analysisTime / 1000), // Convert to seconds
-        success: true,
-      };
-    } catch (error) {
-      const errorMessage = `Reanalysis failed: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`;
-      
-      this.addLog(errorMessage, "error");
-      
-      return {
-        enabled: true,
-        initialScore,
-        finalScore: initialScore, // Fallback to initial score
-        scoreImprovement: 0,
-        analysisTime: Math.round((Date.now() - reanalysisStartTime) / 1000),
-        success: false,
-        error: errorMessage,
-      };
+  website: any,
+  userId: string,
+  websiteId: string,
+  initialScore: number,
+  delay: number = 5000
+): Promise<{
+  enabled: boolean;
+  initialScore: number;
+  finalScore: number;
+  scoreImprovement: number;
+  analysisTime: number;
+  success: boolean;
+  error?: string;
+  simulated?: boolean;
+  confidence?: 'high' | 'medium' | 'low';
+}> {
+  const reanalysisStartTime = Date.now();
+  
+  try {
+    if (delay > 0) {
+      this.addLog(`Waiting ${delay}ms for changes to propagate...`, "info");
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
+    
+    this.addLog("Running fresh SEO analysis to measure improvement...", "info");
+    
+    let newAnalysis;
+    try {
+      newAnalysis = await seoService.analyzeWebsite(website.url, [], userId);
+    } catch (analysisError) {
+      this.addLog(`SEO analysis failed during reanalysis: ${analysisError.message}`, "error");
+      
+      try {
+        newAnalysis = await seoService.analyzeWebsite(website.url, []);
+        this.addLog("Fallback analysis (without user API keys) succeeded", "warning");
+      } catch (fallbackError) {
+        throw new Error(`Both primary and fallback reanalysis failed: ${fallbackError.message}`);
+      }
+    }
+    
+    const finalScore = newAnalysis.score;
+    const scoreImprovement = finalScore - initialScore;
+    const analysisTime = Date.now() - reanalysisStartTime;
+    
+    // Determine confidence level based on various factors
+    let confidence: 'high' | 'medium' | 'low' = 'high';
+    if (Math.abs(scoreImprovement) > 30) {
+      confidence = 'low'; // Unusually large change might indicate measurement error
+    } else if (scoreImprovement < 0) {
+      confidence = 'medium'; // Score decreased might indicate timing issues
+    }
+    
+    // Save the new analysis with enhanced metadata
+    try {
+      await storage.createSeoReport({
+        userId,
+        websiteId,
+        score: newAnalysis.score,
+        issues: newAnalysis.issues,
+        recommendations: newAnalysis.recommendations,
+        pageSpeedScore: newAnalysis.pageSpeedScore,
+        metadata: {
+          postAIFix: true,
+          previousScore: initialScore,
+          scoreImprovement,
+          scoreConfidence: confidence,
+          fixSession: new Date().toISOString(),
+          reanalysisTime: analysisTime,
+        },
+      });
+      
+      this.addLog("New SEO report saved to database", "success");
+    } catch (saveError) {
+      this.addLog(`Failed to save reanalysis report: ${saveError.message}`, "warning");
+    }
+    
+    // Update website with new score
+    try {
+      await storage.updateWebsite(websiteId, {
+        seoScore: finalScore,
+        lastAnalyzed: new Date(),
+      });
+      
+      this.addLog("Website score updated", "success");
+    } catch (updateError) {
+      this.addLog(`Failed to update website score: ${updateError.message}`, "warning");
+    }
+    
+    this.addLog(
+      `Reanalysis complete: ${initialScore} → ${finalScore} (${
+        scoreImprovement >= 0 ? "+" : ""
+      }${scoreImprovement.toFixed(1)}) [Confidence: ${confidence}]`,
+      scoreImprovement > 0 ? "success" : scoreImprovement === 0 ? "info" : "warning"
+    );
+    
+    return {
+      enabled: true,
+      initialScore,
+      finalScore,
+      scoreImprovement: Number(scoreImprovement.toFixed(1)),
+      analysisTime: Math.round(analysisTime / 1000),
+      success: true,
+      confidence,
+    };
+  } catch (error) {
+    const errorMessage = `Reanalysis failed: ${
+      error instanceof Error ? error.message : "Unknown error"
+    }`;
+    
+    this.addLog(errorMessage, "error");
+    
+    return {
+      enabled: true,
+      initialScore,
+      finalScore: initialScore,
+      scoreImprovement: 0,
+      analysisTime: Math.round((Date.now() - reanalysisStartTime) / 1000),
+      success: false,
+      error: errorMessage,
+      confidence: 'low',
+    };
   }
+}
 
   // New method to estimate score improvement for dry runs
-  private estimateScoreImprovement(fixes: AIFix[]): number {
-    let estimatedImprovement = 0;
+ private estimateScoreImprovement(fixes: AIFix[]): number {
+  let estimatedImprovement = 0;
+  
+  // SEO impact weights based on real-world impact
+  const fixTypeWeights: Record<string, number> = {
+    // Critical SEO factors (high impact)
+    'missing_meta_description': 5.0,
+    'meta_description_too_long': 3.5,
+    'poor_title_tag': 5.0,
+    'missing_h1': 4.5,
+    'missing_h1_tag': 4.5,
+    'heading_structure': 3.5,
     
-    fixes.forEach(fix => {
-      if (!fix.success) return; // Only count successful fixes
-      
-      switch (fix.impact) {
-        case "high":
-          estimatedImprovement += 8; // High impact fixes contribute more
-          break;
-        case "medium":
-          estimatedImprovement += 4;
-          break;
-        case "low":
-          estimatedImprovement += 2;
-          break;
-      }
-      
-      // Bonus for specific fix types that typically have high impact
-      switch (fix.type) {
-        case "missing_meta_description":
-        case "poor_title_tag":
-          estimatedImprovement += 3;
-          break;
-        case "missing_alt_text":
-        case "heading_structure":
-          estimatedImprovement += 2;
-          break;
-      }
-    });
+    // Important factors (medium-high impact)
+    'content_quality': 4.0,
+    'low_content_quality': 4.0,
+    'keyword_optimization': 3.5,
+    'poor_keyword_distribution': 3.5,
+    'missing_important_keywords': 3.5,
+    'poor_content_structure': 3.0,
+    'content_structure': 3.0,
     
-    // Cap the improvement to prevent unrealistic estimates
-    return Math.min(estimatedImprovement, 25);
+    // Supporting factors (medium impact)
+    'missing_alt_text': 2.5,
+    'internal_linking': 2.5,
+    'missing_schema': 3.0,
+    'schema_markup': 3.0,
+    'missing_og_tags': 2.0,
+    'open_graph': 2.0,
+    
+    // Technical factors (varies)
+    'missing_viewport_meta': 3.5,
+    'viewport_meta': 3.5,
+    'image_optimization': 2.0,
+    
+    // Lower impact
+    'user_intent_alignment': 2.0,
+    'poor_user_intent': 2.0,
+    'low_content_uniqueness': 1.5,
+    'content_uniqueness': 1.5,
+  };
+  
+  // Impact multipliers
+  const impactMultipliers: Record<string, number> = {
+    'high': 1.0,
+    'medium': 0.7,
+    'low': 0.4,
+  };
+  
+  // Track what types of fixes were actually applied
+  const actuallyFixedCount = new Map<string, number>();
+  const verifiedAdequateCount = new Map<string, number>();
+  
+  fixes.forEach(fix => {
+    // Skip failed fixes
+    if (!fix.success) return;
+    
+    // Check if this was an actual fix or just verification
+    const wasActualFix = this.wasActualChange(fix);
+    
+    if (wasActualFix) {
+      const currentCount = actuallyFixedCount.get(fix.type) || 0;
+      actuallyFixedCount.set(fix.type, currentCount + 1);
+    } else {
+      const currentCount = verifiedAdequateCount.get(fix.type) || 0;
+      verifiedAdequateCount.set(fix.type, currentCount + 1);
+    }
+  });
+  
+  // Calculate score based on actual fixes
+  actuallyFixedCount.forEach((count, fixType) => {
+    const baseWeight = fixTypeWeights[fixType] || 2.0;
+    
+    // Apply diminishing returns for multiple fixes of the same type
+    // First fix: 100%, Second: 80%, Third: 60%, etc.
+    let typeScore = 0;
+    for (let i = 0; i < count; i++) {
+      const diminishingFactor = Math.max(0.2, 1 - (i * 0.2));
+      typeScore += baseWeight * diminishingFactor;
+    }
+    
+    // Find the average impact level for this fix type
+    const fixesOfType = fixes.filter(f => f.type === fixType && f.success);
+    const avgImpactMultiplier = fixesOfType.length > 0
+      ? fixesOfType.reduce((sum, f) => sum + (impactMultipliers[f.impact] || 0.5), 0) / fixesOfType.length
+      : 0.5;
+    
+    estimatedImprovement += typeScore * avgImpactMultiplier;
+  });
+  
+  // Small bonus for verifying things are already adequate (shows thoroughness)
+  verifiedAdequateCount.forEach((count, fixType) => {
+    estimatedImprovement += count * 0.5; // Small bonus for verification
+  });
+  
+  // Apply overall scaling factors
+  const scalingFactor = this.calculateScalingFactor(fixes);
+  estimatedImprovement *= scalingFactor;
+  
+  // Apply realistic caps based on fix count
+  const maxImprovement = this.calculateMaxImprovement(actuallyFixedCount);
+  estimatedImprovement = Math.min(estimatedImprovement, maxImprovement);
+  
+  // Round to 1 decimal place
+  return Math.round(estimatedImprovement * 10) / 10;
+}
+
+private wasActualChange(fix: AIFix): boolean {
+  // Check various indicators that this was a real change
+  const description = fix.description.toLowerCase();
+  const indicators = {
+    verification: [
+      'already adequate',
+      'already correct', 
+      'verified',
+      'already exists',
+      'already acceptable',
+      'no issues found'
+    ],
+    failed: [
+      'failed to',
+      'error',
+      'could not'
+    ]
+  };
+  
+  // Check if this was just verification
+  if (indicators.verification.some(term => description.includes(term))) {
+    return false;
   }
+  
+  // Check if the fix failed
+  if (indicators.failed.some(term => description.includes(term))) {
+    return false;
+  }
+  
+  // Check if before and after are meaningfully different
+  if (fix.before === fix.after) {
+    return false;
+  }
+  
+  // Check for failure indicators in the after field
+  const afterLower = (fix.after || '').toLowerCase();
+  if (afterLower.includes('failed') || 
+      afterLower.includes('error') || 
+      afterLower === 'no change') {
+    return false;
+  }
+  
+  // If we got here, it's likely an actual change
+  return true;
+}
+
+// Calculate scaling factor based on site characteristics
+private calculateScalingFactor(fixes: AIFix[]): number {
+  let factor = 1.0;
+  
+  // If many high-impact fixes were made, increase the scaling
+  const highImpactCount = fixes.filter(f => f.success && f.impact === 'high').length;
+  if (highImpactCount > 5) {
+    factor *= 1.2;
+  } else if (highImpactCount > 3) {
+    factor *= 1.1;
+  }
+  
+  // If fixes covered diverse issue types, increase scaling
+  const uniqueFixTypes = new Set(fixes.filter(f => f.success).map(f => f.type)).size;
+  if (uniqueFixTypes > 5) {
+    factor *= 1.15;
+  }
+  
+  return Math.min(factor, 1.3); // Cap at 30% bonus
+}
+
+// Calculate maximum possible improvement based on fixes
+private calculateMaxImprovement(actuallyFixedCount: Map<string, number>): number {
+  const totalFixes = Array.from(actuallyFixedCount.values()).reduce((a, b) => a + b, 0);
+  
+  // Realistic caps based on number of actual fixes
+  if (totalFixes <= 2) return 8;
+  if (totalFixes <= 5) return 15;
+  if (totalFixes <= 10) return 25;
+  if (totalFixes <= 20) return 35;
+  return 40; // Maximum realistic improvement
+}
+
+
 
   private async resetStuckFixingIssues(websiteId: string, userId: string): Promise<void> {
     const stuckIssues = await storage.getTrackedSeoIssues(websiteId, userId, {

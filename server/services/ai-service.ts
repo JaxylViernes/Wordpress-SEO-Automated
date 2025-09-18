@@ -6,25 +6,13 @@ import { storage } from "../storage";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { imageService } from "./image-service";
 import { CloudinaryStorageService } from "./cloudinary-storage";
+import { apiKeyEncryptionService } from "./api-key-encryption";
 
 // Initialize Cloudinary storage
 const cloudinaryStorage = new CloudinaryStorageService();
 
 // AI Provider Configuration
 export type AIProvider = "openai" | "anthropic" | "gemini";
-
-// Initialize AI providers
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR,
-});
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
-
-const gemini = process.env.GOOGLE_GEMINI_API_KEY
-  ? new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY)
-  : null;
 
 // Model configurations
 const AI_MODELS = {
@@ -50,6 +38,16 @@ const AI_MODELS = {
     },
   },
 } as const;
+
+// Interface for user API keys from database
+interface UserApiKey {
+  id: string;
+  provider: string;
+  keyName: string;
+  encryptedKey: string;
+  isActive: boolean;
+  validationStatus: 'valid' | 'invalid' | 'pending';
+}
 
 export interface ContentGenerationRequest {
   websiteId: string;
@@ -234,59 +232,205 @@ export class ContentFormatter {
 }
 
 export class AIService {
-  async analyzeExistingContent(request: {
-    title: string;
-    content: string;
-    keywords: string[];
-    tone: string;
-    brandVoice?: string;
-    targetAudience?: string;
-    eatCompliance?: boolean;
-    websiteId: string;
-    aiProvider: AIProvider;
-    userId: string;
-  }): Promise<ContentAnalysisResult> {
-    try {
-      console.log(`Re-analyzing existing content with ${request.aiProvider.toUpperCase()}`);
+  // Cache for API keys to avoid repeated database queries
+  private apiKeyCache: Map<string, { key: string; timestamp: number }> = new Map();
+  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-      const analysisResult = await this.performContentAnalysis({
-        title: request.title,
-        content: request.content,
-        keywords: request.keywords,
-        tone: request.tone,
-        brandVoice: request.brandVoice,
-        targetAudience: request.targetAudience,
-        eatCompliance: request.eatCompliance || false,
-        websiteId: request.websiteId,
-        aiProvider: request.aiProvider,
-        userId: request.userId,
+  /**
+   * Get the API key for a provider, checking user's keys first, then falling back to env vars
+   */
+ private async getApiKey(provider: AIProvider, userId: string): Promise<string | null> {
+  const cacheKey = `${userId}-${provider}`;
+  
+  console.log(`🔍 DEBUG getApiKey called:`, { provider, userId, cacheKey });
+  
+  // Check cache first
+  const cached = this.apiKeyCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+    console.log(`✅ Using cached API key for ${provider}`);
+    return cached.key;
+  }
+  console.log(`🔍 DEBUG: No cached key found, fetching from database...`);
+
+  try {
+    // Map provider names to database provider values
+    const providerMap: Record<AIProvider, string> = {
+      'openai': 'openai',
+      'anthropic': 'anthropic',
+      'gemini': 'google_pagespeed'
+    };
+
+    const dbProvider = providerMap[provider];
+    console.log(`🔍 DEBUG: Looking for provider '${dbProvider}'`);
+    
+    // Get user's API keys from database
+    const userApiKeys = await storage.getUserApiKeys(userId);
+    console.log(`🔍 DEBUG: getUserApiKeys returned ${userApiKeys?.length || 0} keys`);
+    
+    if (userApiKeys && userApiKeys.length > 0) {
+      // Log the structure of the first key
+      console.log(`🔍 DEBUG: First key structure:`, {
+        hasIsActive: 'isActive' in userApiKeys[0],
+        hasValidationStatus: 'validationStatus' in userApiKeys[0],
+        hasEncryptedApiKey: 'encryptedApiKey' in userApiKeys[0],
+        hasEncrypted_api_key: 'encrypted_api_key' in userApiKeys[0],
+        actualKeys: Object.keys(userApiKeys[0])
       });
-
-      console.log(
-        `✅ Existing content re-analyzed - SEO: ${analysisResult.seoScore}%, Readability: ${analysisResult.readabilityScore}%, Brand Voice: ${analysisResult.brandVoiceScore}%`
+      
+      // Log each key's details
+      userApiKeys.forEach((key, index) => {
+        console.log(`🔍 DEBUG: Key ${index + 1}:`, {
+          provider: key.provider,
+          isActive: key.isActive,
+          validationStatus: key.validationStatus,
+          keyName: key.keyName,
+          hasEncryptedKey: !!key.encryptedApiKey,
+          matches: key.provider === dbProvider
+        });
+      });
+      
+      // Find valid key for the provider
+      const validKey = userApiKeys.find(
+        (key: any) => 
+          key.provider === dbProvider && 
+          key.isActive && 
+          key.validationStatus === 'valid'
       );
 
-      return analysisResult;
-    } catch (error: any) {
-      console.error("Failed to analyze existing content:", error);
-      if (error instanceof AIProviderError || error instanceof AnalysisError) {
-        throw error;
+      console.log(`🔍 DEBUG: Valid key found:`, !!validKey);
+
+      if (validKey) {
+        console.log(`🔍 DEBUG: Valid key details:`, {
+          keyName: validKey.keyName,
+          hasEncryptedApiKey: !!validKey.encryptedApiKey,
+          encryptedKeyLength: validKey.encryptedApiKey?.length
+        });
+        
+        if (validKey.encryptedApiKey) {
+          try {
+            // Decrypt the API key
+            console.log(`🔍 DEBUG: Attempting to decrypt key...`);
+            const decryptedKey = apiKeyEncryptionService.decrypt(validKey.encryptedApiKey);
+            console.log(`🔍 DEBUG: Decryption successful, key length: ${decryptedKey?.length}`);
+            
+            // Verify the decrypted key format
+            if (provider === 'openai' && !decryptedKey.startsWith('sk-')) {
+              console.error(`🔍 DEBUG: ERROR - Decrypted OpenAI key doesn't start with 'sk-'`);
+            }
+            
+            // Cache the decrypted key
+            this.apiKeyCache.set(cacheKey, {
+              key: decryptedKey,
+              timestamp: Date.now()
+            });
+
+            console.log(`✅ Using user's API key for ${provider} (${validKey.keyName})`);
+            return decryptedKey;
+          } catch (decryptError: any) {
+            console.error(`🔍 DEBUG: Decryption error:`, decryptError);
+            console.error(`Failed to decrypt user's ${provider} key:`, decryptError.message);
+          }
+        } else {
+          console.log(`🔍 DEBUG: Valid key found but encryptedApiKey is undefined/null`);
+        }
+      } else {
+        console.log(`🔍 DEBUG: No valid key found. Search criteria:`, {
+          requiredProvider: dbProvider,
+          requiredIsActive: true,
+          requiredValidationStatus: 'valid'
+        });
       }
-      throw new AnalysisError(
-        "Content Re-analysis",
-        error.message || "Unknown error during content analysis"
-      );
+    } else {
+      console.log(`🔍 DEBUG: No API keys returned from storage.getUserApiKeys()`);
+    }
+  } catch (error: any) {
+    console.error(`🔍 DEBUG: Exception in getApiKey:`, error);
+    console.warn(`Failed to fetch user's API keys: ${error.message}`);
+  }
+
+  // Fallback to environment variables
+  console.log(`⚠️ No user API key found for ${provider}, falling back to environment variables`);
+  
+  switch (provider) {
+    case 'openai':
+      const envKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR;
+      console.log(`🔍 DEBUG: Environment key found: ${!!envKey}`);
+      return envKey || null;
+    case 'anthropic':
+      return process.env.ANTHROPIC_API_KEY || null;
+    case 'gemini':
+      return process.env.GOOGLE_GEMINI_API_KEY || null;
+    default:
+      return null;
+  }
+}
+  /**
+   * Create an OpenAI client with the appropriate API key
+   */
+  private async createOpenAIClient(userId: string): Promise<OpenAI> {
+    const apiKey = await this.getApiKey('openai', userId);
+    
+    if (!apiKey) {
+      throw new AIProviderError('openai', 'No API key available. Please add your OpenAI API key in settings or contact support.');
+    }
+
+    return new OpenAI({ apiKey });
+  }
+
+  /**
+   * Create an Anthropic client with the appropriate API key
+   */
+  private async createAnthropicClient(userId: string): Promise<Anthropic> {
+    const apiKey = await this.getApiKey('anthropic', userId);
+    
+    if (!apiKey) {
+      throw new AIProviderError('anthropic', 'No API key available. Please add your Anthropic API key in settings or contact support.');
+    }
+
+    return new Anthropic({ apiKey });
+  }
+
+  /**
+   * Create a Gemini client with the appropriate API key
+   */
+  private async createGeminiClient(userId: string): Promise<GoogleGenerativeAI> {
+    const apiKey = await this.getApiKey('gemini', userId);
+    
+    if (!apiKey) {
+      throw new AIProviderError('gemini', 'No API key available. Please add your Google Gemini API key in settings or contact support.');
+    }
+
+    return new GoogleGenerativeAI(apiKey);
+  }
+
+  /**
+   * Clear cached API key for a user (call this when user updates their keys)
+   */
+  public clearApiKeyCache(userId: string, provider?: AIProvider): void {
+    if (provider) {
+      this.apiKeyCache.delete(`${userId}-${provider}`);
+    } else {
+      // Clear all keys for the user
+      for (const key of this.apiKeyCache.keys()) {
+        if (key.startsWith(`${userId}-`)) {
+          this.apiKeyCache.delete(key);
+        }
+      }
     }
   }
 
   public async callOpenAI(
     messages: any[],
     responseFormat?: any,
-    temperature = 0.7
+    temperature = 0.7,
+    userId?: string
   ): Promise<{ content: string; tokens: number }> {
-    if (!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
-      throw new AIProviderError("openai", "API key not configured in environment variables");
-    }
+    // For backwards compatibility, if no userId provided, use env vars
+    const openai = userId 
+      ? await this.createOpenAIClient(userId)
+      : new OpenAI({ 
+          apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR 
+        });
 
     try {
       const response = await openai.chat.completions.create({
@@ -309,9 +453,11 @@ export class AIService {
       if (error instanceof AIProviderError) throw error;
 
       if (error.status === 401) {
+        // Clear cache on auth error
+        if (userId) this.clearApiKeyCache(userId, 'openai');
         throw new AIProviderError(
           "openai",
-          "Invalid API key. Please check your OpenAI API key configuration."
+          "Invalid API key. Please check your OpenAI API key in settings."
         );
       } else if (error.status === 429) {
         throw new AIProviderError("openai", "Rate limit exceeded. Please try again later.");
@@ -323,6 +469,197 @@ export class AIService {
       }
 
       throw new AIProviderError("openai", error.message || "Unknown API error");
+    }
+  }
+
+  private async callGemini(
+    messages: any[],
+    temperature = 0.7,
+    userId?: string
+  ): Promise<{ content: string; tokens: number }> {
+    const gemini = userId
+      ? await this.createGeminiClient(userId)
+      : process.env.GOOGLE_GEMINI_API_KEY 
+        ? new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY)
+        : null;
+
+    if (!gemini) {
+      throw new AIProviderError("gemini", "No API key available. Please add your Google API key in settings.");
+    }
+
+    try {
+      const model = gemini.getGenerativeModel({
+        model: AI_MODELS.gemini.model,
+      });
+
+      const systemMessage = messages.find((m) => m.role === "system");
+      const userMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+
+      const history = userMessages.slice(0, -1).map((m) => ({
+        role: m.role === "user" ? "user" : "model",
+        parts: [{ text: m.content }],
+      }));
+
+      const lastMessage = userMessages[userMessages.length - 1];
+      if (!lastMessage || lastMessage.role !== "user") {
+        throw new AIProviderError(
+          "gemini",
+          "Invalid message format - last message must be from user"
+        );
+      }
+
+      const chat = model.startChat({
+        history,
+        generationConfig: {
+          temperature,
+          maxOutputTokens: 4000,
+        },
+      });
+
+      let prompt = lastMessage.content;
+      if (systemMessage?.content) {
+        prompt = `${systemMessage.content}\n\n${prompt}`;
+
+        if (systemMessage.content.includes("JSON") || systemMessage.content.includes("json")) {
+          prompt +=
+            "\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object. Start your response with { and end with }.";
+        }
+      }
+
+      const result = await chat.sendMessage(prompt);
+      const response = await result.response;
+      const responseText = response.text();
+
+      if (!responseText) {
+        throw new AIProviderError("gemini", "No content returned from API");
+      }
+
+      let cleanedText = responseText.trim();
+
+      if (!cleanedText.startsWith("{") && cleanedText.includes("{")) {
+        const jsonStart = cleanedText.indexOf("{");
+        const jsonEnd = cleanedText.lastIndexOf("}") + 1;
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          cleanedText = cleanedText.substring(jsonStart, jsonEnd);
+        }
+      }
+
+      const estimatedTokens = Math.ceil((prompt.length + cleanedText.length) / 4);
+
+      return {
+        content: cleanedText,
+        tokens: estimatedTokens,
+      };
+    } catch (error: any) {
+      if (error instanceof AIProviderError) throw error;
+
+      if (error.status === 429 || error.message?.includes("Too Many Requests")) {
+        throw new AIProviderError(
+          "gemini",
+          "Rate limit exceeded. Google Gemini free tier allows only 15 requests/minute and 1,500/day. " +
+            "Please wait a few minutes or consider upgrading to a paid plan. " +
+            "Alternatively, use OpenAI or Anthropic for now."
+        );
+      } else if (error.message?.includes("API_KEY_INVALID")) {
+        if (userId) this.clearApiKeyCache(userId, 'gemini');
+        throw new AIProviderError(
+          "gemini",
+          "Invalid API key. Please check your Google API key in settings."
+        );
+      }
+
+      throw new AIProviderError("gemini", error.message || "Unknown API error");
+    }
+  }
+
+  private async callAnthropic(
+    messages: any[],
+    temperature = 0.7,
+    userId?: string
+  ): Promise<{ content: string; tokens: number }> {
+    const anthropic = userId
+      ? await this.createAnthropicClient(userId)
+      : process.env.ANTHROPIC_API_KEY
+        ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+        : null;
+
+    if (!anthropic) {
+      throw new AIProviderError("anthropic", "No API key available. Please add your Anthropic API key in settings.");
+    }
+
+    try {
+      const systemMessage = messages.find((m) => m.role === "system");
+      const userMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+
+      let systemContent = systemMessage?.content || "";
+      if (systemContent.includes("JSON") || systemContent.includes("json")) {
+        systemContent +=
+          "\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object. Start your response with { and end with }.";
+      }
+
+      const response = await anthropic.messages.create({
+        model: AI_MODELS.anthropic.model,
+        max_tokens: 4000,
+        temperature,
+        system: systemContent,
+        messages: userMessages.map((m) => ({
+          role: m.role === "user" ? "user" : "assistant",
+          content: m.content,
+        })),
+      });
+
+      const content = response.content[0];
+      if (content.type !== "text" || !content.text) {
+        throw new AIProviderError("anthropic", "No text content returned from API");
+      }
+
+      let responseText = content.text.trim();
+
+      if (!responseText.startsWith("{") && responseText.includes("{")) {
+        const jsonStart = responseText.indexOf("{");
+        const jsonEnd = responseText.lastIndexOf("}") + 1;
+        if (jsonStart !== -1 && jsonEnd > jsonStart) {
+          responseText = responseText.substring(jsonStart, jsonEnd);
+        }
+      }
+
+      return {
+        content: responseText,
+        tokens: response.usage.input_tokens + response.usage.output_tokens,
+      };
+    } catch (error: any) {
+      if (error instanceof AIProviderError) throw error;
+
+      if (error.status === 401) {
+        if (userId) this.clearApiKeyCache(userId, 'anthropic');
+        throw new AIProviderError(
+          "anthropic",
+          "Invalid API key. Please check your Anthropic API key in settings."
+        );
+      } else if (error.status === 429) {
+        throw new AIProviderError("anthropic", "Rate limit exceeded. Please try again later.");
+      }
+
+      throw new AIProviderError("anthropic", error.message || "Unknown API error");
+    }
+  }
+
+  private async callAI(
+    provider: AIProvider,
+    messages: any[],
+    responseFormat?: any,
+    temperature = 0.7,
+    userId?: string
+  ): Promise<{ content: string; tokens: number }> {
+    switch (provider) {
+      case "openai":
+        return this.callOpenAI(messages, responseFormat, temperature, userId);
+      case "anthropic":
+        return this.callAnthropic(messages, temperature, userId);
+      case "gemini":
+        return this.callGemini(messages, temperature, userId);
+      default:
+        throw new Error(`Unsupported AI provider: ${provider}`);
     }
   }
 
@@ -420,177 +757,48 @@ export class AIService {
     return modifiedContent;
   }
 
-  private async callGemini(
-    messages: any[],
-    temperature = 0.7
-  ): Promise<{ content: string; tokens: number }> {
-    if (!process.env.GOOGLE_GEMINI_API_KEY || !gemini) {
-      throw new AIProviderError("gemini", "API key not configured in environment variables");
-    }
-
+  async analyzeExistingContent(request: {
+    title: string;
+    content: string;
+    keywords: string[];
+    tone: string;
+    brandVoice?: string;
+    targetAudience?: string;
+    eatCompliance?: boolean;
+    websiteId: string;
+    aiProvider: AIProvider;
+    userId: string;
+  }): Promise<ContentAnalysisResult> {
     try {
-      const model = gemini.getGenerativeModel({
-        model: AI_MODELS.gemini.model,
+      console.log(`Re-analyzing existing content with ${request.aiProvider.toUpperCase()}`);
+
+      const analysisResult = await this.performContentAnalysis({
+        title: request.title,
+        content: request.content,
+        keywords: request.keywords,
+        tone: request.tone,
+        brandVoice: request.brandVoice,
+        targetAudience: request.targetAudience,
+        eatCompliance: request.eatCompliance || false,
+        websiteId: request.websiteId,
+        aiProvider: request.aiProvider,
+        userId: request.userId,
       });
 
-      const systemMessage = messages.find((m) => m.role === "system");
-      const userMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+      console.log(
+        `✅ Existing content re-analyzed - SEO: ${analysisResult.seoScore}%, Readability: ${analysisResult.readabilityScore}%, Brand Voice: ${analysisResult.brandVoiceScore}%`
+      );
 
-      const history = userMessages.slice(0, -1).map((m) => ({
-        role: m.role === "user" ? "user" : "model",
-        parts: [{ text: m.content }],
-      }));
-
-      const lastMessage = userMessages[userMessages.length - 1];
-      if (!lastMessage || lastMessage.role !== "user") {
-        throw new AIProviderError(
-          "gemini",
-          "Invalid message format - last message must be from user"
-        );
-      }
-
-      const chat = model.startChat({
-        history,
-        generationConfig: {
-          temperature,
-          maxOutputTokens: 4000,
-        },
-      });
-
-      let prompt = lastMessage.content;
-      if (systemMessage?.content) {
-        prompt = `${systemMessage.content}\n\n${prompt}`;
-
-        if (systemMessage.content.includes("JSON") || systemMessage.content.includes("json")) {
-          prompt +=
-            "\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object. Start your response with { and end with }.";
-        }
-      }
-
-      const result = await chat.sendMessage(prompt);
-      const response = await result.response;
-      const responseText = response.text();
-
-      if (!responseText) {
-        throw new AIProviderError("gemini", "No content returned from API");
-      }
-
-      let cleanedText = responseText.trim();
-
-      if (!cleanedText.startsWith("{") && cleanedText.includes("{")) {
-        const jsonStart = cleanedText.indexOf("{");
-        const jsonEnd = cleanedText.lastIndexOf("}") + 1;
-        if (jsonStart !== -1 && jsonEnd > jsonStart) {
-          cleanedText = cleanedText.substring(jsonStart, jsonEnd);
-        }
-      }
-
-      const estimatedTokens = Math.ceil((prompt.length + cleanedText.length) / 4);
-
-      return {
-        content: cleanedText,
-        tokens: estimatedTokens,
-      };
+      return analysisResult;
     } catch (error: any) {
-      if (error instanceof AIProviderError) throw error;
-
-      if (error.status === 429 || error.message?.includes("Too Many Requests")) {
-        throw new AIProviderError(
-          "gemini",
-          "Rate limit exceeded. Google Gemini free tier allows only 15 requests/minute and 1,500/day. " +
-            "Please wait a few minutes or consider upgrading to a paid plan. " +
-            "Alternatively, use OpenAI or Anthropic for now."
-        );
-      } else if (error.message?.includes("API_KEY_INVALID")) {
-        throw new AIProviderError(
-          "gemini",
-          "Invalid API key. Please check your Google Gemini API key configuration."
-        );
+      console.error("Failed to analyze existing content:", error);
+      if (error instanceof AIProviderError || error instanceof AnalysisError) {
+        throw error;
       }
-
-      throw new AIProviderError("gemini", error.message || "Unknown API error");
-    }
-  }
-
-  private async callAnthropic(
-    messages: any[],
-    temperature = 0.7
-  ): Promise<{ content: string; tokens: number }> {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      throw new AIProviderError("anthropic", "API key not configured in environment variables");
-    }
-
-    try {
-      const systemMessage = messages.find((m) => m.role === "system");
-      const userMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
-
-      let systemContent = systemMessage?.content || "";
-      if (systemContent.includes("JSON") || systemContent.includes("json")) {
-        systemContent +=
-          "\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object. Start your response with { and end with }.";
-      }
-
-      const response = await anthropic.messages.create({
-        model: AI_MODELS.anthropic.model,
-        max_tokens: 4000,
-        temperature,
-        system: systemContent,
-        messages: userMessages.map((m) => ({
-          role: m.role === "user" ? "user" : "assistant",
-          content: m.content,
-        })),
-      });
-
-      const content = response.content[0];
-      if (content.type !== "text" || !content.text) {
-        throw new AIProviderError("anthropic", "No text content returned from API");
-      }
-
-      let responseText = content.text.trim();
-
-      if (!responseText.startsWith("{") && responseText.includes("{")) {
-        const jsonStart = responseText.indexOf("{");
-        const jsonEnd = responseText.lastIndexOf("}") + 1;
-        if (jsonStart !== -1 && jsonEnd > jsonStart) {
-          responseText = responseText.substring(jsonStart, jsonEnd);
-        }
-      }
-
-      return {
-        content: responseText,
-        tokens: response.usage.input_tokens + response.usage.output_tokens,
-      };
-    } catch (error: any) {
-      if (error instanceof AIProviderError) throw error;
-
-      if (error.status === 401) {
-        throw new AIProviderError(
-          "anthropic",
-          "Invalid API key. Please check your Anthropic API key configuration."
-        );
-      } else if (error.status === 429) {
-        throw new AIProviderError("anthropic", "Rate limit exceeded. Please try again later.");
-      }
-
-      throw new AIProviderError("anthropic", error.message || "Unknown API error");
-    }
-  }
-
-  private async callAI(
-    provider: AIProvider,
-    messages: any[],
-    responseFormat?: any,
-    temperature = 0.7
-  ): Promise<{ content: string; tokens: number }> {
-    switch (provider) {
-      case "openai":
-        return this.callOpenAI(messages, responseFormat, temperature);
-      case "anthropic":
-        return this.callAnthropic(messages, temperature);
-      case "gemini":
-        return this.callGemini(messages, temperature);
-      default:
-        throw new Error(`Unsupported AI provider: ${provider}`);
+      throw new AnalysisError(
+        "Content Re-analysis",
+        error.message || "Unknown error during content analysis"
+      );
     }
   }
 
@@ -612,12 +820,17 @@ export class AIService {
 
       // Step 1: Check if image generation is requested
       if (request.includeImages && request.imageCount && request.imageCount > 0) {
-        if (!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
-          throw new Error("Image generation requires OpenAI API key for DALL-E 3");
+        // Check if user has OpenAI key for image generation
+        const openAiKey = await this.getApiKey('openai', request.userId);
+        if (!openAiKey) {
+          console.warn("⚠️ Image generation requested but no OpenAI API key available");
+          request.includeImages = false;
+          request.imageCount = 0;
+        } else {
+          console.log(
+            `🎨 Will generate ${request.imageCount} images with DALL-E 3 (regardless of content AI provider: ${request.aiProvider})`
+          );
         }
-        console.log(
-          `🎨 Will generate ${request.imageCount} images with DALL-E 3 (regardless of content AI provider: ${request.aiProvider})`
-        );
       }
 
       // Step 2: Generate the actual content
@@ -644,7 +857,6 @@ NEVER use these (they scream AI):
 - Generic examples—use specific companies, exact dates, real prices
 
 ALWAYS do this:
-- Start mid-thought: "So here's what most people get wrong about..."
 - Use fragments. Like this. For emphasis.
 - Mix 3-word sentences with 47-word rambles that include tangents (like that time in March 2024 when everyone thought X would work but it completely backfired because nobody considered Y)
 - Specific numbers: "increased conversions by 37.4%" not "significantly improved"
@@ -669,7 +881,8 @@ Return JSON but write the content field like you're having a conversation. Inclu
           { role: "user", content: contentPrompt },
         ],
         request.aiProvider === "openai" ? { type: "json_object" } : undefined,
-        0.7
+        0.7,
+        request.userId  // Pass userId for API key lookup
       );
 
       let contentResult;
@@ -762,8 +975,12 @@ Return JSON but write the content field like you're having a conversation. Inclu
             );
           }
 
-          const imageResult = await imageService.generateImages(imageGenerationRequest);
-          
+          // Pass userId to imageService for API key lookup
+           const imageResult = await imageService.generateImages(
+      imageGenerationRequest, 
+      request.userId  // <-- Pass userId here!
+    );
+
           // CRITICAL: Upload to Cloudinary immediately after generation
           console.log(`☁️ Uploading images to Cloudinary for permanent storage...`);
           
@@ -1204,7 +1421,8 @@ Evaluate each criterion and provide a realistic score.`,
           },
         ],
         request.aiProvider === "openai" ? { type: "json_object" } : undefined,
-        0.1
+        0.1,
+        request.userId  // Pass userId for API key lookup
       );
 
       totalTokens += Math.max(1, seoAnalysisResponse.tokens);
@@ -1285,7 +1503,8 @@ Consider:
           },
         ],
         request.aiProvider === "openai" ? { type: "json_object" } : undefined,
-        0.1
+        0.1,
+        request.userId  // Pass userId
       );
 
       totalTokens += Math.max(1, readabilityResponse.tokens);
@@ -1368,7 +1587,8 @@ Evaluate how well the content aligns with these brand requirements.`,
           },
         ],
         request.aiProvider === "openai" ? { type: "json_object" } : undefined,
-        0.1
+        0.1,
+        request.userId  // Pass userId
       );
 
       totalTokens += Math.max(1, brandVoiceResponse.tokens);
@@ -1485,255 +1705,99 @@ Evaluate how well the content aligns with these brand requirements.`,
   }
 
   private buildContentPrompt(request: ContentGenerationRequest): string {
-  // Categorize the topic to adjust the prompt appropriately
-  const topicLower = request.topic.toLowerCase();
-  
-  // Determine topic category
-  let topicCategory: 'business' | 'lifestyle' | 'health' | 'technology' | 'education' | 'general' = 'general';
-  let promptStyle: 'professional' | 'conversational' | 'educational' | 'empathetic' = 'conversational';
-  
-  // Topic categorization
-  if (topicLower.includes('business') || topicLower.includes('marketing') || 
-      topicLower.includes('seo') || topicLower.includes('sales') || 
-      topicLower.includes('startup') || topicLower.includes('entrepreneur')) {
-    topicCategory = 'business';
-    promptStyle = 'professional';
-  } else if (topicLower.includes('health') || topicLower.includes('fitness') || 
-             topicLower.includes('wellness') || topicLower.includes('medical') ||
-             topicLower.includes('mental health')) {
-    topicCategory = 'health';
-    promptStyle = 'empathetic';
-  } else if (topicLower.includes('tech') || topicLower.includes('software') || 
-             topicLower.includes('programming') || topicLower.includes('ai') ||
-             topicLower.includes('crypto')) {
-    topicCategory = 'technology';
-    promptStyle = 'professional';
-  } else if (topicLower.includes('education') || topicLower.includes('learning') || 
-             topicLower.includes('study') || topicLower.includes('school') ||
-             topicLower.includes('course')) {
-    topicCategory = 'education';
-    promptStyle = 'educational';
-  } else if (topicLower.includes('lifestyle') || topicLower.includes('fashion') || 
-             topicLower.includes('travel') || topicLower.includes('food') ||
-             topicLower.includes('women') || topicLower.includes('men') ||
-             topicLower.includes('relationship') || topicLower.includes('parenting')) {
-    topicCategory = 'lifestyle';
-    promptStyle = 'conversational';
-  }
+    // Your existing buildContentPrompt implementation remains the same
+    const brandVoiceSection = request.brandVoice 
+      ? `\nBrand personality: ${request.brandVoice} (weave this in naturally, don't force it)` 
+      : "";
+    
+    const audienceSection = request.targetAudience 
+      ? `\nWho's reading: ${request.targetAudience} (use their language, their problems, their world)` 
+      : "";
+    
+    const eatSection = request.eatCompliance 
+      ? `\nCredibility touches: Drop in real examples, mention specific tools you'd use, reference actual people/studies when it fits.` 
+      : "";
 
-  // Build topic-appropriate examples
-  const getTopicExamples = () => {
-    switch (topicCategory) {
-      case 'business':
-        return {
-          openings: [
-            `"After analyzing 127 ${request.topic} strategies, here's what actually moves the needle..."`,
-            `"Most ${request.topic} advice is recycled nonsense. Let me show you what's working right now..."`,
-            `"The ${request.topic} playbook changed completely in 2024. Here's the new approach..."`
-          ],
-          patterns: [
-            "Revenue went from $X to $Y",
-            "Conversion increased by 34.7%",
-            "Using tools like HubSpot ($890/mo)",
-            "The framework that Fortune 500 companies use"
-          ]
-        };
-      
-      case 'health':
-        return {
-          openings: [
-            `"Let's have an honest conversation about ${request.topic}..."`,
-            `"The research on ${request.topic} has evolved significantly. Here's what we know now..."`,
-            `"If you're struggling with ${request.topic}, you're not alone. Here's what actually helps..."`
-          ],
-          patterns: [
-            "Studies show 73% improvement",
-            "According to recent research from Johns Hopkins",
-            "Working with clients for 8 years",
-            "The approach recommended by leading specialists"
-          ]
-        };
-      
-      case 'lifestyle':
-        return {
-          openings: [
-            `"Okay, let's talk about ${request.topic} - the real story, not the Instagram version..."`,
-            `"Everyone has opinions about ${request.topic}. Here's what actually matters..."`,
-            `"${request.topic} doesn't have to be complicated. Let me break it down..."`
-          ],
-          patterns: [
-            "After trying 23 different approaches",
-            "What changed everything for me",
-            "The method that actually sticks",
-            "Here's what nobody talks about"
-          ]
-        };
-      
-      case 'technology':
-        return {
-          openings: [
-            `"${request.topic} is evolving fast. Here's what you need to know right now..."`,
-            `"Let's demystify ${request.topic} - it's simpler than you think..."`,
-            `"The ${request.topic} landscape in 2024 looks nothing like last year..."`
-          ],
-          patterns: [
-            "Performance improved by 47%",
-            "Using React 18.2 with Next.js 14",
-            "The architecture that scales to 1M users",
-            "Based on real production data"
-          ]
-        };
-      
-      case 'education':
-        return {
-          openings: [
-            `"Learning ${request.topic} doesn't have to be overwhelming. Here's a clear path..."`,
-            `"I've taught ${request.topic} to hundreds of students. Here's what works..."`,
-            `"The traditional approach to ${request.topic} is broken. Let's fix that..."`
-          ],
-          patterns: [
-            "Students improved scores by 31%",
-            "The method used at top universities",
-            "Breaking complex concepts into simple steps",
-            "Real-world applications you can use today"
-          ]
-        };
-      
-      default:
-        return {
-          openings: [
-            `"Let's dive into ${request.topic} - here's what you need to know..."`,
-            `"${request.topic} is more interesting than most people realize..."`,
-            `"Here's the truth about ${request.topic}..."`
-          ],
-          patterns: [
-            "Based on extensive research",
-            "What the experts recommend",
-            "The approach that gets results",
-            "Here's what works"
-          ]
-        };
-    }
-  };
+    // Randomize opening approach for variety
+    const openings = [
+      "Start with a specific moment or observation",
+      "Jump straight to solving their problem", 
+      "Open with an unexpected angle or contradiction",
+      "Begin mid-story and backfill naturally"
+    ];
+    const opening = openings[Math.floor(Math.random() * openings.length)];
 
-  const examples = getTopicExamples();
-  const brandVoiceSection = request.brandVoice
-    ? `\nBrand personality I need to match: ${request.brandVoice}`
-    : "";
+    return `You need to write about "${request.topic}" and return a complete JSON response with all required fields for publishing.
 
-  const audienceSection = request.targetAudience
-    ? `\nWho's reading this: ${request.targetAudience}`
-    : "";
+CRITICAL: Your response MUST be valid JSON with ALL fields specified in the output structure at the end of this prompt.
 
-  const eatSection = request.eatCompliance
-    ? `\nNeed to include real expertise signals - actual data, specific methodologies, credible sources.`
-    : "";
+CONTENT PARAMETERS:
+Topic focus: ${request.topic}
+Keywords to work in naturally: ${request.keywords.join(", ")} 
+Target length: around ${request.wordCount} words (flex by 20% if needed)
+Writing tone: ${request.tone}${brandVoiceSection}${audienceSection}${eatSection}
 
-  return `Write about ${request.topic} in a way that feels authentic and valuable.
+HUMAN AUTHENTICITY REQUIREMENTS:
 
-Topic: ${request.topic}
-Keywords to cover: ${request.keywords.join(", ")}
-Target length: ${request.wordCount} words (flexibility of ±20% is fine)
-Tone: ${request.tone}${brandVoiceSection}${audienceSection}${eatSection}
+Write like you're explaining this to someone you respect. ${opening}
 
-=== WRITING STYLE FOR THIS TOPIC ===
+Natural voice markers to include:
+• Use "I" occasionally - share real experience: "Last month I tried..." 
+• Conversational transitions: "Here's the thing..." / "But wait—" / "Okay, so..."
+• Specific details: "$47" not "affordable", "Tuesday morning" not "recently"
+• Name real tools: "I use Notion for..." not "a productivity tool"
+• Admit uncertainty: "I'm still figuring out..." / "This part's tricky..."
+• Add personality: mild opinions, preferences, even a pet peeve
+• Include rough numbers: "like 70%" instead of "72.4%"
+• Reference specific people/brands when relevant
 
-${promptStyle === 'professional' ? `
-Professional but accessible:
-- Lead with insights and data
-- Include specific metrics and case studies
-- Reference industry leaders and tools
-- Balance expertise with readability
-` : ''}
+Writing patterns:
+• Vary sentence length dramatically. Like this. Then follow with something longer that reflects how people actually explain things they care about.
+• Sometimes start with And or But
+• Use fragments for emphasis
+• Include asides (they add personality)
+• Let some paragraphs run long, others just a line
+• Don't always use perfect grammar in conversational parts
 
-${promptStyle === 'conversational' ? `
-Friendly and relatable:
-- Write like you're talking to a friend
-- Share personal insights and experiences
-- Keep it real - acknowledge challenges
-- Focus on practical, actionable advice
-` : ''}
+NEVER use these AI giveaways:
+✗ "Moreover" / "Furthermore" / "In essence" / "It's worth noting"
+✗ Three examples every single time
+✗ "In today's [adjective] world..."
+✗ Perfect structural symmetry
+✗ Generic examples like "Company X increased Y by Z%"
 
-${promptStyle === 'educational' ? `
-Clear and instructive:
-- Break down complex ideas simply
-- Use examples and analogies
-- Build knowledge step by step
-- Encourage and support the reader
-` : ''}
+CONTENT STRUCTURE for the "content" field:
+• Use HTML tags: <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em>
+• Start strong - no throat-clearing
+• Mix heading styles: Questions, statements, casual phrases
+• Vary section lengths based on what's interesting
+• Include 1-2 specific anecdotes or examples
+• Add an unexpected analogy from outside the industry
+• Don't summarize unless it genuinely helps
 
-${promptStyle === 'empathetic' ? `
-Compassionate and supportive:
-- Acknowledge struggles and challenges
-- Provide evidence-based information
-- Avoid judgment or assumptions
-- Focus on hope and practical solutions
-` : ''}
+Example subheadings that feel human:
+- "The part nobody talks about"
+- "Why this actually matters"  
+- "Here's where I messed up"
+- "The surprisingly simple fix"
 
-=== TOPIC-APPROPRIATE OPENING EXAMPLES ===
+${request.seoOptimized ? `
+NATURAL SEO (be subtle):
+• Work main keyword into title and first paragraph naturally
+• Use synonyms more than exact keywords
+• Include keyword in 1-2 subheadings max
+• Focus on actually answering the question
+` : `
+IGNORE SEO:
+• Just write naturally
+• Use whatever words feel right
+`}
 
-Consider openings like:
-${examples.openings.map(o => `- ${o}`).join('\n')}
-
-=== CONTENT PATTERNS FOR THIS TOPIC ===
-
-Include elements like:
-${examples.patterns.map(p => `- ${p}`).join('\n')}
-
-=== UNIVERSAL QUALITY STANDARDS ===
-
-STRUCTURE:
-✓ Clear, scannable headings (H2, H3)
-✓ Mix of paragraph lengths
-✓ Lists and bullets where appropriate
-✓ Logical flow of information
-✓ Strong introduction and conclusion
-
-CREDIBILITY:
-✓ Specific examples and data points
-✓ Acknowledge different perspectives
-✓ Cite credible sources when appropriate
-✓ Admit limitations where relevant
-✓ Avoid absolute statements unless backed by evidence
-
-SEO OPTIMIZATION:
-✓ Primary keyword (${request.keywords[0]}) in title and first 100 words
-✓ Related keywords distributed naturally
-✓ Answer the search intent completely
-✓ Include semantic variations
-✓ Optimize for featured snippets where relevant
-
-VALUE DELIVERY:
-✓ Solve a real problem or answer a real question
-✓ Provide actionable takeaways
-✓ Include unique insights or perspectives
-✓ Make complex topics accessible
-✓ Give readers something they can use immediately
-
-=== AVOID THESE RED FLAGS ===
-
-Generic AI patterns to avoid:
-× "In today's world..." or similar clichéd openings
-× Perfect three-item lists every time
-× Overly formal transitions (Moreover, Furthermore, etc.)
-× Generic examples without specifics
-× Perfectly balanced paragraph structures
-× Round numbers (use 73% not 75%, $247 not $250)
-
-=== AUTHENTICITY MARKERS ===
-
-Include natural elements like:
-✓ Specific dates, tools, or examples
-✓ Acknowledgment of complexity or nuance
-✓ Questions that make readers think
-✓ Occasional informal language (where appropriate)
-✓ Recognition of common challenges
-✓ Personal insights or observations (when fitting)
+END NATURALLY:
+Pick what fits: circle back to opening, give one specific action, ask a thought-provoking question, or just stop when done.
 
 === JSON OUTPUT STRUCTURE ===
-
 Return your response as a valid JSON object with these EXACT field names:
-
 {
   "title": "A compelling title under 60 characters that includes the primary keyword",
   "content": "The complete HTML-formatted article using <p>, <h2>, <h3>, <ul>, <li>, <strong>, <em> tags. Full article, not a summary.",
@@ -1748,8 +1812,10 @@ IMPORTANT:
 - All fields are required
 - Content should be complete and ready to publish
 - Minimum ${request.wordCount * 0.8} words
-- Return ONLY the JSON object`;
-}
+- Return ONLY the JSON object
+
+Make the content feel like someone wrote it in one sitting, got excited about parts, maybe rambled slightly, but genuinely wanted to help.`;
+  }
 
   async optimizeContent(
     content: string,

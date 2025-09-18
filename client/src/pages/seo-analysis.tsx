@@ -1459,17 +1459,7 @@ export default function SEOAnalysis() {
             Issues are automatically tracked and updated when fixes are applied
             or when new analysis detects changes.
           </div>
-          <div className="flex space-x-2">
-            <Button
-              onClick={() => runAnalysis.mutate()}
-              disabled={runAnalysis.isPending}
-              variant="outline"
-              size="sm"
-            >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh Issues
-            </Button>
-          </div>
+        
         </div>
       </div>
     </CardContent>
@@ -1532,7 +1522,7 @@ export default function SEOAnalysis() {
                                   Issues:{" "}
                                   {(report.issues as any[])?.length || 0}
                                 </Badge>
-                                <Button size="sm" variant="ghost" asChild>
+                                {/* <Button size="sm" variant="ghost" asChild>
                                   <a
                                     href={getWebsiteUrl(selectedWebsite)}
                                     target="_blank"
@@ -1540,7 +1530,7 @@ export default function SEOAnalysis() {
                                   >
                                     <ExternalLink className="w-3 h-3" />
                                   </a>
-                                </Button>
+                                </Button> */}
                               </div>
                             </div>
                           ))}
