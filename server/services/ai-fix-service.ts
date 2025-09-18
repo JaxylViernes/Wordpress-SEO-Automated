@@ -6,6 +6,33 @@ import { seoService } from "./seo-service";
 import * as cheerio from "cheerio";
 import { randomUUID } from "crypto";
 
+
+
+interface FixValidation {
+  isValid: boolean;
+  reason?: string;
+  confidenceScore: number;
+  warnings: string[];
+}
+
+interface ContentSnapshot {
+  id: number;
+  content: string;
+  excerpt: string;
+  title: string;
+  contentType: 'post' | 'page';
+  timestamp: Date;
+}
+
+interface FixRollbackData {
+  fixSessionId: string;
+  snapshots: ContentSnapshot[];
+  originalScore: number;
+  appliedFixes: AIFix[];
+}
+
+
+
 export interface AIFixResult {
   success: boolean;
   dryRun: boolean;
@@ -45,6 +72,9 @@ export interface AIFix {
   wordpressPostId?: number;
   elementPath?: string;
   trackedIssueId?: string;
+
+  validationScore?: number;
+  validationWarnings?: string[];
 }
 
 interface WordPressCredentials {
@@ -88,22 +118,119 @@ class AIFixService {
   }
 
   // Enhanced AI Provider Call with Claude 4 support
-  private async callAIProvider(
-    provider: string,
-    systemMessage: string,
-    userMessage: string,
-    maxTokens: number = 500,
-    temperature: number = 0.7
-  ): Promise<string> {
-    if (provider === "claude") {
-      const { default: Anthropic } = await import("@anthropic-ai/sdk");
-      const anthropic = new Anthropic({
-        apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY,
-      });
+  private async callAIProviderWithFallback(
+  systemMessage: string,
+  userMessage: string,
+  maxTokens: number = 500,
+  temperature: number = 0.7
+): Promise<string> {
+  // Try primary provider first
+  const primaryProvider = this.selectAIProvider();
+  
+  if (primaryProvider) {
+    try {
+      const result = await this.callAIProvider(
+        primaryProvider,
+        systemMessage,
+        userMessage,
+        maxTokens,
+        temperature
+      );
+      
+      if (result && result.trim().length > 0) {
+        this.addLog(`Successfully used ${primaryProvider} for AI generation`, "success");
+        return result;
+      }
+    } catch (primaryError) {
+      this.addLog(
+        `Primary provider (${primaryProvider}) failed: ${primaryError.message}`,
+        "warning"
+      );
+    }
+  }
 
+  // Automatic fallback to secondary provider
+  const fallbackProvider = this.getFallbackProvider(primaryProvider);
+  
+  if (fallbackProvider) {
+    this.addLog(`Attempting fallback to ${fallbackProvider}...`, "info");
+    
+    try {
+      const result = await this.callAIProvider(
+        fallbackProvider,
+        systemMessage,
+        userMessage,
+        maxTokens,
+        temperature
+      );
+      
+      if (result && result.trim().length > 0) {
+        this.addLog(`Successfully used fallback provider (${fallbackProvider})`, "success");
+        return result;
+      }
+    } catch (fallbackError) {
+      this.addLog(
+        `Fallback provider (${fallbackProvider}) also failed: ${fallbackError.message}`,
+        "error"
+      );
+    }
+  }
+
+  // If all AI providers fail, throw error
+  throw new Error("All AI providers failed. Please check API keys and try again.");
+}
+
+
+private getFallbackProvider(primaryProvider: string | null): string | null {
+  if (primaryProvider === "claude") {
+    // If Claude was primary, try OpenAI as fallback
+    if (process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR) {
+      return "openai";
+    }
+  } else if (primaryProvider === "openai") {
+    // If OpenAI was primary, try Claude as fallback
+    if (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY) {
+      return "claude";
+    }
+  } else {
+    // No primary was set, try to find any available provider
+    if (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY) {
+      return "claude";
+    }
+    if (process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR) {
+      return "openai";
+    }
+  }
+  
+  return null;
+}
+
+// Enhanced AI Provider Call with better error handling
+private async callAIProvider(
+  provider: string,
+  systemMessage: string,
+  userMessage: string,
+  maxTokens: number = 500,
+  temperature: number = 0.7
+): Promise<string> {
+  if (provider === "claude") {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY,
+    });
+
+    // Try Claude 4 first, then Claude 3.5 Sonnet
+    const models = [
+      "claude-sonnet-4-20250514",  // Claude 4
+      "claude-3-5-sonnet-20241022", // Claude 3.5 Sonnet fallback
+    ];
+
+    for (const model of models) {
       try {
+        this.addLog(`Attempting Claude with model: ${model}`, "info");
+        
         const response = await anthropic.messages.create({
-          model: "claude-sonnet-4-20250514", // Claude 4 model as requested
+          model,
           max_tokens: maxTokens,
           temperature,
           system: systemMessage,
@@ -111,57 +238,76 @@ class AIFixService {
         });
 
         const content = response.content[0];
-        return content.type === "text" ? content.text : "";
+        const result = content.type === "text" ? content.text : "";
+        
+        if (result) {
+          this.addLog(`Claude (${model}) responded successfully`, "success");
+          return result;
+        }
       } catch (error) {
-        this.addLog(`Claude API call failed: ${error.message}`, "warning");
-        // Fallback to Claude 3.5 Sonnet if Claude 4 is not available
-        const fallbackResponse = await anthropic.messages.create({
-          model: "claude-3-5-sonnet-20241022",
-          max_tokens: maxTokens,
+        this.addLog(`Claude model ${model} failed: ${error.message}`, "warning");
+        // Continue to next model or throw if last model
+        if (model === models[models.length - 1]) {
+          throw new Error(`All Claude models failed: ${error.message}`);
+        }
+      }
+    }
+    
+    throw new Error("Claude API failed with all available models");
+    
+  } else if (provider === "openai") {
+    const { default: OpenAI } = await import("openai");
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR,
+    });
+
+    // Try different OpenAI models with fallback
+    const models = ["gpt-4o-mini", "gpt-3.5-turbo"];
+    
+    for (const model of models) {
+      try {
+        this.addLog(`Attempting OpenAI with model: ${model}`, "info");
+        
+        const response = await openai.chat.completions.create({
+          model,
+          messages: [
+            { role: "system", content: systemMessage },
+            { role: "user", content: userMessage },
+          ],
           temperature,
-          system: systemMessage,
-          messages: [{ role: "user", content: userMessage }],
+          max_tokens: maxTokens,
         });
 
-        const fallbackContent = fallbackResponse.content[0];
-        return fallbackContent.type === "text" ? fallbackContent.text : "";
+        const result = response.choices[0]?.message?.content || "";
+        
+        if (result) {
+          this.addLog(`OpenAI (${model}) responded successfully`, "success");
+          return result;
+        }
+      } catch (error) {
+        this.addLog(`OpenAI model ${model} failed: ${error.message}`, "warning");
+        // Continue to next model or throw if last model
+        if (model === models[models.length - 1]) {
+          throw new Error(`All OpenAI models failed: ${error.message}`);
+        }
       }
-    } else if (provider === "openai") {
-      const { default: OpenAI } = await import("openai");
-      const openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR,
-      });
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemMessage },
-          { role: "user", content: userMessage },
-        ],
-        temperature,
-        max_tokens: maxTokens,
-      });
-
-      return response.choices[0]?.message?.content || "";
-    } else {
-      throw new Error(`Unsupported AI provider: ${provider}`);
     }
+    
+    throw new Error("OpenAI API failed with all available models");
+    
+  } else {
+    throw new Error(`Unsupported AI provider: ${provider}`);
   }
-
+}
   private async analyzeContentQuality(content: string, title: string): Promise<{
-    score: number;
-    issues: string[];
-    improvements: string[];
-    readabilityScore: number;
-    keywordDensity: Record<string, number>;
-  }> {
-    const provider = this.selectAIProvider();
-    if (!provider) {
-      return this.fallbackContentAnalysis(content);
-    }
-
-    try {
-      const systemPrompt = `You are an expert content analyst specializing in SEO and readability. Analyze the provided content and return a JSON response with:
+  score: number;
+  issues: string[];
+  improvements: string[];
+  readabilityScore: number;
+  keywordDensity: Record<string, number>;
+}> {
+  try {
+    const systemPrompt = `You are an expert content analyst specializing in SEO and readability. Analyze the provided content and return a JSON response with:
 {
   "score": number (0-100, content quality score),
   "issues": [array of specific content issues found],
@@ -172,27 +318,34 @@ class AIFixService {
 
 Focus on: readability, structure, keyword usage, user engagement, and SEO best practices.`;
 
-      const userPrompt = `Title: "${title}"
+    const userPrompt = `Title: "${title}"
 
 Content: "${content.substring(0, 2000)}"
 
 Provide detailed content quality analysis with actionable improvements.`;
 
-      const result = await this.callAIProvider(provider, systemPrompt, userPrompt, 800, 0.3);
-      const analysis = JSON.parse(this.cleanAIResponse(result));
+    // Use the enhanced fallback system
+    const result = await this.callAIProviderWithFallback(
+      systemPrompt, 
+      userPrompt, 
+      800, 
+      0.3
+    );
+    
+    const analysis = JSON.parse(this.cleanAIResponse(result));
 
-      return {
-        score: analysis.score || 50,
-        issues: analysis.issues || [],
-        improvements: analysis.improvements || [],
-        readabilityScore: analysis.readabilityScore || 50,
-        keywordDensity: analysis.keywordDensity || {},
-      };
-    } catch (error) {
-      this.addLog(`Content analysis failed: ${error.message}`, "warning");
-      return this.fallbackContentAnalysis(content);
-    }
+    return {
+      score: analysis.score || 50,
+      issues: analysis.issues || [],
+      improvements: analysis.improvements || [],
+      readabilityScore: analysis.readabilityScore || 50,
+      keywordDensity: analysis.keywordDensity || {},
+    };
+  } catch (error) {
+    this.addLog(`Content analysis failed: ${error.message}`, "warning");
+    return this.fallbackContentAnalysis(content);
   }
+}
 
   private async improveContentQuality(
     content: string,
@@ -1591,6 +1744,143 @@ Find the top 5 most important automated fixes. Return only JSON.`;
     return { appliedFixes, errors };
   }
 
+/**
+ * Enhanced applyComprehensiveFixes with validation
+ */
+private async applyComprehensiveFixesWithValidation(
+  website: any,
+  fixes: AIFix[]
+): Promise<{ appliedFixes: AIFix[]; errors: string[]; rollbackData: FixRollbackData }> {
+  this.addLog(`Applying ${fixes.length} fixes with validation...`);
+  
+  const creds: WordPressCredentials = {
+    url: website.url,
+    username: website.wpUsername || "admin",
+    applicationPassword: website.wpApplicationPassword,
+  };
+  
+  const appliedFixes: AIFix[] = [];
+  const errors: string[] = [];
+  const contentIdsToSnapshot: number[] = [];
+  
+  // Identify content that will be modified
+  fixes.forEach(fix => {
+    if (fix.wordpressPostId) {
+      contentIdsToSnapshot.push(fix.wordpressPostId);
+    }
+  });
+  
+  // Take snapshots before applying fixes
+  const snapshots = await this.takeContentSnapshots(creds, contentIdsToSnapshot);
+  
+  // Group and apply fixes with validation
+  const fixesByType = this.groupFixesByType(fixes);
+  
+  for (const [fixType, typeFixes] of Object.entries(fixesByType)) {
+    this.addLog(`Processing ${typeFixes.length} fixes of type: ${fixType}`);
+    
+    for (const fix of typeFixes) {
+      // Skip validation for certain fix types that don't modify content
+      const skipValidation = ['missing_alt_text', 'missing_h1_tag', 'heading_structure'].includes(fixType);
+      
+      if (!skipValidation && fix.before && fix.after) {
+        // Validate the fix before applying
+        const validation = await this.validateFixBeforeApplying(
+          fix.before,
+          fix.after,
+          fixType
+        );
+        
+        if (!validation.isValid) {
+          this.addLog(
+            `❌ Fix rejected: ${validation.reason}`,
+            "warning"
+          );
+          
+          appliedFixes.push({
+            ...fix,
+            success: false,
+            error: `Validation failed: ${validation.reason}`
+          });
+          
+          errors.push(`Fix validation failed for ${fixType}: ${validation.reason}`);
+          continue;
+        }
+        
+        if (validation.warnings.length > 0) {
+          this.addLog(
+            `⚠️ Fix warnings: ${validation.warnings.join(', ')}`,
+            "warning"
+          );
+        }
+        
+        this.addLog(
+          `✓ Fix validated (confidence: ${validation.confidenceScore}%)`,
+          "info"
+        );
+      }
+      
+      // Apply the fix using existing logic
+      try {
+        const result = await this.applyFixesByType(creds, fixType, [fix]);
+        appliedFixes.push(...result.applied);
+        errors.push(...result.errors);
+      } catch (error) {
+        errors.push(`Failed to apply ${fixType}: ${error.message}`);
+        appliedFixes.push({
+          ...fix,
+          success: false,
+          error: error.message
+        });
+      }
+    }
+  }
+  
+  const rollbackData: FixRollbackData = {
+    fixSessionId: new Date().toISOString(),
+    snapshots,
+    originalScore: 0, // Will be set by caller
+    appliedFixes
+  };
+  
+  return { appliedFixes, errors, rollbackData };
+}
+
+/**
+ * Monitor and validate score changes
+ */
+private async validateScoreImprovement(
+  initialScore: number,
+  finalScore: number,
+  rollbackData: FixRollbackData,
+  creds: WordPressCredentials
+): Promise<boolean> {
+  const scoreDiff = finalScore - initialScore;
+  
+  if (scoreDiff < -5) {
+    // Significant score decrease
+    this.addLog(
+      `⚠️ Score decreased significantly (${initialScore} → ${finalScore}), initiating rollback...`,
+      "error"
+    );
+    
+    await this.rollbackFixes(creds, rollbackData);
+    return false;
+  }
+  
+  if (scoreDiff < 0) {
+    // Minor score decrease
+    this.addLog(
+      `⚠️ Score slightly decreased (${initialScore} → ${finalScore})`,
+      "warning"
+    );
+    
+    // Could prompt for confirmation or auto-rollback based on settings
+  }
+  
+  return true;
+}
+  
   private async fixMissingH1Tags(
     creds: WordPressCredentials,
     fixes: AIFix[]
@@ -2078,7 +2368,7 @@ ${candidatesText}
 
 Suggest relevant internal links:`;
 
-      const result = await this.callAIProvider(provider, systemPrompt, userPrompt, 600, 0.3);
+      const result = await this.callAIProviderWithFallback(systemPrompt, userPrompt, 500);
       const suggestions = JSON.parse(this.cleanAIResponse(result));
 
       return Array.isArray(suggestions) 
@@ -2692,77 +2982,145 @@ Suggest relevant internal links:`;
 
   // AI helper methods with improved error handling and shorter responses
   private async generateAltText(
-    imageSrc: string,
-    context: string
-  ): Promise<string> {
-    const provider = this.selectAIProvider();
-    if (!provider) {
-      // Fallback: generate alt text from filename
-      const filename = imageSrc.split("/").pop()?.replace(/\.[^/.]+$/, "") || "";
-      const readable = filename
-        .replace(/[-_]/g, " ")
-        .replace(/\b\w/g, (l) => l.toUpperCase())
-        .substring(0, 100);
-      return readable || "Image";
-    }
+  imageSrc: string,
+  context: string
+): Promise<string> {
+  try {
+    const systemPrompt = "You are an accessibility expert. Return only the alt text, no quotes or extra text.";
+    const prompt = `Generate descriptive alt text for image "${imageSrc}" in context "${context}". Max 100 characters, descriptive, accessible:`;
 
+    const result = await this.callAIProviderWithFallback(
+      systemPrompt,
+      prompt,
+      50,
+      0.7
+    );
+    
+    const altText = result.trim().replace(/^["']|["']$/g, "");
+    return altText.substring(0, 100) || "Descriptive image";
+  } catch (error) {
+    this.addLog(
+      `All AI providers failed for alt text generation: ${error.message}`,
+      "error"
+    );
+    
+    // Ultimate fallback: generate from filename
+    const filename = imageSrc.split("/").pop()?.replace(/\.[^/.]+$/, "") || "";
+    const readable = filename
+      .replace(/[-_]/g, " ")
+      .replace(/\b\w/g, (l) => l.toUpperCase())
+      .substring(0, 100);
+    return readable || "Image";
+  }
+}
+
+
+async checkAIProviderHealth(): Promise<{
+  claude: boolean;
+  openai: boolean;
+  primaryProvider: string | null;
+  fallbackProvider: string | null;
+}> {
+  const results = {
+    claude: false,
+    openai: false,
+    primaryProvider: null as string | null,
+    fallbackProvider: null as string | null,
+  };
+
+  // Test Claude
+  if (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY) {
     try {
-      const prompt = `Generate descriptive alt text for image "${imageSrc}" in context "${context}". Max 100 characters, descriptive, accessible:`;
-
-      const result = await this.callAIProvider(
-        provider,
-        "You are an accessibility expert. Return only the alt text, no quotes or extra text.",
-        prompt,
-        50
+      await this.callAIProvider(
+        "claude",
+        "You are a test assistant.",
+        "Respond with 'OK'",
+        10,
+        0
       );
-      
-      const altText = result.trim().replace(/^["']|["']$/g, ""); // Remove quotes
-      return altText.substring(0, 100) || "Descriptive image";
+      results.claude = true;
     } catch (error) {
+      this.addLog(`Claude health check failed: ${error.message}`, "warning");
+    }
+  }
+
+  // Test OpenAI
+  if (process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR) {
+    try {
+      await this.callAIProvider(
+        "openai",
+        "You are a test assistant.",
+        "Respond with 'OK'",
+        10,
+        0
+      );
+      results.openai = true;
+    } catch (error) {
+      this.addLog(`OpenAI health check failed: ${error.message}`, "warning");
+    }
+  }
+
+  // Determine primary and fallback
+  results.primaryProvider = this.selectAIProvider();
+  results.fallbackProvider = this.getFallbackProvider(results.primaryProvider);
+
+  this.addLog(
+    `AI Provider Health: Claude=${results.claude}, OpenAI=${results.openai}, Primary=${results.primaryProvider}, Fallback=${results.fallbackProvider}`,
+    "info"
+  );
+
+  return results;
+}
+
+// Enhanced error recovery for AI operations
+private async retryWithExponentialBackoff<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000
+): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      const isLastAttempt = attempt === maxRetries - 1;
+      
+      if (isLastAttempt) {
+        throw error;
+      }
+      
+      const delay = baseDelay * Math.pow(2, attempt);
       this.addLog(
-        `AI alt text generation failed: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
+        `Attempt ${attempt + 1} failed, retrying in ${delay}ms...`,
         "warning"
       );
       
-      // Fallback: generate from filename
-      const filename = imageSrc.split("/").pop()?.replace(/\.[^/.]+$/, "") || "";
-      const readable = filename
-        .replace(/[-_]/g, " ")
-        .replace(/\b\w/g, (l) => l.toUpperCase())
-        .substring(0, 100);
-      return readable || "Descriptive image";
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
+  
+  throw new Error("Max retries exceeded");
+}
 
-  private async generateMetaDescription(
-    title: string,
-    content: string
-  ): Promise<string> {
-    const provider = this.selectAIProvider();
-    if (!provider) return content.substring(0, 155) + "...";
+ private async generateMetaDescription(
+  title: string,
+  content: string
+): Promise<string> {
+  try {
+    const systemPrompt = "You are an SEO expert. Return only the meta description.";
+    const userPrompt = `Meta description for "${title}". Content: "${content.substring(
+      0,
+      300
+    )}". 120-160 chars, compelling, SEO-optimized:`;
 
-    try {
-      const prompt = `Meta description for "${title}". Content: "${content.substring(
-        0,
-        300
-      )}". 120-160 chars, compelling, SEO-optimized:`;
-
-      const result = await this.callAIProvider(
-        provider,
-        "You are an SEO expert. Return only the meta description.",
-        prompt,
-        100
-      );
-      const description = result.trim();
-      return description.length > 160
-        ? description.substring(0, 157) + "..."
-        : description;
-    } catch {
-      return content.substring(0, 155) + "...";
-    }
+    const result = await this.callAIProviderWithFallback(systemPrompt, userPrompt, 100, 0.7);
+    const description = result.trim();
+    return description.length > 160
+      ? description.substring(0, 157) + "..."
+      : description;
+  } catch {
+    return content.substring(0, 155) + "...";
   }
+}
 
   // Add the missing generateMetaDescriptionWithFallback method
   private async generateMetaDescriptionWithFallback(
@@ -2799,33 +3157,27 @@ Suggest relevant internal links:`;
     }
   }
 
-  private async optimizeTitle(
-    currentTitle: string,
-    content: string
-  ): Promise<string> {
-    const provider = this.selectAIProvider();
-    if (!provider) return currentTitle.substring(0, 60);
+ private async optimizeTitle(
+  currentTitle: string,
+  content: string
+): Promise<string> {
+  try {
+    const systemPrompt = "You are an SEO expert. Return only the optimized title.";
+    const userPrompt = `Optimize title "${currentTitle}" using content "${content.substring(
+      0,
+      200
+    )}". 30-60 chars, engaging, SEO-focused:`;
 
-    try {
-      const prompt = `Optimize title "${currentTitle}" using content "${content.substring(
-        0,
-        200
-      )}". 30-60 chars, engaging, SEO-focused:`;
-
-      const result = await this.callAIProvider(
-        provider,
-        "You are an SEO expert. Return only the optimized title.",
-        prompt,
-        50
-      );
-      const optimized = result.trim();
-      return optimized.length > 60
-        ? optimized.substring(0, 57) + "..."
-        : optimized;
-    } catch {
-      return currentTitle.substring(0, 60);
-    }
+    const result = await this.callAIProviderWithFallback(systemPrompt, userPrompt, 50, 0.7);
+    const optimized = result.trim();
+    return optimized.length > 60
+      ? optimized.substring(0, 57) + "..."
+      : optimized;
+  } catch {
+    return currentTitle.substring(0, 60);
   }
+}
+
 
   // Helper methods
   private cleanAIResponse(response: string): string {
@@ -3336,7 +3688,7 @@ URL: ${url}
 
 Return appropriate schema.org JSON-LD markup.`;
 
-      const result = await this.callAIProvider(provider, systemPrompt, userPrompt, 800, 0.3);
+     const result = await this.callAIProviderWithFallback(systemPrompt, userPrompt, 500);
       return JSON.parse(this.cleanAIResponse(result));
     } catch (error) {
       // Fallback schema
@@ -3520,7 +3872,7 @@ Return JSON:
   "currentDensity": number
 }`;
 
-      const result = await this.callAIProvider(provider, systemPrompt, userPrompt, 500, 0.3);
+      const result = await this.callAIProviderWithFallback(systemPrompt, userPrompt, 500);
       return JSON.parse(this.cleanAIResponse(result));
     } catch (error) {
       return {
@@ -3553,7 +3905,7 @@ ${contentHtml.substring(0, 3000)}
 
 Return the optimized HTML content with better keyword placement.`;
 
-      const result = await this.callAIProvider(provider, systemPrompt, userPrompt, 3000, 0.4);
+      const result = await this.callAIProviderWithFallback(systemPrompt, userPrompt, 500);
       return result.trim();
     } catch (error) {
       return contentHtml;
@@ -3639,7 +3991,7 @@ Content: ${contentHtml.substring(0, 3000)}
 
 Return the restructured HTML with better organization.`;
 
-    const result = await this.callAIProvider(provider, systemPrompt, userPrompt, 3000, 0.4);
+   const result = await this.callAIProviderWithFallback(systemPrompt, userPrompt, 500);
     return result.trim();
   } catch (error) {
     return contentHtml;
@@ -3683,6 +4035,377 @@ private async fixContentUniqueness(
   );
   
   return { applied, errors };
+}
+
+
+//ENSURE FIXES ARE EFFECTIVE
+/**
+ * Validates a fix before applying it
+ */
+private async validateFixBeforeApplying(
+  originalContent: string,
+  proposedFix: string,
+  fixType: string
+): Promise<FixValidation> {
+  const warnings: string[] = [];
+  let confidenceScore = 100;
+  
+  // 1. Check if content length is reasonable
+  const originalLength = originalContent.length;
+  const fixLength = proposedFix.length;
+  
+  if (fixLength < originalLength * 0.5) {
+    return {
+      isValid: false,
+      reason: "Fix reduces content by more than 50%",
+      confidenceScore: 0,
+      warnings: []
+    };
+  }
+  
+  if (fixLength > originalLength * 2) {
+    warnings.push("Fix doubles content length - may be over-optimized");
+    confidenceScore -= 20;
+  }
+  
+  // 2. Check keyword density
+  const keywordDensity = await this.calculateKeywordDensity(proposedFix);
+  if (keywordDensity > 3.5) {
+    return {
+      isValid: false,
+      reason: `Keyword density too high (${keywordDensity.toFixed(1)}%) - likely keyword stuffing`,
+      confidenceScore: 0,
+      warnings: []
+    };
+  }
+  
+  if (keywordDensity > 2.5) {
+    warnings.push("High keyword density detected");
+    confidenceScore -= 15;
+  }
+  
+  // 3. Check for quality degradation
+  const qualityCheck = await this.checkContentQualityDegradation(
+    originalContent,
+    proposedFix
+  );
+  
+  if (qualityCheck.degraded) {
+    return {
+      isValid: false,
+      reason: qualityCheck.reason,
+      confidenceScore: 0,
+      warnings: []
+    };
+  }
+  
+  if (qualityCheck.warnings.length > 0) {
+    warnings.push(...qualityCheck.warnings);
+    confidenceScore -= qualityCheck.confidencePenalty;
+  }
+  
+  // 4. Check for spam patterns
+  const spamPatterns = [
+    /(\b\w+\b)(?:\s+\1){3,}/gi, // Same word repeated 3+ times
+    /[A-Z]{5,}/g, // All caps words
+    /!{3,}/g, // Excessive exclamation marks
+    /\$\d+/g, // Price mentions (might be spammy)
+  ];
+  
+  for (const pattern of spamPatterns) {
+    if (pattern.test(proposedFix)) {
+      warnings.push(`Potential spam pattern detected: ${pattern.source}`);
+      confidenceScore -= 10;
+    }
+  }
+  
+  // 5. Fix-type specific validation
+  switch (fixType) {
+    case 'missing_meta_description':
+      if (proposedFix.length < 120 || proposedFix.length > 160) {
+        warnings.push("Meta description length not optimal");
+        confidenceScore -= 10;
+      }
+      break;
+      
+    case 'poor_title_tag':
+      if (proposedFix.length < 30 || proposedFix.length > 60) {
+        warnings.push("Title tag length not optimal");
+        confidenceScore -= 10;
+      }
+      break;
+      
+    case 'content_quality':
+    case 'poor_content_structure':
+      // Check if AI just added filler content
+      const fillerPhrases = [
+        'in conclusion',
+        'it is important to note',
+        'furthermore',
+        'moreover',
+        'additionally'
+      ];
+      
+      const fillerCount = fillerPhrases.filter(phrase => 
+        proposedFix.toLowerCase().includes(phrase)
+      ).length;
+      
+      if (fillerCount > 3) {
+        warnings.push("Excessive filler phrases detected");
+        confidenceScore -= 15;
+      }
+      break;
+  }
+  
+  // Determine if fix should be applied
+  const isValid = confidenceScore >= 60;
+  
+  return {
+    isValid,
+    reason: isValid ? undefined : "Low confidence in fix quality",
+    confidenceScore,
+    warnings
+  };
+}
+
+/**
+ * Calculate keyword density
+ */
+private async calculateKeywordDensity(content: string): Promise<number> {
+  const text = this.extractTextFromHTML(content).toLowerCase();
+  const words = text.split(/\s+/).filter(w => w.length > 3);
+  const wordCount = words.length;
+  
+  if (wordCount === 0) return 0;
+  
+  // Count word frequencies
+  const frequencies = new Map<string, number>();
+  words.forEach(word => {
+    frequencies.set(word, (frequencies.get(word) || 0) + 1);
+  });
+  
+  // Find top keywords (appearing more than once)
+  const keywords = Array.from(frequencies.entries())
+    .filter(([_, count]) => count > 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5); // Top 5 keywords
+  
+  if (keywords.length === 0) return 0;
+  
+  const keywordOccurrences = keywords.reduce((sum, [_, count]) => sum + count, 0);
+  return (keywordOccurrences / wordCount) * 100;
+}
+
+/**
+ * Check for content quality degradation
+ */
+private async checkContentQualityDegradation(
+  original: string,
+  proposed: string
+): Promise<{
+  degraded: boolean;
+  reason?: string;
+  warnings: string[];
+  confidencePenalty: number;
+}> {
+  const warnings: string[] = [];
+  let confidencePenalty = 0;
+  
+  // Extract text for comparison
+  const originalText = this.extractTextFromHTML(original);
+  const proposedText = this.extractTextFromHTML(proposed);
+  
+  // 1. Check readability
+  const originalReadability = this.calculateReadabilityScore(originalText);
+  const proposedReadability = this.calculateReadabilityScore(proposedText);
+  
+  if (proposedReadability < originalReadability - 10) {
+    return {
+      degraded: true,
+      reason: `Readability decreased significantly (${originalReadability} → ${proposedReadability})`,
+      warnings: [],
+      confidencePenalty: 0
+    };
+  }
+  
+  if (proposedReadability < originalReadability) {
+    warnings.push("Slight readability decrease");
+    confidencePenalty += 5;
+  }
+  
+  // 2. Check for generic/AI-sounding content
+  const genericPhrases = [
+    'in today\'s digital age',
+    'in the ever-evolving',
+    'it\'s worth noting that',
+    'dive deep into',
+    'unlock the potential',
+    'transform your',
+    'revolutionary approach'
+  ];
+  
+  const genericCount = genericPhrases.filter(phrase => 
+    proposedText.toLowerCase().includes(phrase)
+  ).length;
+  
+  if (genericCount > 2) {
+    warnings.push("Content sounds generic/AI-generated");
+    confidencePenalty += genericCount * 5;
+  }
+  
+  // 3. Check sentence variety
+  const originalSentences = originalText.split(/[.!?]+/).filter(s => s.trim());
+  const proposedSentences = proposedText.split(/[.!?]+/).filter(s => s.trim());
+  
+  const avgOriginalLength = originalSentences.reduce((sum, s) => 
+    sum + s.split(/\s+/).length, 0) / originalSentences.length;
+  const avgProposedLength = proposedSentences.reduce((sum, s) => 
+    sum + s.split(/\s+/).length, 0) / proposedSentences.length;
+  
+  // Check if all sentences are becoming too uniform
+  if (Math.abs(avgProposedLength - 15) < 2 && Math.abs(avgOriginalLength - 15) > 5) {
+    warnings.push("Sentences becoming too uniform in length");
+    confidencePenalty += 10;
+  }
+  
+  return {
+    degraded: false,
+    warnings,
+    confidencePenalty
+  };
+}
+
+/**
+ * Calculate readability score (Flesch Reading Ease approximation)
+ */
+private calculateReadabilityScore(text: string): number {
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim()).length || 1;
+  const words = text.split(/\s+/).filter(w => w.length > 0).length || 1;
+  const syllables = text.split(/\s+/).reduce((sum, word) => 
+    sum + this.countSyllables(word), 0) || 1;
+  
+  // Flesch Reading Ease formula
+  const score = 206.835 - 1.015 * (words / sentences) - 84.6 * (syllables / words);
+  
+  // Normalize to 0-100 scale
+  return Math.max(0, Math.min(100, score));
+}
+
+/**
+ * Count syllables in a word (approximation)
+ */
+private countSyllables(word: string): number {
+  word = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (word.length <= 3) return 1;
+  
+  const vowels = 'aeiouy';
+  let syllableCount = 0;
+  let previousWasVowel = false;
+  
+  for (let i = 0; i < word.length; i++) {
+    const isVowel = vowels.includes(word[i]);
+    if (isVowel && !previousWasVowel) {
+      syllableCount++;
+    }
+    previousWasVowel = isVowel;
+  }
+  
+  // Adjust for silent e
+  if (word.endsWith('e')) {
+    syllableCount--;
+  }
+  
+  // Ensure at least one syllable
+  return Math.max(1, syllableCount);
+}
+
+/**
+ * Take snapshots before applying fixes (for rollback)
+ */
+private async takeContentSnapshots(
+  creds: WordPressCredentials,
+  contentIds: number[]
+): Promise<ContentSnapshot[]> {
+  const snapshots: ContentSnapshot[] = [];
+  
+  try {
+    const [posts, pages] = await Promise.all([
+      this.getWordPressContentWithType(creds, "posts").catch(() => []),
+      this.getWordPressContentWithType(creds, "pages").catch(() => []),
+    ]);
+    
+    const allContent = [...posts, ...pages];
+    
+    for (const id of contentIds) {
+      const content = allContent.find(c => c.id === id);
+      if (content) {
+        snapshots.push({
+          id: content.id,
+          content: content.content?.rendered || content.content || "",
+          excerpt: content.excerpt?.rendered || content.excerpt || "",
+          title: content.title?.rendered || content.title || "",
+          contentType: content.contentType,
+          timestamp: new Date()
+        });
+      }
+    }
+  } catch (error) {
+    this.addLog(`Failed to take content snapshots: ${error.message}`, "warning");
+  }
+  
+  return snapshots;
+}
+
+/**
+ * Rollback fixes if score decreases
+ */
+private async rollbackFixes(
+  creds: WordPressCredentials,
+  rollbackData: FixRollbackData
+): Promise<void> {
+  this.addLog("🔄 Initiating rollback due to score decrease...", "warning");
+  
+  let rollbackCount = 0;
+  let failedRollbacks = 0;
+  
+  for (const snapshot of rollbackData.snapshots) {
+    try {
+      await this.updateWordPressContent(
+        creds,
+        snapshot.id,
+        {
+          content: snapshot.content,
+          excerpt: snapshot.excerpt,
+          title: snapshot.title
+        },
+        snapshot.contentType
+      );
+      
+      rollbackCount++;
+      this.addLog(`✅ Rolled back ${snapshot.contentType} ${snapshot.id}`, "success");
+    } catch (error) {
+      failedRollbacks++;
+      this.addLog(
+        `❌ Failed to rollback ${snapshot.contentType} ${snapshot.id}: ${error.message}`,
+        "error"
+      );
+    }
+  }
+  
+  // Update issue statuses back to 'detected'
+  const issueIds = rollbackData.appliedFixes
+    .map(fix => fix.trackedIssueId)
+    .filter(id => id);
+  
+  if (issueIds.length > 0) {
+    await storage.bulkUpdateSeoIssueStatuses(issueIds, 'detected', rollbackData.fixSessionId);
+    this.addLog(`Reset ${issueIds.length} issue statuses to 'detected'`, "info");
+  }
+  
+  this.addLog(
+    `Rollback complete: ${rollbackCount} successful, ${failedRollbacks} failed`,
+    rollbackCount > 0 ? "success" : "error"
+  );
 }
 }
 
