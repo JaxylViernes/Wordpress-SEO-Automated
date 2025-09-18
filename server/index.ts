@@ -113,7 +113,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // =============================================================================
 // CORS CONFIGURATION (optional but recommended)
 // =============================================================================
-app.use('/api/gsc', requireAuth, gscRouter);
 
 
 app.use((req: Request, res: Response, next: NextFunction) => {
