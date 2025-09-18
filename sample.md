@@ -2094,25 +2094,6 @@
 
 
 
-
-
-
-
-// console.log('OAuth2 Client Configuration:', {
-//   clientId: process.env.GOOGLE_CLIENT_ID ? 'Set' : 'MISSING',
-//   clientSecret: process.env.GOOGLE_CLIENT_SECRET ? 'Set' : 'MISSING',
-//   redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-// });
-
-// // GSC Scopes
-// const GSC_SCOPES = [
-//   'https://www.googleapis.com/auth/webmasters',
-//   'https://www.googleapis.com/auth/indexing',
-//   'https://www.googleapis.com/auth/siteverification',
-//   'https://www.googleapis.com/auth/userinfo.email',
-//   'https://www.googleapis.com/auth/userinfo.profile'
-// ];
-
 // // Store user GSC tokens (temporary in-memory cache)
 // const gscUserTokens = new Map<string, any>();
 
