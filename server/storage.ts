@@ -729,12 +729,14 @@ async getUserImageStats(userId: string): Promise<{
 
 
 // Dashboard stats
+
 async getUserDashboardStats(userId: string): Promise<{
   websiteCount: number;
   contentCount: number;
   avgSeoScore: number;
   recentActivity: number;
-  scheduledPosts: number;  // ADD THIS FIELD
+  scheduledPosts: number;
+  seoReports?: any[];  // Add this to pass reports to frontend
 }> {
   const userWebsites = await this.getUserWebsites(userId);
   const userContent = await this.getUserContent(userId);
@@ -744,27 +746,79 @@ async getUserDashboardStats(userId: string): Promise<{
     .where(
       and(
         eq(activityLogs.userId, userId),
-        // FIX: Change eq to gte for date comparison
         gte(activityLogs.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
       )
     );
   
-  // ADD: Count scheduled posts
   const [scheduledCount] = await db
     .select({ count: count() })
     .from(contentSchedule)
     .where(eq(contentSchedule.userId, userId));
 
+  // GET LATEST SEO REPORTS
+  const allSeoReports = [];
+  for (const website of userWebsites) {
+    const reports = await this.getSeoReportsByWebsite(website.id);
+    if (reports.length > 0) {
+      allSeoReports.push(...reports);
+    }
+  }
+  
+  // Sort by date to get the most recent
+  allSeoReports.sort((a, b) => 
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  // Use the latest report score as current score
+  const currentScore = allSeoReports.length > 0 
+    ? Math.round(allSeoReports[0].score)
+    : 0;
+
   return {
     websiteCount: userWebsites.length,
     contentCount: userContent.length,
-    avgSeoScore: userWebsites.length > 0 
-      ? Math.round(userWebsites.reduce((sum, w) => sum + w.seoScore, 0) / userWebsites.length)
-      : 0,
+    avgSeoScore: currentScore,  // Now shows latest report score
     recentActivity: recentLogs.length,
-    scheduledPosts: Number(scheduledCount?.count) || 0  // ADD THIS LINE
+    scheduledPosts: Number(scheduledCount?.count) || 0,
+    seoReports: allSeoReports  // Pass this for the graph
   };
 }
+// async getUserDashboardStats(userId: string): Promise<{
+//   websiteCount: number;
+//   contentCount: number;
+//   avgSeoScore: number;
+//   recentActivity: number;
+//   scheduledPosts: number;  // ADD THIS FIELD
+// }> {
+//   const userWebsites = await this.getUserWebsites(userId);
+//   const userContent = await this.getUserContent(userId);
+//   const recentLogs = await db
+//     .select()
+//     .from(activityLogs)
+//     .where(
+//       and(
+//         eq(activityLogs.userId, userId),
+//         // FIX: Change eq to gte for date comparison
+//         gte(activityLogs.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+//       )
+//     );
+  
+//   // ADD: Count scheduled posts
+//   const [scheduledCount] = await db
+//     .select({ count: count() })
+//     .from(contentSchedule)
+//     .where(eq(contentSchedule.userId, userId));
+
+//   return {
+//     websiteCount: userWebsites.length,
+//     contentCount: userContent.length,
+//     avgSeoScore: userWebsites.length > 0 
+//       ? Math.round(userWebsites.reduce((sum, w) => sum + w.seoScore, 0) / userWebsites.length)
+//       : 0,
+//     recentActivity: recentLogs.length,
+//     scheduledPosts: Number(scheduledCount?.count) || 0  // ADD THIS LINE
+//   };
+// }
 
 
 

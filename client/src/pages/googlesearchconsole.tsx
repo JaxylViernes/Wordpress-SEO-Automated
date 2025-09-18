@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Globe,
@@ -25,7 +26,11 @@ import {
   Info,
   Copy,
   Check,
-  AlertTriangle
+  AlertTriangle,
+  Key,
+  HelpCircle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 // Types
@@ -77,7 +82,7 @@ interface URLInspectionResult {
   richResultsStatus?: string;
 }
 
-// API Service Class with proper integration
+// API Service Class with OAuth configuration support
 class SearchConsoleAPI {
   private static baseURL = '/api/gsc';
   
@@ -99,8 +104,16 @@ class SearchConsoleAPI {
     return response.json();
   }
 
-  static async getAuthUrl(): Promise<string> {
-    const data = await this.fetchWithAuth(`${this.baseURL}/auth-url`);
+  static async getAuthUrl(clientId?: string, clientSecret?: string): Promise<string> {
+    const body = clientId && clientSecret 
+      ? JSON.stringify({ clientId, clientSecret })
+      : undefined;
+    
+    const method = clientId && clientSecret ? 'POST' : 'GET';
+    const data = await this.fetchWithAuth(`${this.baseURL}/auth-url`, {
+      method,
+      body
+    });
     return data.authUrl;
   }
 
@@ -149,7 +162,192 @@ class SearchConsoleAPI {
       body: JSON.stringify({ accountId, refreshToken })
     });
   }
+
+  static async saveConfiguration(clientId: string, clientSecret: string): Promise<void> {
+    await this.fetchWithAuth(`${this.baseURL}/configure`, {
+      method: 'POST',
+      body: JSON.stringify({ clientId, clientSecret })
+    });
+  }
 }
+
+// OAuth Configuration Modal Component
+const OAuthConfigurationModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (clientId: string, clientSecret: string) => Promise<void>;
+  isLoading: boolean;
+}> = ({ isOpen, onClose, onSubmit, isLoading }) => {
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [showSecret, setShowSecret] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate inputs
+    if (!clientId || !clientSecret) {
+      return; // Don't submit if fields are empty
+    }
+    
+    // Trim whitespace
+    const trimmedClientId = clientId.trim();
+    const trimmedSecret = clientSecret.trim();
+    
+    if (!trimmedClientId || !trimmedSecret) {
+      return; // Don't submit if fields only contain whitespace
+    }
+    
+    await onSubmit(trimmedClientId, trimmedSecret);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full m-4 max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">Configure Google OAuth Credentials</h2>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              disabled={isLoading}
+            >
+              <X className="w-5 h-5 text-gray-500" />
+            </button>
+          </div>
+
+          <div className="mb-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start space-x-2">
+                <Info className="w-5 h-5 text-blue-600 mt-0.5" />
+                <div className="text-sm text-blue-800">
+                  <p className="font-medium mb-1">You need to provide your own Google OAuth credentials.</p>
+                  <p>This allows you to connect your Google Search Console accounts securely.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="clientId" className="block text-sm font-medium text-gray-700 mb-1">
+                Client ID
+              </label>
+              <input
+                type="text"
+                id="clientId"
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                placeholder="Your Google OAuth Client ID"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                required
+                disabled={isLoading}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="clientSecret" className="block text-sm font-medium text-gray-700 mb-1">
+                Client Secret
+              </label>
+              <div className="relative">
+                <input
+                  type={showSecret ? 'text' : 'password'}
+                  id="clientSecret"
+                  value={clientSecret}
+                  onChange={(e) => setClientSecret(e.target.value)}
+                  placeholder="Your Google OAuth Client Secret"
+                  className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                  disabled={isLoading}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecret(!showSecret)}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                  tabIndex={-1}
+                >
+                  {showSecret ? (
+                    <EyeOff className="w-4 h-4 text-gray-500" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-gray-500" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowHelp(!showHelp)}
+                className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700"
+              >
+                <HelpCircle className="w-4 h-4" />
+                <span>How to get OAuth credentials?</span>
+                <ChevronRight className={`w-4 h-4 transition-transform ${showHelp ? 'rotate-90' : ''}`} />
+              </button>
+            </div>
+
+            {showHelp && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                <p className="text-sm font-medium text-gray-900">Steps to get your OAuth credentials:</p>
+                <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
+                  <li>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Google Cloud Console</a></li>
+                  <li>Create a new project or select an existing one</li>
+                  <li>Enable the Google Search Console API and Indexing API</li>
+                  <li>Go to "Credentials" and create OAuth 2.0 credentials</li>
+                  <li>Set the redirect URI to: <code className="bg-gray-100 px-1 py-0.5 rounded">http://localhost:5000/api/gsc/oauth-callback</code></li>
+                  <li>Copy your Client ID and Client Secret</li>
+                </ol>
+                <div className="mt-3">
+                  <a
+                    href="https://developers.google.com/search/apis/indexing-api/v3/prereqs"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-700"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>View detailed documentation</span>
+                  </a>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                disabled={isLoading}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading || !clientId.trim() || !clientSecret.trim()}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Save & Continue</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // Main Component
 const GoogleSearchConsole: React.FC = () => {
@@ -172,6 +370,10 @@ const GoogleSearchConsole: React.FC = () => {
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
   const [quotaUsage, setQuotaUsage] = useState<{ used: number; limit: number }>({ used: 0, limit: 200 });
   const [accountDropdownOpen, setAccountDropdownOpen] = useState<boolean>(false);
+  
+  // OAuth Configuration Modal
+  const [showOAuthModal, setShowOAuthModal] = useState<boolean>(false);
+  const [oauthCredentials, setOauthCredentials] = useState<{ clientId: string; clientSecret: string } | null>(null);
   
   // Refs for managing auth window and preventing duplicates
   const authWindowRef = useRef<Window | null>(null);
@@ -353,15 +555,33 @@ const GoogleSearchConsole: React.FC = () => {
     }
   };
 
-  const handleAddAccount = async () => {
-    if (isAuthenticating) {
-      showNotification('info', 'Authentication already in progress');
-      return;
-    }
-    
+  const handleSaveOAuthCredentials = async (clientId: string, clientSecret: string) => {
     try {
+      console.log('Step 1: Starting authentication process');
       setIsAuthenticating(true);
       
+      // Save configuration to backend
+      console.log('Step 2: Saving configuration to backend');
+      await SearchConsoleAPI.saveConfiguration(clientId, clientSecret);
+      
+      console.log('Step 3: Configuration saved successfully');
+      setOauthCredentials({ clientId, clientSecret });
+      setShowOAuthModal(false);
+      showNotification('success', 'OAuth credentials saved successfully');
+      
+      // Proceed to authenticate
+      console.log('Step 4: Proceeding with authentication');
+      await proceedWithAuthentication(clientId, clientSecret);
+    } catch (error: any) {
+      console.error('Error in handleSaveOAuthCredentials:', error);
+      showNotification('error', error.message || 'Failed to save configuration');
+      setIsAuthenticating(false);
+      // Don't close the modal on error - let user try again
+    }
+  };
+
+  const proceedWithAuthentication = async (clientId?: string, clientSecret?: string) => {
+    try {
       // Close any existing auth window
       if (authWindowRef.current && !authWindowRef.current.closed) {
         authWindowRef.current.close();
@@ -372,7 +592,7 @@ const GoogleSearchConsole: React.FC = () => {
         window.removeEventListener('message', messageHandlerRef.current);
       }
       
-      const authUrl = await SearchConsoleAPI.getAuthUrl();
+      const authUrl = await SearchConsoleAPI.getAuthUrl(clientId, clientSecret);
       
       // Open auth window
       const width = 500;
@@ -437,9 +657,25 @@ const GoogleSearchConsole: React.FC = () => {
       }, 1000);
       
     } catch (error: any) {
-      showNotification('error', error.message || 'Failed to initiate authentication');
-      setIsAuthenticating(false);
+      if (error.message?.includes('No configuration found') || error.message?.includes('Configuration required')) {
+        // User needs to configure OAuth credentials first
+        setShowOAuthModal(true);
+        setIsAuthenticating(false);
+      } else {
+        showNotification('error', error.message || 'Failed to initiate authentication');
+        setIsAuthenticating(false);
+      }
     }
+  };
+
+  const handleAddAccount = async () => {
+    if (isAuthenticating) {
+      showNotification('info', 'Authentication already in progress');
+      return;
+    }
+    
+    // Show OAuth configuration modal - don't set isAuthenticating yet
+    setShowOAuthModal(true);
   };
 
   const handleRemoveAccount = (accountId: string) => {
@@ -704,6 +940,17 @@ const GoogleSearchConsole: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* OAuth Configuration Modal */}
+      <OAuthConfigurationModal
+        isOpen={showOAuthModal}
+        onClose={() => {
+          setShowOAuthModal(false);
+          setIsAuthenticating(false);
+        }}
+        onSubmit={handleSaveOAuthCredentials}
+        isLoading={isAuthenticating}
+      />
+
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1494,10 +1741,6 @@ const GoogleSearchConsole: React.FC = () => {
 };
 
 export default GoogleSearchConsole;
-
-
-
-
 
 
 

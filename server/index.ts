@@ -1,3 +1,4 @@
+//server/index.ts
 import express from "express";
 import { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
@@ -5,6 +6,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import session from "express-session";
 import { Pool } from '@neondatabase/serverless';
 import pgSession from "connect-pg-simple";
+import gscRouter from './routes/gsc.routes';
 import 'dotenv/config'; // must come before importing encryption-service
 //nadagdag
 import { schedulerService } from './services/scheduler-service';
@@ -111,6 +113,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // =============================================================================
 // CORS CONFIGURATION (optional but recommended)
 // =============================================================================
+app.use('/api/gsc', requireAuth, gscRouter);
+
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   // Allow requests from your frontend domain
