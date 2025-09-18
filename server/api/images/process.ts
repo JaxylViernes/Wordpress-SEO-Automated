@@ -1,3 +1,6 @@
+
+
+//server/api/images/process.ts
 import { OpenAI } from 'openai';
 import imageMetadataService from '../../services/imageMetadataService';
 

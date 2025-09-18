@@ -1,3 +1,7 @@
+
+
+
+//server/api/images/process-metadata.ts
 import imageMetadataService from '@/services/imageMetadataService';
 
 export async function POST(req: Request) {

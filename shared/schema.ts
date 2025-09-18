@@ -1083,6 +1083,9 @@ export const seoIssueTracking = pgTable(
   ]
 );
 
+
+
+
 // Add insert schema
 export const insertSeoIssueTrackingSchema = createInsertSchema(seoIssueTracking).pick({
   websiteId: true,
@@ -1109,6 +1112,156 @@ export const insertSeoIssueTrackingSchema = createInsertSchema(seoIssueTracking)
   resolutionNotes: true,
   metadata: true,
 });
+
+
+
+
+//=================GOOGLE SEARCH CONSOLE++++++++++++++++++++++++//
+export const gscConfigurations = pgTable(
+  "gsc_configurations",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: "cascade" }),
+    
+    clientId: text("client_id").notNull(),
+    clientSecret: text("client_secret").notNull(), // Plain text as requested
+    redirectUri: text("redirect_uri").notNull(),
+    isConfigured: boolean("is_configured").notNull().default(true),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_gsc_config_user_id").on(table.userId)]
+);
+
+export const gscAccounts = pgTable(
+  "gsc_accounts",
+  {
+    id: varchar("id").primaryKey(), // Google account ID
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    
+    email: text("email").notNull(),
+    name: text("name").notNull(),
+    picture: text("picture"),
+    accessToken: text("access_token").notNull(),
+    refreshToken: text("refresh_token").notNull(),
+    tokenExpiry: integer("token_expiry").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_gsc_accounts_user_id").on(table.userId),
+    index("idx_gsc_accounts_email").on(table.email),
+  ]
+);
+
+export const gscProperties = pgTable(
+  "gsc_properties",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accountId: varchar("account_id")
+      .notNull()
+      .references(() => gscAccounts.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .references(() => websites.id, { onDelete: "set null" }),
+    
+    siteUrl: text("site_url").notNull().unique(),
+    permissionLevel: text("permission_level").notNull(),
+    siteType: text("site_type").notNull(),
+    verified: boolean("verified").notNull().default(true),
+    lastSynced: timestamp("last_synced"),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_gsc_properties_user_id").on(table.userId),
+    index("idx_gsc_properties_account_id").on(table.accountId),
+  ]
+);
+
+export const gscIndexingRequests = pgTable(
+  "gsc_indexing_requests",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accountId: varchar("account_id")
+      .notNull()
+      .references(() => gscAccounts.id, { onDelete: "cascade" }),
+    propertyId: varchar("property_id")
+      .notNull()
+      .references(() => gscProperties.id, { onDelete: "cascade" }),
+    
+    url: text("url").notNull(),
+    type: text("type").notNull(),
+    status: text("status").notNull().default("pending"),
+    message: text("message"),
+    notifyTime: timestamp("notify_time"),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_gsc_indexing_user_id").on(table.userId),
+    index("idx_gsc_indexing_status").on(table.status),
+  ]
+);
+
+export const gscQuotaUsage = pgTable(
+  "gsc_quota_usage",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    accountId: varchar("account_id")
+      .references(() => gscAccounts.id, { onDelete: "cascade" }),
+    
+    date: timestamp("date").notNull(),
+    count: integer("count").notNull().default(0),
+    limit: integer("limit").notNull().default(200),
+    
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_gsc_quota_account_date").on(table.accountId, table.date),
+  ]
+);
+
+// Add insert schemas and types
+export const insertGscConfigurationSchema = createInsertSchema(gscConfigurations).pick({
+  clientId: true,
+  clientSecret: true,
+  redirectUri: true,
+});
+
+export const insertGscAccountSchema = createInsertSchema(gscAccounts).pick({
+  id: true,
+  email: true,
+  name: true,
+  picture: true,
+  accessToken: true,
+  refreshToken: true,
+  tokenExpiry: true,
+});
+
+
 
 // Add type definitions
 export type InsertSeoIssueTracking = z.infer<typeof insertSeoIssueTrackingSchema>;
@@ -1173,3 +1326,11 @@ export type UserSettings = typeof userSettings.$inferSelect;
 
 export type InsertUserApiKey = z.infer<typeof insertUserApiKeySchema>;
 export type UserApiKey = typeof userApiKeys.$inferSelect;
+
+
+
+//nadagdag
+export type GscConfiguration = typeof gscConfigurations.$inferSelect;
+export type InsertGscConfiguration = z.infer<typeof insertGscConfigurationSchema>;
+export type GscAccount = typeof gscAccounts.$inferSelect;
+export type InsertGscAccount = z.infer<typeof insertGscAccountSchema>;
