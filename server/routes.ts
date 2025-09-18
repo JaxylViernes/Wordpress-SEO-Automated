@@ -4034,7 +4034,9 @@ app.get("/api/user/image-generation/status", requireAuth, async (req: Request, r
     }
   });
 
-  ///=======================GOOGLE SEARCH CONSOLE==========================//
+  
+
+///=======================GOOGLE SEARCH CONSOLE==========================//
 
 // Initialize OAuth2 client for GSC
 const gscOAuth2Client = new google.auth.OAuth2(
@@ -4065,7 +4067,7 @@ const gscUserTokens = new Map<string, any>();
 app.get("/api/gsc/auth-url", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
-    console.log(🔐 Generating GSC OAuth URL for user: ${userId});
+    console.log(`🔐 Generating GSC OAuth URL for user: ${userId}`);
     
     const authUrl = gscOAuth2Client.generateAuthUrl({
       access_type: 'offline',
@@ -4087,7 +4089,7 @@ app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Prom
     const userId = req.user!.id;
     const { code } = req.body;
     
-    console.log(🔐 Exchanging GSC auth code for user: ${userId});
+    console.log(`🔐 Exchanging GSC auth code for user: ${userId}`);
     
     if (!code) {
       res.status(400).json({ error: 'Authorization code required' });
@@ -4131,7 +4133,7 @@ app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Prom
       };
       
       // Store in memory cache
-      gscUserTokens.set(${userId}_${userInfo.id}, tokens);
+      gscUserTokens.set(`${userId}_${userInfo.id}`, tokens);
       
       // Save to database
       try {
@@ -4146,7 +4148,7 @@ app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Prom
           await storage.createActivityLog({
             userId,
             type: "gsc_account_connected",
-            description: Connected Google Search Console account: ${userInfo.email},
+            description: `Connected Google Search Console account: ${userInfo.email}`,
             metadata: { 
               gscAccountId: userInfo.id,
               email: userInfo.email
@@ -4157,7 +4159,7 @@ app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Prom
         console.error('Activity log error (non-fatal):', logError);
       }
       
-      console.log(✅ GSC account connected: ${userInfo.email});
+      console.log(`✅ GSC account connected: ${userInfo.email}`);
       res.json({ account: gscAccount });
       
     } catch (tokenError: any) {
@@ -4198,7 +4200,7 @@ app.get("/api/gsc/properties", requireAuth, async (req: Request, res: Response):
     const userId = req.user!.id;
     const { accountId } = req.query;
     
-    console.log(🌐 Fetching GSC properties for user: ${userId}, account: ${accountId});
+    console.log(`🌐 Fetching GSC properties for user: ${userId}, account: ${accountId}`);
     
     if (!accountId) {
       res.status(400).json({ error: 'Account ID required' });
@@ -4206,7 +4208,7 @@ app.get("/api/gsc/properties", requireAuth, async (req: Request, res: Response):
     }
     
     // Get tokens from memory or database
-    let tokens = gscUserTokens.get(${userId}_${accountId});
+    let tokens = gscUserTokens.get(`${userId}_${accountId}`);
     if (!tokens) {
       const savedAccount = await gscStorage.getGscAccount(userId, accountId as string);
       if (!savedAccount) {
@@ -4221,7 +4223,7 @@ app.get("/api/gsc/properties", requireAuth, async (req: Request, res: Response):
       };
       
       // Cache in memory
-      gscUserTokens.set(${userId}_${accountId}, tokens);
+      gscUserTokens.set(`${userId}_${accountId}`, tokens);
     }
     
     // Set credentials
@@ -4240,7 +4242,7 @@ app.get("/api/gsc/properties", requireAuth, async (req: Request, res: Response):
       accountId: accountId as string
     }));
     
-    console.log(✅ Found ${properties.length} GSC properties);
+    console.log(`✅ Found ${properties.length} GSC properties`);
     res.json(properties);
     
   } catch (error) {
@@ -4255,7 +4257,7 @@ app.post("/api/gsc/index", requireAuth, async (req: Request, res: Response): Pro
     const userId = req.user!.id;
     const { accountId, url, type = 'URL_UPDATED' } = req.body;
     
-    console.log(📤 Submitting URL for indexing: ${url} (${type}));
+    console.log(`📤 Submitting URL for indexing: ${url} (${type})`);
     
     if (!accountId || !url) {
       res.status(400).json({ error: 'Account ID and URL required' });
@@ -4263,7 +4265,7 @@ app.post("/api/gsc/index", requireAuth, async (req: Request, res: Response): Pro
     }
     
     // Get tokens from memory or database
-    let tokens = gscUserTokens.get(${userId}_${accountId});
+    let tokens = gscUserTokens.get(`${userId}_${accountId}`);
     if (!tokens) {
       const savedAccount = await gscStorage.getGscAccount(userId, accountId);
       if (!savedAccount) {
@@ -4277,7 +4279,7 @@ app.post("/api/gsc/index", requireAuth, async (req: Request, res: Response): Pro
         expiry_date: savedAccount.tokenExpiry
       };
       
-      gscUserTokens.set(${userId}_${accountId}, tokens);
+      gscUserTokens.set(`${userId}_${accountId}`, tokens);
     }
     
     gscOAuth2Client.setCredentials(tokens);
@@ -4297,7 +4299,7 @@ app.post("/api/gsc/index", requireAuth, async (req: Request, res: Response): Pro
       await storage.createActivityLog({
         userId,
         type: "gsc_url_indexed",
-        description: URL submitted for indexing: ${url},
+        description: `URL submitted for indexing: ${url}`,
         metadata: { 
           url,
           type,
@@ -4305,7 +4307,7 @@ app.post("/api/gsc/index", requireAuth, async (req: Request, res: Response): Pro
         }
       });
       
-      console.log(✅ URL submitted for indexing: ${url});
+      console.log(`✅ URL submitted for indexing: ${url}`);
       res.json({
         success: true,
         notifyTime: result.data.urlNotificationMetadata?.latestUpdate?.notifyTime,
@@ -4332,7 +4334,7 @@ app.post("/api/gsc/inspect", requireAuth, async (req: Request, res: Response): P
     const userId = req.user!.id;
     const { accountId, siteUrl, inspectionUrl } = req.body;
     
-    console.log(🔍 Inspecting URL: ${inspectionUrl});
+    console.log(`🔍 Inspecting URL: ${inspectionUrl}`);
     
     if (!accountId || !siteUrl || !inspectionUrl) {
       res.status(400).json({ error: 'Account ID, site URL, and inspection URL required' });
@@ -4340,7 +4342,7 @@ app.post("/api/gsc/inspect", requireAuth, async (req: Request, res: Response): P
     }
     
     // Get tokens from memory or database
-    let tokens = gscUserTokens.get(${userId}_${accountId});
+    let tokens = gscUserTokens.get(`${userId}_${accountId}`);
     if (!tokens) {
       const savedAccount = await gscStorage.getGscAccount(userId, accountId);
       if (!savedAccount) {
@@ -4354,7 +4356,7 @@ app.post("/api/gsc/inspect", requireAuth, async (req: Request, res: Response): P
         expiry_date: savedAccount.tokenExpiry
       };
       
-      gscUserTokens.set(${userId}_${accountId}, tokens);
+      gscUserTokens.set(`${userId}_${accountId}`, tokens);
     }
     
     gscOAuth2Client.setCredentials(tokens);
@@ -4384,7 +4386,7 @@ app.post("/api/gsc/inspect", requireAuth, async (req: Request, res: Response): P
       richResultsStatus: inspection?.richResultsResult?.verdict
     };
     
-    console.log(✅ URL inspection complete: ${inspectionResult.indexStatus});
+    console.log(`✅ URL inspection complete: ${inspectionResult.indexStatus}`);
     res.json(inspectionResult);
     
   } catch (error) {
@@ -4399,7 +4401,7 @@ app.post("/api/gsc/sitemap", requireAuth, async (req: Request, res: Response): P
     const userId = req.user!.id;
     const { accountId, siteUrl, sitemapUrl } = req.body;
     
-    console.log(📄 Submitting sitemap: ${sitemapUrl});
+    console.log(`📄 Submitting sitemap: ${sitemapUrl}`);
     
     if (!accountId || !siteUrl || !sitemapUrl) {
       res.status(400).json({ error: 'Account ID, site URL, and sitemap URL required' });
@@ -4407,7 +4409,7 @@ app.post("/api/gsc/sitemap", requireAuth, async (req: Request, res: Response): P
     }
     
     // Get tokens from memory or database
-    let tokens = gscUserTokens.get(${userId}_${accountId});
+    let tokens = gscUserTokens.get(`${userId}_${accountId}`);
     if (!tokens) {
       const savedAccount = await gscStorage.getGscAccount(userId, accountId);
       if (!savedAccount) {
@@ -4421,7 +4423,7 @@ app.post("/api/gsc/sitemap", requireAuth, async (req: Request, res: Response): P
         expiry_date: savedAccount.tokenExpiry
       };
       
-      gscUserTokens.set(${userId}_${accountId}, tokens);
+      gscUserTokens.set(`${userId}_${accountId}`, tokens);
     }
     
     gscOAuth2Client.setCredentials(tokens);
@@ -4438,14 +4440,14 @@ app.post("/api/gsc/sitemap", requireAuth, async (req: Request, res: Response): P
     await storage.createActivityLog({
       userId,
       type: "gsc_sitemap_submitted",
-      description: Sitemap submitted: ${sitemapUrl},
+      description: `Sitemap submitted: ${sitemapUrl}`,
       metadata: { 
         siteUrl,
         sitemapUrl
       }
     });
     
-    console.log(✅ Sitemap submitted: ${sitemapUrl});
+    console.log(`✅ Sitemap submitted: ${sitemapUrl}`);
     res.json({
       success: true,
       message: 'Sitemap submitted successfully'
@@ -4463,7 +4465,7 @@ app.get("/api/gsc/performance", requireAuth, async (req: Request, res: Response)
     const userId = req.user!.id;
     const { accountId, siteUrl, days = '28' } = req.query;
     
-    console.log(📊 Fetching performance data for: ${siteUrl});
+    console.log(`📊 Fetching performance data for: ${siteUrl}`);
     
     if (!accountId || !siteUrl) {
       res.status(400).json({ error: 'Account ID and site URL required' });
@@ -4471,7 +4473,7 @@ app.get("/api/gsc/performance", requireAuth, async (req: Request, res: Response)
     }
     
     // Get tokens from memory or database
-    let tokens = gscUserTokens.get(${userId}_${accountId});
+    let tokens = gscUserTokens.get(`${userId}_${accountId}`);
     if (!tokens) {
       const savedAccount = await gscStorage.getGscAccount(userId, accountId as string);
       if (!savedAccount) {
@@ -4485,7 +4487,7 @@ app.get("/api/gsc/performance", requireAuth, async (req: Request, res: Response)
         expiry_date: savedAccount.tokenExpiry
       };
       
-      gscUserTokens.set(${userId}_${accountId}, tokens);
+      gscUserTokens.set(`${userId}_${accountId}`, tokens);
     }
     
     gscOAuth2Client.setCredentials(tokens);
@@ -4516,7 +4518,7 @@ app.get("/api/gsc/performance", requireAuth, async (req: Request, res: Response)
       position: row.position || 0
     }));
     
-    console.log(✅ Performance data fetched: ${performanceData.length} days);
+    console.log(`✅ Performance data fetched: ${performanceData.length} days`);
     res.json(performanceData);
     
   } catch (error) {
@@ -4531,13 +4533,13 @@ app.post("/api/gsc/refresh-token", requireAuth, async (req: Request, res: Respon
     const userId = req.user!.id;
     const { accountId, refreshToken } = req.body;
     
-    console.log(🔄 Refreshing GSC token for account: ${accountId});
+    console.log(`🔄 Refreshing GSC token for account: ${accountId}`);
     
     gscOAuth2Client.setCredentials({ refresh_token: refreshToken });
     const { credentials } = await gscOAuth2Client.refreshAccessToken();
     
     // Update stored tokens in memory
-    gscUserTokens.set(${userId}_${accountId}, credentials);
+    gscUserTokens.set(`${userId}_${accountId}`, credentials);
     
     // Update in database
     await gscStorage.updateGscAccount(userId, accountId, {
@@ -4545,7 +4547,7 @@ app.post("/api/gsc/refresh-token", requireAuth, async (req: Request, res: Respon
       tokenExpiry: credentials.expiry_date!
     });
     
-    console.log(✅ GSC token refreshed for account: ${accountId});
+    console.log(`✅ GSC token refreshed for account: ${accountId}`);
     res.json({
       accessToken: credentials.access_token,
       tokenExpiry: credentials.expiry_date
@@ -4662,9 +4664,9 @@ app.post("/api/gsc/remove-account", requireAuth, async (req: Request, res: Respo
     await gscStorage.deleteGscAccount(userId, accountId);
     
     // Remove from memory cache
-    gscUserTokens.delete(${userId}_${accountId});
+    gscUserTokens.delete(`${userId}_${accountId}`);
     
-    console.log(🗑️ GSC account removed: ${accountId});
+    console.log(`🗑️ GSC account removed: ${accountId}`);
     res.json({ success: true });
   } catch (error) {
     console.error('Error removing GSC account:', error);
@@ -4869,8 +4871,7 @@ app.post("/api/gsc/remove-account", requireAuth, async (req: Request, res: Respo
     }
   });
 
-
-  //=====================METADATA==================================//
+//=====================METADATA==================================//
 app.get("/api/images/content-images", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
@@ -4889,12 +4890,12 @@ app.get("/api/images/content-images", requireAuth, async (req: Request, res: Res
       ? websites.filter(w => w.id === websiteId)
       : websites;
     
-    console.log(Processing ${websitesToProcess.length} websites);
+    console.log(`Processing ${websitesToProcess.length} websites`);
     
     // Process each website to get images from WordPress
     for (const website of websitesToProcess) {
-      console.log(\n📌 Processing: ${website.name});
-      console.log(URL: ${website.url});
+      console.log(`\n📌 Processing: ${website.name}`);
+      console.log(`URL: ${website.url}`);
       
       if (!website.url) {
         console.log('No URL configured, skipping');
@@ -4907,8 +4908,8 @@ app.get("/api/images/content-images", requireAuth, async (req: Request, res: Res
       let decryptedPassword = website.wpApplicationPassword;
       // Fetch WordPress Posts
       try {
-        const postsUrl = ${baseUrl}/wp-json/wp/v2/posts?_embed&per_page=100;
-        console.log(Fetching posts from: ${postsUrl});
+        const postsUrl = `${baseUrl}/wp-json/wp/v2/posts?_embed&per_page=100`;
+        console.log(`Fetching posts from: ${postsUrl}`);
         
         const headers: any = { 
           'Content-Type': 'application/json',
@@ -4918,17 +4919,17 @@ app.get("/api/images/content-images", requireAuth, async (req: Request, res: Res
         // Add authentication if available
         if (decryptedPassword) {
           const username = website.wpUsername || website.wpApplicationName || 'admin';
-          const authString = ${username}:${decryptedPassword};
-          headers['Authorization'] = Basic ${Buffer.from(authString).toString('base64')};
-          console.log(Using auth for: ${username});
+          const authString = `${username}:${decryptedPassword}`;
+          headers['Authorization'] = `Basic ${Buffer.from(authString).toString('base64')}`;
+          console.log(`Using auth for: ${username}`);
         }
         
         const postsResponse = await fetch(postsUrl, { headers });
-        console.log(Response status: ${postsResponse.status});
+        console.log(`Response status: ${postsResponse.status}`);
         
         if (postsResponse.ok) {
           const posts = await postsResponse.json();
-          console.log(✅ Found ${posts.length} posts);
+          console.log(`✅ Found ${posts.length} posts`);
           
           for (const post of posts) {
             const postTitle = post.title?.rendered?.replace(/<[^>]*>/g, '').trim() || 'Untitled';
@@ -4938,9 +4939,9 @@ app.get("/api/images/content-images", requireAuth, async (req: Request, res: Res
               const media = post._embedded['wp:featuredmedia'][0];
               if (media.media_type === 'image' && media.source_url) {
                 images.push({
-                  id: wp_${website.id}_${post.id}_featured,
+                  id: `wp_${website.id}_${post.id}_featured`,
                   url: media.source_url,
-                  contentId: post_${post.id},
+                  contentId: `post_${post.id}`,
                   contentTitle: postTitle,
                   websiteId: website.id,
                   websiteName: website.name,
@@ -4977,9 +4978,9 @@ app.get("/api/images/content-images", requireAuth, async (req: Request, res: Res
                 const altMatch = match[0].match(/alt=["']([^"']*?)["']/i);
                 
                 images.push({
-                  id: wp_${website.id}_${post.id}_${images.length},
+                  id: `wp_${website.id}_${post.id}_${images.length}`,
                   url: url,
-                  contentId: post_${post.id},
+                  contentId: `post_${post.id}`,
                   contentTitle: postTitle,
                   websiteId: website.id,
                   websiteName: website.name,
@@ -5003,7 +5004,7 @@ app.get("/api/images/content-images", requireAuth, async (req: Request, res: Res
           const publicResponse = await fetch(postsUrl);
           if (publicResponse.ok) {
             const posts = await publicResponse.json();
-            console.log(✅ Found ${posts.length} public posts);
+            console.log(`✅ Found ${posts.length} public posts`);
             // Process posts (same as above)
           }
         }
@@ -5013,22 +5014,22 @@ app.get("/api/images/content-images", requireAuth, async (req: Request, res: Res
       
       // Fetch Media Library
       try {
-        const mediaUrl = ${baseUrl}/wp-json/wp/v2/media?per_page=100;
-        console.log(Fetching media from: ${mediaUrl});
+        const mediaUrl = `${baseUrl}/wp-json/wp/v2/media?per_page=100`;
+        console.log(`Fetching media from: ${mediaUrl}`);
         
         const mediaResponse = await fetch(mediaUrl);
         
         if (mediaResponse.ok) {
           const mediaItems = await mediaResponse.json();
-          console.log(✅ Found ${mediaItems.length} media items);
+          console.log(`✅ Found ${mediaItems.length} media items`);
           
           for (const media of mediaItems) {
             if (media.mime_type?.startsWith('image/') && media.source_url) {
               if (!images.some(img => img.url === media.source_url)) {
                 images.push({
-                  id: media_${website.id}_${media.id},
+                  id: `media_${website.id}_${media.id}`,
                   url: media.source_url,
-                  contentId: media_${media.id},
+                  contentId: `media_${media.id}`,
                   contentTitle: media.title?.rendered?.replace(/<[^>]*>/g, '') || 'Media',
                   websiteId: website.id,
                   websiteName: website.name,
@@ -5052,7 +5053,7 @@ app.get("/api/images/content-images", requireAuth, async (req: Request, res: Res
       }
     }
     
-    console.log(\n📊 Total images found: ${images.length});
+    console.log(`\n📊 Total images found: ${images.length}`);
     res.json(images);
     
   } catch (error: any) {
@@ -5076,7 +5077,7 @@ async function findMediaIdFromUrl(baseUrl: string, imageUrl: string, authHeader?
     console.log(`  Searching for media with filename: ${originalFilename}`);
     
     // Search media library
-    const searchUrl = ${baseUrl}/wp-json/wp/v2/media?search=${encodeURIComponent(originalFilename)}&per_page=100;
+    const searchUrl = `${baseUrl}/wp-json/wp/v2/media?search=${encodeURIComponent(originalFilename)}&per_page=100`;
     
     const headers: any = {};
     if (authHeader) {
@@ -5175,7 +5176,7 @@ async function processImageWithSharp(
         
         metadataOptions.exif = {
           IFD0: {
-            ImageDescription: Property of ${options.author || 'Murray Group'}. ${options.copyright || ''},
+            ImageDescription: `Property of ${options.author || 'Murray Group'}. ${options.copyright || ''}`,
             Make: 'AI Content Manager',
             Model: 'Image Processor v1.0',
             Software: 'AI Content Manager - Murray Group',
@@ -5471,7 +5472,7 @@ app.post("/api/images/crawl", requireAuth, async (req: Request, res: Response): 
   try {
     const { url, options } = req.body;
     
-    console.log(🕷️ Starting web crawl for: ${url});
+    console.log(`🕷️ Starting web crawl for: ${url}`);
     
     // Validate URL
     let validUrl: URL;
@@ -5637,14 +5638,14 @@ app.post("/api/images/crawl", requireAuth, async (req: Request, res: Response): 
     // Start crawling
     await crawlPage(validUrl.href, 0);
     
-    console.log(✅ Crawl complete: Found ${crawledImages.length} images);
+    console.log(`✅ Crawl complete: Found ${crawledImages.length} images`);
     
     // Transform to match frontend format
     const transformedImages = crawledImages.map((img, index) => ({
-      id: crawled_${Date.now()}_${index},
+      id: `crawled_${Date.now()}_${index}`,
       url: img.url,
-      contentId: crawl_${index},
-      contentTitle: img.pageTitle || Page: ${new URL(img.pageUrl).pathname},
+      contentId: `crawl_${index}`,
+      contentTitle: img.pageTitle || `Page: ${new URL(img.pageUrl).pathname}`,
       websiteId: 'crawled',
       websiteName: validUrl.hostname,
       hasMetadata: false,
@@ -5687,7 +5688,7 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
     const userId = req.user!.id;
     const { imageIds, options, imageUrls } = req.body; // ADD imageUrls from frontend
     
-    console.log(🔄 Batch processing ${imageIds.length} images for user ${userId});
+    console.log(`🔄 Batch processing ${imageIds.length} images for user ${userId}`);
     console.log('Processing options:', options);
     
     // Validate input
@@ -5722,7 +5723,7 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
       const startTime = Date.now();
       
       try {
-        console.log(Processing image: ${imageId});
+        console.log(`Processing image: ${imageId}`);
         
         // Parse the image ID to understand its source
         const parts = imageId.split('_');
@@ -5735,7 +5736,7 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
           const imageUrl = imageUrls && imageUrls[imageId];
           
           if (!imageUrl) {
-            throw new Error(No URL provided for crawled image ${imageId});
+            throw new Error(`No URL provided for crawled image ${imageId}`);
           }
           
           console.log(`  Downloading crawled image from: ${imageUrl}`);
@@ -5751,12 +5752,12 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
             });
             
             if (!imageResponse.ok) {
-              throw new Error(Failed to download image: ${imageResponse.status} ${imageResponse.statusText});
+              throw new Error(`Failed to download image: ${imageResponse.status} ${imageResponse.statusText}`);
             }
             
             const contentType = imageResponse.headers.get('content-type');
             if (!contentType || !contentType.startsWith('image/')) {
-              throw new Error(Invalid content type: ${contentType});
+              throw new Error(`Invalid content type: ${contentType}`);
             }
             
             const arrayBuffer = await imageResponse.arrayBuffer();
@@ -5771,7 +5772,7 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
             // But we can return the processed data for download or further use
             results.success.push({
               imageId,
-              processingTime: ${Date.now() - startTime}ms,
+              processingTime: `${Date.now() - startTime}ms`,
               message: 'Crawled image processed successfully',
               size: processedBuffer.length,
               originalSize: imageBuffer.length,
@@ -5779,14 +5780,14 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
               processed: true,
               type: 'crawled',
               // Optionally include base64 for frontend download
-              // data: data:image/jpeg;base64,${processedBuffer.toString('base64')}
+              // data: `data:image/jpeg;base64,${processedBuffer.toString('base64')}`
             });
             
             console.log(`  ✅ Crawled image processed successfully`);
             
           } catch (downloadError: any) {
             console.error(`  ❌ Failed to process crawled image: ${downloadError.message}`);
-            throw new Error(Failed to process crawled image: ${downloadError.message});
+            throw new Error(`Failed to process crawled image: ${downloadError.message}`);
           }
           
         } else if (parts[0] === 'wp' || parts[0] === 'media') {
@@ -5807,24 +5808,24 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
           if (parts[0] === 'media') {
             // Media library image
             mediaId = parts[2];
-            const mediaUrl = ${baseUrl}/wp-json/wp/v2/media/${mediaId};
+            const mediaUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
             
             const response = await fetch(mediaUrl);
             if (response.ok) {
               const media = await response.json();
               imageUrl = media.source_url;
-              imageName = media.slug ? ${media.slug}-processed.jpg : 'processed-image.jpg';
+              imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
             }
           } else if (parts[0] === 'wp') {
             // WordPress post image
             const postId = parts[2];
-            const postUrl = ${baseUrl}/wp-json/wp/v2/posts/${postId}?_embed;
+            const postUrl = `${baseUrl}/wp-json/wp/v2/posts/${postId}?_embed`;
             
             const headers: any = {};
             if (website.wpApplicationPassword) {
               const username = website.wpUsername || website.wpApplicationName || 'admin';
-              const authString = ${username}:${website.wpApplicationPassword};
-              headers['Authorization'] = Basic ${Buffer.from(authString).toString('base64')};
+              const authString = `${username}:${website.wpApplicationPassword}`;
+              headers['Authorization'] = `Basic ${Buffer.from(authString).toString('base64')}`;
             }
             
             const response = await fetch(postUrl, { headers });
@@ -5835,7 +5836,7 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
                 const media = post._embedded['wp:featuredmedia'][0];
                 imageUrl = media.source_url;
                 mediaId = media.id;
-                imageName = media.slug ? ${media.slug}-processed.jpg : 'processed-image.jpg';
+                imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
               } else {
                 // Content images - try to find media ID
                 const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
@@ -5847,7 +5848,7 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
                   
                   // Try to find the media ID for this content image
                   const authString = website.wpApplicationPassword && website.wpUsername
-                    ? Basic ${Buffer.from(${website.wpUsername}:${website.wpApplicationPassword}).toString('base64')}
+                    ? `Basic ${Buffer.from(`${website.wpUsername}:${website.wpApplicationPassword}`).toString('base64')}`
                     : undefined;
                   
                   mediaId = await findMediaIdFromUrl(baseUrl, imageUrl, authString);
@@ -5855,10 +5856,10 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
                   if (mediaId) {
                     console.log(`  Found media ID ${mediaId} for content image`);
                     // Get the media details for the filename
-                    const mediaResponse = await fetch(${baseUrl}/wp-json/wp/v2/media/${mediaId});
+                    const mediaResponse = await fetch(`${baseUrl}/wp-json/wp/v2/media/${mediaId}`);
                     if (mediaResponse.ok) {
                       const media = await mediaResponse.json();
-                      imageName = media.slug ? ${media.slug}-processed.jpg : 'processed-image.jpg';
+                      imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
                     }
                   } else {
                     console.log(`  Could not find media ID for content image`);
@@ -5874,7 +5875,7 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
             const imageResponse = await fetch(imageUrl);
             
             if (!imageResponse.ok) {
-              throw new Error(Failed to download image: ${imageResponse.statusText});
+              throw new Error(`Failed to download image: ${imageResponse.statusText}`);
             }
             
             const arrayBuffer = await imageResponse.arrayBuffer();
@@ -5893,8 +5894,8 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
               try {
                 // Prepare authentication
                 const username = website.wpUsername || website.wpApplicationName || 'admin';
-                const authString = ${username}:${website.wpApplicationPassword};
-                const authHeader = Basic ${Buffer.from(authString).toString('base64')};
+                const authString = `${username}:${website.wpApplicationPassword}`;
+                const authHeader = `Basic ${Buffer.from(authString).toString('base64')}`;
                 
                 // STEP 1: Upload the processed image file
                 const form = new FormData();
@@ -5903,7 +5904,7 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
                   contentType: 'image/jpeg'
                 });
                 
-                const uploadUrl = ${baseUrl}/wp-json/wp/v2/media/${mediaId};
+                const uploadUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
                 console.log(`  Step 1: Uploading file to: ${uploadUrl}`);
                 
                 const uploadResponse = await fetch(uploadUrl, {
@@ -5929,9 +5930,9 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
                     await new Promise(resolve => setTimeout(resolve, 500));
                     
                     const metadataPayload = {
-                      alt_text: options.author ? Image by ${options.author} : '',
-                      caption: options.copyright ? <p>${options.copyright}</p> : '',
-                      description: <p>Processed by AI Content Manager on ${new Date().toLocaleDateString()}.<br>Copyright: ${options.copyright || 'N/A'}<br>Author: ${options.author || 'N/A'}</p>,
+                      alt_text: options.author ? `Image by ${options.author}` : '',
+                      caption: options.copyright ? `<p>${options.copyright}</p>` : '',
+                      description: `<p>Processed by AI Content Manager on ${new Date().toLocaleDateString()}.<br>Copyright: ${options.copyright || 'N/A'}<br>Author: ${options.author || 'N/A'}</p>`,
                       title: imageName.replace(/-processed\.jpg$/, '').replace(/-/g, ' ')
                     };
                     
@@ -5970,15 +5971,15 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
                       
                       const altPayload = {
                         meta: {
-                          alt_text: options.author ? Image by ${options.author} : ''
+                          alt_text: options.author ? `Image by ${options.author}` : ''
                         },
                         caption: {
                           raw: options.copyright || '',
-                          rendered: options.copyright ? <p>${options.copyright}</p> : ''
+                          rendered: options.copyright ? `<p>${options.copyright}</p>` : ''
                         },
                         description: {
-                          raw: Processed on ${new Date().toLocaleDateString()},
-                          rendered: <p>Processed on ${new Date().toLocaleDateString()}</p>
+                          raw: `Processed on ${new Date().toLocaleDateString()}`,
+                          rendered: `<p>Processed on ${new Date().toLocaleDateString()}</p>`
                         }
                       };
                       
@@ -6018,7 +6019,7 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
             
             results.success.push({
               imageId,
-              processingTime: ${Date.now() - startTime}ms,
+              processingTime: `${Date.now() - startTime}ms`,
               message: uploadSuccess 
                 ? 'Image processed and uploaded to WordPress' 
                 : 'Image processed successfully (WordPress update requires manual upload)',
@@ -6030,11 +6031,11 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
             throw new Error('Could not determine image URL');
           }
         } else {
-          throw new Error(Unknown image type: ${parts[0]});
+          throw new Error(`Unknown image type: ${parts[0]}`);
         }
         
       } catch (error: any) {
-        console.error(Failed to process ${imageId}:, error.message);
+        console.error(`Failed to process ${imageId}:`, error.message);
         results.failed.push(imageId);
         results.errors.push({
           imageId,
@@ -6047,7 +6048,7 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
     const successCount = results.success.length;
     const uploadedCount = results.success.filter(r => r.uploaded).length;
     const failedCount = results.failed.length;
-    const successRate = ${Math.round((successCount / imageIds.length) * 100)}%;
+    const successRate = `${Math.round((successCount / imageIds.length) * 100)}%`;
     
     // Return response
     const response = {
@@ -6056,18 +6057,18 @@ app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Res
       uploaded: uploadedCount,
       failed: failedCount,
       successRate,
-      processingTime: ${Date.now()}ms,
+      processingTime: `${Date.now()}ms`,
       results: {
         success: results.success,
         failed: results.failed
       },
       message: uploadedCount > 0 
-        ? Processed ${successCount} images, uploaded ${uploadedCount} to WordPress
-        : Processed ${successCount} of ${imageIds.length} images,
+        ? `Processed ${successCount} images, uploaded ${uploadedCount} to WordPress`
+        : `Processed ${successCount} of ${imageIds.length} images`,
       errors: results.errors.length > 0 ? results.errors : undefined
     };
     
-    console.log(✅ Batch processing complete: ${successCount}/${imageIds.length} successful, ${uploadedCount} uploaded to WordPress);
+    console.log(`✅ Batch processing complete: ${successCount}/${imageIds.length} successful, ${uploadedCount} uploaded to WordPress`);
     
     res.json(response);
     
