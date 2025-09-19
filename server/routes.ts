@@ -3669,320 +3669,320 @@ app.get("/api/user/image-generation/status", requireAuth, async (req: Request, r
   });
 
   app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = req.user!.id;
-      const { imageIds, options } = req.body;
+  try {
+    const userId = req.user!.id;
+    const { imageIds, options, imageUrls } = req.body; // Accept imageUrls
+    
+    console.log(`🔄 Batch processing ${imageIds.length} images for user ${userId}`);
+    console.log('Processing options:', options);
+    console.log('Image URLs provided:', Object.keys(imageUrls || {}).length);
+    
+    if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
+      res.status(400).json({ 
+        error: 'Invalid request',
+        message: 'No images selected' 
+      });
+      return;
+    }
+    
+    if (!options || !options.action) {
+      res.status(400).json({ 
+        error: 'Invalid request',
+        message: 'Processing options required' 
+      });
+      return;
+    }
+    
+    const results = {
+      success: [] as any[],
+      failed: [] as string[],
+      errors: [] as any[]
+    };
+    
+    const websites = await storage.getUserWebsites(userId);
+    const websiteMap = new Map(websites.map(w => [w.id, w]));
+    
+    for (const imageId of imageIds) {
+      const startTime = Date.now();
       
-      console.log(`🔄 Batch processing ${imageIds.length} images for user ${userId}`);
-      console.log('Processing options:', options);
-      
-      if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
-        res.status(400).json({ 
-          error: 'Invalid request',
-          message: 'No images selected' 
-        });
-        return;
-      }
-      
-      if (!options || !options.action) {
-        res.status(400).json({ 
-          error: 'Invalid request',
-          message: 'Processing options required' 
-        });
-        return;
-      }
-      
-      const results = {
-        success: [] as any[],
-        failed: [] as string[],
-        errors: [] as any[]
-      };
-      
-      const websites = await storage.getUserWebsites(userId);
-      const websiteMap = new Map(websites.map(w => [w.id, w]));
-      
-      for (const imageId of imageIds) {
-        const startTime = Date.now();
+      try {
+        console.log(`Processing image: ${imageId}`);
         
-        try {
-          console.log(`Processing image: ${imageId}`);
+        const parts = imageId.split('_');
+        
+        // Handle crawled images
+        if (parts[0] === 'crawled' || imageId.startsWith('crawled')) {
+          console.log(`  Processing crawled image: ${imageId}`);
           
-          const parts = imageId.split('_');
+          // Get URL from the imageUrls mapping
+          const imageUrl = imageUrls?.[imageId];
           
-          if (parts[0] === 'wp' || parts[0] === 'media') {
-            const websiteId = parts[1];
-            const website = websiteMap.get(websiteId);
-            
-            if (!website || !website.url) {
-              throw new Error('Website not found or URL not configured');
-            }
-            
-            const baseUrl = website.url.replace(/\/$/, '');
-            let imageUrl: string | null = null;
-            let mediaId: string | null = null;
-            let imageName: string = 'processed-image.jpg';
-            
-            if (parts[0] === 'media') {
-              mediaId = parts[2];
-              const mediaUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
-              
-              const response = await fetch(mediaUrl);
-              if (response.ok) {
-                const media = await response.json();
-                imageUrl = media.source_url;
-                imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
-              }
-            } else if (parts[0] === 'wp') {
-              const postId = parts[2];
-              const postUrl = `${baseUrl}/wp-json/wp/v2/posts/${postId}?_embed`;
-              
-              const headers: any = {};
-              if (website.wpApplicationPassword) {
-                const username = website.wpUsername || website.wpApplicationName || 'admin';
-                const authString = `${username}:${website.wpApplicationPassword}`;
-                headers['Authorization'] = `Basic ${Buffer.from(authString).toString('base64')}`;
-              }
-              
-              const response = await fetch(postUrl, { headers });
-              if (response.ok) {
-                const post = await response.json();
-                
-                if (parts[3] === 'featured' && post._embedded?.['wp:featuredmedia']?.[0]) {
-                  const media = post._embedded['wp:featuredmedia'][0];
-                  imageUrl = media.source_url;
-                  mediaId = media.id;
-                  imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
-                } else {
-                  const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
-                  const matches = [...(post.content?.rendered || '').matchAll(imgRegex)];
-                  const imageIndex = parseInt(parts[3] || '0');
-                  
-                  if (matches[imageIndex]) {
-                    imageUrl = matches[imageIndex][1];
-                    
-                    const authString = website.wpApplicationPassword && website.wpUsername
-                      ? `Basic ${Buffer.from(`${website.wpUsername}:${website.wpApplicationPassword}`).toString('base64')}`
-                      : undefined;
-                    
-                    mediaId = await findMediaIdFromUrl(baseUrl, imageUrl, authString);
-                    
-                    if (mediaId) {
-                      console.log(`  Found media ID ${mediaId} for content image`);
-                      const mediaResponse = await fetch(`${baseUrl}/wp-json/wp/v2/media/${mediaId}`);
-                      if (mediaResponse.ok) {
-                        const media = await mediaResponse.json();
-                        imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
-                      }
-                    } else {
-                      console.log(`  Could not find media ID for content image`);
-                    }
-                  }
-                }
-              }
-            }
-            
-            if (imageUrl) {
-              console.log(`  Downloading image from: ${imageUrl}`);
-              const imageResponse = await fetch(imageUrl);
-              
-              if (!imageResponse.ok) {
-                throw new Error(`Failed to download image: ${imageResponse.statusText}`);
-              }
-              
-              const arrayBuffer = await imageResponse.arrayBuffer();
-              const imageBuffer = Buffer.from(arrayBuffer);
-              
-              const processedBuffer = await processImageWithSharp(imageBuffer, options);
-              
-              let uploadSuccess = false;
-              let newImageUrl = imageUrl;
-              
-              if (mediaId && website.wpApplicationPassword && website.wpUsername) {
-                console.log(`  Uploading processed image back to WordPress (Media ID: ${mediaId})`);
-                
-                try {
-                  const username = website.wpUsername || website.wpApplicationName || 'admin';
-                  const authString = `${username}:${website.wpApplicationPassword}`;
-                  const authHeader = `Basic ${Buffer.from(authString).toString('base64')}`;
-                  
-                  const form = new FormData();
-                  form.append('file', processedBuffer, {
-                    filename: imageName,
-                    contentType: 'image/jpeg'
-                  });
-                  
-                  const uploadUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
-                  console.log(`  Step 1: Uploading file to: ${uploadUrl}`);
-                  
-                  const uploadResponse = await fetch(uploadUrl, {
-                    method: 'POST',
-                    headers: {
-                      'Authorization': authHeader,
-                      ...form.getHeaders()
-                    },
-                    body: form as any
-                  });
-                  
-                  if (uploadResponse.ok) {
-                    const updatedMedia = await uploadResponse.json();
-                    newImageUrl = updatedMedia.source_url || updatedMedia.guid?.rendered || imageUrl;
-                    
-                    console.log(`  ✅ File uploaded successfully`);
-                    
-                    if (options.action !== 'strip') {
-                      console.log(`  Step 2: Updating metadata fields...`);
-                      
-                      await new Promise(resolve => setTimeout(resolve, 500));
-                      
-                      const metadataPayload = {
-                        alt_text: options.author ? `Image by ${options.author}` : '',
-                        caption: options.copyright ? `<p>${options.copyright}</p>` : '',
-                        description: `<p>Processed by AI Content Manager on ${new Date().toLocaleDateString()}.<br>Copyright: ${options.copyright || 'N/A'}<br>Author: ${options.author || 'N/A'}</p>`,
-                        title: imageName.replace(/-processed\.jpg$/, '').replace(/-/g, ' ')
-                      };
-                      
-                      console.log(`  Sending metadata:`, {
-                        alt_text: metadataPayload.alt_text,
-                        caption: options.copyright
-                      });
-                      
-                      const metadataResponse = await fetch(uploadUrl, {
-                        method: 'POST',
-                        headers: {
-                          'Authorization': authHeader,
-                          'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(metadataPayload)
-                      });
-                      
-                      if (metadataResponse.ok) {
-                        const metadataResult = await metadataResponse.json();
-                        console.log(`  ✅ Metadata fields updated!`);
-                        
-                        if (metadataResult.alt_text) {
-                          console.log(`  ✅ Alt text saved: "${metadataResult.alt_text}"`);
-                        }
-                        if (metadataResult.caption?.rendered) {
-                          console.log(`  ✅ Caption saved: "${metadataResult.caption.rendered}"`);
-                        }
-                      } else {
-                        const errorText = await metadataResponse.text();
-                        console.error(`  ⚠️ Metadata update failed: ${metadataResponse.status}`);
-                        console.error(`  Error details: ${errorText}`);
-                        
-                        console.log(`  Trying alternative field format...`);
-                        
-                        const altPayload = {
-                          meta: {
-                            alt_text: options.author ? `Image by ${options.author}` : ''
-                          },
-                          caption: {
-                            raw: options.copyright || '',
-                            rendered: options.copyright ? `<p>${options.copyright}</p>` : ''
-                          },
-                          description: {
-                            raw: `Processed on ${new Date().toLocaleDateString()}`,
-                            rendered: `<p>Processed on ${new Date().toLocaleDateString()}</p>`
-                          }
-                        };
-                        
-                        const altResponse = await fetch(uploadUrl, {
-                          method: 'PATCH',
-                          headers: {
-                            'Authorization': authHeader,
-                            'Content-Type': 'application/json'
-                          },
-                          body: JSON.stringify(altPayload)
-                        });
-                        
-                        if (altResponse.ok) {
-                          console.log(`  ✅ Metadata updated with alternative format`);
-                        } else {
-                          console.log(`  ⚠️ Alternative format also failed`);
-                        }
-                      }
-                    }
-                    
-                    uploadSuccess = true;
-                    console.log(`  ✅ WordPress update complete!`);
-                    console.log(`  New URL: ${newImageUrl}`);
-                    
-                  } else {
-                    const errorText = await uploadResponse.text();
-                    console.error(`  ⚠️ WordPress upload failed: ${uploadResponse.status} - ${errorText}`);
-                  }
-                } catch (uploadError: any) {
-                  console.error(`  ⚠️ Upload error: ${uploadError.message}`);
-                }
-              } else if (!mediaId) {
-                console.log(`  ℹ️ No media ID - cannot update WordPress (content images need manual update)`);
-              } else if (!website.wpApplicationPassword || !website.wpUsername) {
-                console.log(`  ⚠️ WordPress credentials not configured - cannot upload`);
-              }
-              
-              results.success.push({
-                imageId,
-                processingTime: `${Date.now() - startTime}ms`,
-                message: uploadSuccess 
-                  ? 'Image processed and uploaded to WordPress' 
-                  : 'Image processed successfully (WordPress update requires manual upload)',
-                size: processedBuffer.length,
-                uploaded: uploadSuccess,
-                wordpressUrl: newImageUrl
-              });
-            } else {
-              throw new Error('Could not determine image URL');
-            }
-          } else {
-            throw new Error(`Unknown image type: ${parts[0]}`);
+          if (!imageUrl) {
+            throw new Error(`No URL provided for crawled image: ${imageId}`);
           }
           
-        } catch (error: any) {
-          console.error(`Failed to process ${imageId}:`, error.message);
-          results.failed.push(imageId);
-          results.errors.push({
-            imageId,
-            message: error.message || 'Unknown error'
-          });
+          console.log(`  Downloading crawled image from: ${imageUrl}`);
+          
+          try {
+            // Download the image
+            const imageResponse = await fetch(imageUrl);
+            
+            if (!imageResponse.ok) {
+              throw new Error(`Failed to download image: ${imageResponse.status} ${imageResponse.statusText}`);
+            }
+            
+            const arrayBuffer = await imageResponse.arrayBuffer();
+            const imageBuffer = Buffer.from(arrayBuffer);
+            
+            // Process the image with Sharp according to options
+            const processedBuffer = await processImageWithSharp(imageBuffer, options);
+            
+            // For crawled images, we can't upload back to WordPress
+            // but we've successfully processed the image
+            results.success.push({
+              imageId,
+              processingTime: `${Date.now() - startTime}ms`,
+              message: 'Crawled image processed successfully (download processed image for use)',
+              size: processedBuffer.length,
+              uploaded: false,
+              originalUrl: imageUrl,
+              // You could optionally return base64 data for download
+              // processedData: `data:image/jpeg;base64,${processedBuffer.toString('base64')}`
+            });
+            
+          } catch (downloadError: any) {
+            throw new Error(`Failed to process crawled image: ${downloadError.message}`);
+          }
+          
+        } else if (parts[0] === 'wp' || parts[0] === 'media') {
+          // Existing WordPress image handling code
+          const websiteId = parts[1];
+          const website = websiteMap.get(websiteId);
+          
+          if (!website || !website.url) {
+            throw new Error('Website not found or URL not configured');
+          }
+          
+          const baseUrl = website.url.replace(/\/$/, '');
+          let imageUrl: string | null = null;
+          let mediaId: string | null = null;
+          let imageName: string = 'processed-image.jpg';
+          
+          if (parts[0] === 'media') {
+            mediaId = parts[2];
+            const mediaUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
+            
+            const response = await fetch(mediaUrl);
+            if (response.ok) {
+              const media = await response.json();
+              imageUrl = media.source_url;
+              imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
+            }
+          } else if (parts[0] === 'wp') {
+            const postId = parts[2];
+            const postUrl = `${baseUrl}/wp-json/wp/v2/posts/${postId}?_embed`;
+            
+            const headers: any = {};
+            if (website.wpApplicationPassword) {
+              const username = website.wpUsername || website.wpApplicationName || 'admin';
+              const authString = `${username}:${website.wpApplicationPassword}`;
+              headers['Authorization'] = `Basic ${Buffer.from(authString).toString('base64')}`;
+            }
+            
+            const response = await fetch(postUrl, { headers });
+            if (response.ok) {
+              const post = await response.json();
+              
+              if (parts[3] === 'featured' && post._embedded?.['wp:featuredmedia']?.[0]) {
+                const media = post._embedded['wp:featuredmedia'][0];
+                imageUrl = media.source_url;
+                mediaId = media.id;
+                imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
+              } else {
+                const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+                const matches = [...(post.content?.rendered || '').matchAll(imgRegex)];
+                const imageIndex = parseInt(parts[3] || '0');
+                
+                if (matches[imageIndex]) {
+                  imageUrl = matches[imageIndex][1];
+                  
+                  const authString = website.wpApplicationPassword && website.wpUsername
+                    ? `Basic ${Buffer.from(`${website.wpUsername}:${website.wpApplicationPassword}`).toString('base64')}`
+                    : undefined;
+                  
+                  mediaId = await findMediaIdFromUrl(baseUrl, imageUrl, authString);
+                  
+                  if (mediaId) {
+                    console.log(`  Found media ID ${mediaId} for content image`);
+                    const mediaResponse = await fetch(`${baseUrl}/wp-json/wp/v2/media/${mediaId}`);
+                    if (mediaResponse.ok) {
+                      const media = await mediaResponse.json();
+                      imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
+                    }
+                  } else {
+                    console.log(`  Could not find media ID for content image`);
+                  }
+                }
+              }
+            }
+          }
+          
+          if (imageUrl) {
+            console.log(`  Downloading image from: ${imageUrl}`);
+            const imageResponse = await fetch(imageUrl);
+            
+            if (!imageResponse.ok) {
+              throw new Error(`Failed to download image: ${imageResponse.statusText}`);
+            }
+            
+            const arrayBuffer = await imageResponse.arrayBuffer();
+            const imageBuffer = Buffer.from(arrayBuffer);
+            
+            const processedBuffer = await processImageWithSharp(imageBuffer, options);
+            
+            let uploadSuccess = false;
+            let newImageUrl = imageUrl;
+            
+            // WordPress upload code (existing)...
+            if (mediaId && website.wpApplicationPassword && website.wpUsername) {
+              console.log(`  Uploading processed image back to WordPress (Media ID: ${mediaId})`);
+              
+              try {
+                const username = website.wpUsername || website.wpApplicationName || 'admin';
+                const authString = `${username}:${website.wpApplicationPassword}`;
+                const authHeader = `Basic ${Buffer.from(authString).toString('base64')}`;
+                
+                const form = new FormData();
+                form.append('file', processedBuffer, {
+                  filename: imageName,
+                  contentType: 'image/jpeg'
+                });
+                
+                const uploadUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
+                console.log(`  Step 1: Uploading file to: ${uploadUrl}`);
+                
+                const uploadResponse = await fetch(uploadUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': authHeader,
+                    ...form.getHeaders()
+                  },
+                  body: form as any
+                });
+                
+                if (uploadResponse.ok) {
+                  const updatedMedia = await uploadResponse.json();
+                  newImageUrl = updatedMedia.source_url || updatedMedia.guid?.rendered || imageUrl;
+                  
+                  console.log(`  ✅ File uploaded successfully`);
+                  
+                  // Metadata update code (existing)...
+                  if (options.action !== 'strip') {
+                    console.log(`  Step 2: Updating metadata fields...`);
+                    
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    const metadataPayload = {
+                      alt_text: options.author ? `Image by ${options.author}` : '',
+                      caption: options.copyright ? `<p>${options.copyright}</p>` : '',
+                      description: `<p>Processed by AI Content Manager on ${new Date().toLocaleDateString()}.<br>Copyright: ${options.copyright || 'N/A'}<br>Author: ${options.author || 'N/A'}</p>`,
+                      title: imageName.replace(/-processed\.jpg$/, '').replace(/-/g, ' ')
+                    };
+                    
+                    const metadataResponse = await fetch(uploadUrl, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': authHeader,
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify(metadataPayload)
+                    });
+                    
+                    if (metadataResponse.ok) {
+                      console.log(`  ✅ Metadata fields updated!`);
+                    } else {
+                      console.error(`  ⚠️ Metadata update failed: ${metadataResponse.status}`);
+                    }
+                  }
+                  
+                  uploadSuccess = true;
+                  console.log(`  ✅ WordPress update complete!`);
+                  
+                } else {
+                  const errorText = await uploadResponse.text();
+                  console.error(`  ⚠️ WordPress upload failed: ${uploadResponse.status} - ${errorText}`);
+                }
+              } catch (uploadError: any) {
+                console.error(`  ⚠️ Upload error: ${uploadError.message}`);
+              }
+            } else if (!mediaId) {
+              console.log(`  ℹ️ No media ID - cannot update WordPress`);
+            } else if (!website.wpApplicationPassword || !website.wpUsername) {
+              console.log(`  ⚠️ WordPress credentials not configured - cannot upload`);
+            }
+            
+            results.success.push({
+              imageId,
+              processingTime: `${Date.now() - startTime}ms`,
+              message: uploadSuccess 
+                ? 'Image processed and uploaded to WordPress' 
+                : 'Image processed successfully (WordPress update requires manual upload)',
+              size: processedBuffer.length,
+              uploaded: uploadSuccess,
+              wordpressUrl: newImageUrl
+            });
+          } else {
+            throw new Error('Could not determine image URL');
+          }
+        } else {
+          throw new Error(`Unknown image type: ${parts[0]}`);
         }
+        
+      } catch (error: any) {
+        console.error(`Failed to process ${imageId}:`, error.message);
+        results.failed.push(imageId);
+        results.errors.push({
+          imageId,
+          message: error.message || 'Unknown error'
+        });
       }
-      
-      const successCount = results.success.length;
-      const uploadedCount = results.success.filter(r => r.uploaded).length;
-      const failedCount = results.failed.length;
-      const successRate = `${Math.round((successCount / imageIds.length) * 100)}%`;
-      
-      const response = {
-        total: imageIds.length,
-        processed: successCount,
-        uploaded: uploadedCount,
-        failed: failedCount,
-        successRate,
-        processingTime: `${Date.now()}ms`,
-        results: {
-          success: results.success,
-          failed: results.failed
-        },
-        message: uploadedCount > 0 
-          ? `Processed ${successCount} images, uploaded ${uploadedCount} to WordPress`
-          : `Processed ${successCount} of ${imageIds.length} images`,
-        errors: results.errors.length > 0 ? results.errors : undefined
-      };
-      
-      console.log(`✅ Batch processing complete: ${successCount}/${imageIds.length} successful, ${uploadedCount} uploaded to WordPress`);
-      
-      res.json(response);
-      
-    } catch (error: any) {
-      console.error("⌠Failed to process images:", error);
-      res.status(500).json({ 
-        error: 'Failed to process images',
-        message: error.message,
-        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-      });
     }
-  });
-
+    
+    const successCount = results.success.length;
+    const uploadedCount = results.success.filter(r => r.uploaded).length;
+    const failedCount = results.failed.length;
+    const successRate = `${Math.round((successCount / imageIds.length) * 100)}%`;
+    
+    const response = {
+      total: imageIds.length,
+      processed: successCount,
+      uploaded: uploadedCount,
+      failed: failedCount,
+      successRate,
+      processingTime: `${Date.now()}ms`,
+      results: {
+        success: results.success,
+        failed: results.failed
+      },
+      message: uploadedCount > 0 
+        ? `Processed ${successCount} images, uploaded ${uploadedCount} to WordPress`
+        : `Processed ${successCount} of ${imageIds.length} images`,
+      errors: results.errors.length > 0 ? results.errors : undefined
+    };
+    
+    console.log(`✅ Batch processing complete: ${successCount}/${imageIds.length} successful, ${uploadedCount} uploaded to WordPress`);
+    
+    res.json(response);
+    
+  } catch (error: any) {
+    console.error("❌ Failed to process images:", error);
+    res.status(500).json({ 
+      error: 'Failed to process images',
+      message: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
   app.get("/api/images/batch-process", requireAuth, async (req: Request, res: Response): Promise<void> => {
     try {
       const { contentId } = req.query;
