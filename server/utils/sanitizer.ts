@@ -1,8 +1,13 @@
 // server/utils/sanitizer.ts
 // Comprehensive input sanitization utilities for GSC Manager
 
-import DOMPurify from 'dompurify';
 import validator from 'validator';
+import { JSDOM } from 'jsdom';
+import createDOMPurify from 'dompurify';
+
+// Create DOMPurify instance with jsdom for Node.js
+const window = new JSDOM('').window;
+const DOMPurify = createDOMPurify(window as any);
 
 /**
  * Sanitization utilities for various input types
@@ -14,12 +19,34 @@ export class InputSanitizer {
   static sanitizeText(input: string): string {
     if (!input || typeof input !== 'string') return '';
     
-    // Remove any HTML tags and scripts
+    // Remove any HTML tags and scripts using DOMPurify with jsdom
     const cleaned = DOMPurify.sanitize(input, { 
       ALLOWED_TAGS: [],
       ALLOWED_ATTR: [],
       KEEP_CONTENT: true 
     });
+    
+    // Trim whitespace
+    return cleaned.trim();
+  }
+
+  /**
+   * Alternative sanitizeText without DOMPurify (for better performance)
+   * Use this if you don't need full HTML sanitization
+   */
+  static sanitizeTextSimple(input: string): string {
+    if (!input || typeof input !== 'string') return '';
+    
+    // Remove HTML tags using regex (simpler but less secure than DOMPurify)
+    let cleaned = input.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    cleaned = cleaned.replace(/<[^>]+>/g, '');
+    
+    // Decode HTML entities
+    cleaned = validator.unescape(cleaned);
+    
+    // Remove dangerous patterns
+    cleaned = cleaned.replace(/javascript:/gi, '');
+    cleaned = cleaned.replace(/on\w+\s*=/gi, '');
     
     // Trim whitespace
     return cleaned.trim();
@@ -383,8 +410,8 @@ function sanitizeObject(obj: any): any {
       // Don't modify tokens/secrets
       sanitized[key] = value;
     } else if (typeof value === 'string') {
-      // General text sanitization
-      sanitized[key] = InputSanitizer.sanitizeText(value);
+      // General text sanitization - use the simple version for better performance
+      sanitized[key] = InputSanitizer.sanitizeTextSimple(value);
     } else if (typeof value === 'object') {
       sanitized[key] = sanitizeObject(value);
     } else {

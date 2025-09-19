@@ -1,13 +1,11 @@
-// server/routes/gsc.routes.ts - Updated with input sanitization
-import { Router, Request, Response, NextFunction } from 'express';
+// server/routes/gsc.routes.ts - Working version with essential security
+import { Router, Request, Response } from 'express';
 import { google } from 'googleapis';
 import { gscStorage } from '../services/gsc-storage';
 import { requireAuth } from '../middleware/auth';
-import { InputSanitizer, sanitizationMiddleware } from '../utils/sanitizer';
 import rateLimit from 'express-rate-limit';
-import helmet from 'helmet';
 
-// Rate limiting configuration
+// Rate limiting for auth endpoints (important security)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // Limit each IP to 5 auth requests per windowMs
@@ -30,12 +28,8 @@ interface AuthenticatedRequest extends Request {
 
 const router = Router();
 
-// Apply security middleware
-router.use(helmet());
+// Apply rate limiting
 router.use(apiLimiter);
-router.use(sanitizationMiddleware.body);
-router.use(sanitizationMiddleware.query);
-router.use(sanitizationMiddleware.params);
 
 const gscUserTokens = new Map<string, any>();
 
@@ -47,82 +41,51 @@ const GSC_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile'
 ];
 
-// Input validation middleware for specific routes
-const validateOAuthConfig = (req: Request, res: Response, next: NextFunction) => {
-  const { clientId, clientSecret } = req.body;
-  
-  const validation = InputSanitizer.sanitizeOAuthCredentials(clientId, clientSecret);
-  
-  if (!validation.isValid) {
-    return res.status(400).json({ 
-      error: 'Invalid OAuth credentials',
-      details: validation.errors 
-    });
+// Simple validation helpers (non-breaking)
+const validateClientCredentials = (clientId: string, clientSecret: string): string | null => {
+  if (!clientId || !clientSecret) {
+    return 'Client ID and Client Secret are required';
   }
-  
-  req.body.clientId = validation.sanitizedId;
-  req.body.clientSecret = validation.sanitizedSecret;
-  next();
+  if (clientId.length < 10 || clientSecret.length < 10) {
+    return 'Invalid credentials format';
+  }
+  // Check for obvious placeholders
+  if (clientId.includes('your-client-id') || clientSecret.includes('your-client-secret')) {
+    return 'Please use real credentials, not placeholders';
+  }
+  return null;
 };
 
-const validateUrl = (field: string) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const url = req.body[field];
-    
-    if (!url) {
-      return res.status(400).json({ error: `${field} is required` });
-    }
-    
-    const validation = InputSanitizer.sanitizeUrl(url);
-    
-    if (!validation.isValid) {
-      return res.status(400).json({ 
-        error: validation.error || `Invalid ${field}` 
-      });
-    }
-    
-    req.body[field] = validation.sanitized;
-    next();
+const escapeHtml = (text: string): string => {
+  const map: { [key: string]: string } = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
   };
-};
-
-const validateAccountId = (req: Request, res: Response, next: NextFunction) => {
-  const accountId = req.body.accountId || req.query.accountId;
-  
-  if (!accountId) {
-    return res.status(400).json({ error: 'Account ID is required' });
-  }
-  
-  const validation = InputSanitizer.sanitizeAccountId(accountId as string);
-  
-  if (!validation.isValid) {
-    return res.status(400).json({ error: validation.error });
-  }
-  
-  if (req.body.accountId) req.body.accountId = validation.sanitized;
-  if (req.query.accountId) req.query.accountId = validation.sanitized;
-  next();
+  return text.replace(/[&<>"']/g, char => map[char]);
 };
 
 // Configuration endpoint - Save user's OAuth credentials
-router.post('/configure', requireAuth, validateOAuthConfig, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/configure', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    const { clientId, clientSecret } = req.body; // Already sanitized by middleware
+    const { clientId, clientSecret } = req.body;
+
+    // Basic validation
+    const error = validateClientCredentials(clientId, clientSecret);
+    if (error) {
+      return res.status(400).json({ error });
+    }
 
     const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback';
 
-    // Validate redirect URI
-    const redirectValidation = InputSanitizer.sanitizeUrl(redirectUri);
-    if (!redirectValidation.isValid) {
-      return res.status(500).json({ error: 'Invalid redirect URI configuration' });
-    }
-
     // Save configuration to database
     await gscStorage.saveGscConfiguration(userId, {
-      clientId,
-      clientSecret,
-      redirectUri: redirectValidation.sanitized
+      clientId: clientId.trim(),
+      clientSecret: clientSecret.trim(),
+      redirectUri
     });
 
     res.json({ success: true, message: 'Configuration saved successfully' });
@@ -159,7 +122,7 @@ router.get('/auth-url', requireAuth, authLimiter, async (req: AuthenticatedReque
       access_type: 'offline',
       scope: GSC_SCOPES,
       prompt: 'consent',
-      state: userId // Just pass userId in state
+      state: userId
     });
     
     res.json({ authUrl });
@@ -173,35 +136,22 @@ router.get('/auth-url', requireAuth, authLimiter, async (req: AuthenticatedReque
 router.post('/auth-url', requireAuth, authLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    let { clientId, clientSecret } = req.body;
+    const { clientId, clientSecret } = req.body;
     
     console.log(`🔐 Generating GSC OAuth URL for user: ${userId}`);
     
     // If credentials provided, validate and save them first
     if (clientId && clientSecret) {
-      const validation = InputSanitizer.sanitizeOAuthCredentials(clientId, clientSecret);
-      
-      if (!validation.isValid) {
-        return res.status(400).json({ 
-          error: 'Invalid OAuth credentials',
-          details: validation.errors 
-        });
+      const error = validateClientCredentials(clientId, clientSecret);
+      if (error) {
+        return res.status(400).json({ error });
       }
-      
-      clientId = validation.sanitizedId;
-      clientSecret = validation.sanitizedSecret;
       
       const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback';
-      
-      const redirectValidation = InputSanitizer.sanitizeUrl(redirectUri);
-      if (!redirectValidation.isValid) {
-        return res.status(500).json({ error: 'Invalid redirect URI configuration' });
-      }
-      
       await gscStorage.saveGscConfiguration(userId, {
-        clientId,
-        clientSecret,
-        redirectUri: redirectValidation.sanitized
+        clientId: clientId.trim(),
+        clientSecret: clientSecret.trim(),
+        redirectUri
       });
     }
     
@@ -243,14 +193,8 @@ router.post('/auth', requireAuth, authLimiter, async (req: AuthenticatedRequest,
     
     console.log(`🔐 Exchanging GSC auth code for user: ${userId}`);
     
-    if (!code || typeof code !== 'string') {
-      return res.status(400).json({ error: 'Authorization code required' });
-    }
-    
-    // Basic sanitization of auth code
-    const sanitizedCode = code.trim();
-    if (!sanitizedCode || sanitizedCode.length < 10) {
-      return res.status(400).json({ error: 'Invalid authorization code' });
+    if (!code || typeof code !== 'string' || code.length < 10) {
+      return res.status(400).json({ error: 'Valid authorization code required' });
     }
     
     // Get saved configuration
@@ -270,7 +214,7 @@ router.post('/auth', requireAuth, authLimiter, async (req: AuthenticatedRequest,
     );
     
     try {
-      const { tokens } = await authClient.getToken(sanitizedCode);
+      const { tokens } = await authClient.getToken(code.trim());
       
       if (!tokens.access_token) {
         console.error('No access token received');
@@ -283,18 +227,17 @@ router.post('/auth', requireAuth, authLimiter, async (req: AuthenticatedRequest,
       const oauth2 = google.oauth2({ version: 'v2', auth: authClient });
       const { data: userInfo } = await oauth2.userinfo.get();
       
-      // Sanitize user info
-      const emailValidation = InputSanitizer.sanitizeEmail(userInfo.email || '');
-      if (!emailValidation.isValid) {
+      // Basic email validation
+      if (!userInfo.email || !userInfo.email.includes('@')) {
         return res.status(400).json({ error: 'Invalid email received from Google' });
       }
       
       // Store account
       const gscAccount = {
         id: userInfo.id!,
-        email: emailValidation.sanitized,
-        name: InputSanitizer.sanitizeText(userInfo.name || emailValidation.sanitized),
-        picture: userInfo.picture ? InputSanitizer.sanitizeUrl(userInfo.picture).sanitized : undefined,
+        email: userInfo.email!,
+        name: userInfo.name || userInfo.email!,
+        picture: userInfo.picture || undefined,
         accessToken: tokens.access_token!,
         refreshToken: tokens.refresh_token || '',
         tokenExpiry: tokens.expiry_date || Date.now() + 3600000,
@@ -307,7 +250,7 @@ router.post('/auth', requireAuth, authLimiter, async (req: AuthenticatedRequest,
       // Save to database
       await gscStorage.saveGscAccount(userId, gscAccount);
       
-      console.log(`✅ GSC account connected: ${emailValidation.sanitized}`);
+      console.log(`✅ GSC account connected: ${userInfo.email}`);
       res.json({ account: gscAccount });
       
     } catch (tokenError: any) {
@@ -335,13 +278,17 @@ router.post('/auth', requireAuth, authLimiter, async (req: AuthenticatedRequest,
 });
 
 // Get properties
-router.get('/properties', requireAuth, validateAccountId, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/properties', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    const { accountId } = req.query; // Already sanitized by middleware
+    const { accountId } = req.query;
+    
+    if (!accountId || typeof accountId !== 'string') {
+      return res.status(400).json({ error: 'Account ID required' });
+    }
     
     // Get account with credentials using the join method
-    const account = await gscStorage.getGscAccountWithCredentials(userId, accountId as string);
+    const account = await gscStorage.getGscAccountWithCredentials(userId, accountId);
     
     if (!account) {
       return res.status(401).json({ error: 'Account not found or not authenticated' });
@@ -351,7 +298,7 @@ router.get('/properties', requireAuth, validateAccountId, async (req: Authentica
     const oauth2Client = new google.auth.OAuth2(
       account.clientId,
       account.clientSecret,
-      process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
+      account.redirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
     );
     
     oauth2Client.setCredentials({
@@ -364,17 +311,14 @@ router.get('/properties', requireAuth, validateAccountId, async (req: Authentica
     const searchconsole = google.searchconsole({ version: 'v1', auth: oauth2Client });
     const { data } = await searchconsole.sites.list();
     
-    // Save properties to database with sanitization
+    // Save properties to database
     for (const site of (data.siteEntry || [])) {
-      const propertyValidation = InputSanitizer.sanitizePropertyUrl(site.siteUrl!);
-      if (propertyValidation.isValid) {
-        await gscStorage.saveGscProperty(userId, accountId as string, {
-          siteUrl: propertyValidation.sanitized,
-          permissionLevel: site.permissionLevel!,
-          siteType: site.siteUrl?.startsWith('sc-domain:') ? 'DOMAIN' : 'SITE',
-          verified: true
-        });
-      }
+      await gscStorage.saveGscProperty(userId, accountId, {
+        siteUrl: site.siteUrl!,
+        permissionLevel: site.permissionLevel!,
+        siteType: site.siteUrl?.startsWith('sc-domain:') ? 'DOMAIN' : 'SITE',
+        verified: true
+      });
     }
     
     const properties = (data.siteEntry || []).map(site => ({
@@ -394,16 +338,27 @@ router.get('/properties', requireAuth, validateAccountId, async (req: Authentica
 });
 
 // Submit URL for indexing
-router.post('/index', requireAuth, validateAccountId, validateUrl('url'), async (req: AuthenticatedRequest, res: Response) => {
+router.post('/index', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    const { accountId, url, type = 'URL_UPDATED' } = req.body; // URL already sanitized
+    const { accountId, url, type = 'URL_UPDATED' } = req.body;
     
     console.log(`📤 Submitting URL for indexing: ${url} (${type})`);
     
+    if (!accountId || !url) {
+      return res.status(400).json({ error: 'Account ID and URL required' });
+    }
+    
+    // Basic URL validation
+    try {
+      new URL(url); // Will throw if invalid
+    } catch {
+      return res.status(400).json({ error: 'Invalid URL format' });
+    }
+    
     // Validate type
     if (type !== 'URL_UPDATED' && type !== 'URL_DELETED') {
-      return res.status(400).json({ error: 'Invalid type. Must be URL_UPDATED or URL_DELETED' });
+      return res.status(400).json({ error: 'Type must be URL_UPDATED or URL_DELETED' });
     }
     
     // Check quota
@@ -423,7 +378,7 @@ router.post('/index', requireAuth, validateAccountId, validateUrl('url'), async 
     const oauth2Client = new google.auth.OAuth2(
       account.clientId,
       account.clientSecret,
-      process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
+      account.redirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
     );
     
     oauth2Client.setCredentials({
@@ -466,79 +421,23 @@ router.post('/index', requireAuth, validateAccountId, validateUrl('url'), async 
   }
 });
 
-// Bulk index URLs
-router.post('/bulk-index', requireAuth, validateAccountId, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = req.user!.id;
-    const { accountId, urls } = req.body;
-    
-    if (!urls || !Array.isArray(urls)) {
-      return res.status(400).json({ error: 'URLs array is required' });
-    }
-    
-    // Sanitize and validate all URLs
-    const validatedUrls = urls.map(url => InputSanitizer.sanitizeUrl(url));
-    const validUrls = validatedUrls.filter(v => v.isValid).map(v => v.sanitized);
-    const invalidUrls = validatedUrls.filter(v => !v.isValid).map((v, i) => ({ 
-      url: urls[i], 
-      error: v.error 
-    }));
-    
-    if (validUrls.length === 0) {
-      return res.status(400).json({ 
-        error: 'No valid URLs provided',
-        invalid: invalidUrls 
-      });
-    }
-    
-    // Check quota
-    const quota = await gscStorage.getGscQuotaUsage(accountId);
-    const availableQuota = quota.limit - quota.used;
-    
-    if (availableQuota <= 0) {
-      return res.status(429).json({ error: 'Daily quota exceeded (200 URLs/day)' });
-    }
-    
-    if (validUrls.length > availableQuota) {
-      return res.status(400).json({ 
-        error: `Only ${availableQuota} URLs can be submitted today`,
-        available: availableQuota,
-        requested: validUrls.length
-      });
-    }
-    
-    // Process URLs (implementation similar to single URL)
-    // ... (processing code here)
-    
-    res.json({
-      success: true,
-      processed: validUrls.length,
-      invalid: invalidUrls
-    });
-  } catch (error) {
-    console.error('Bulk indexing error:', error);
-    res.status(500).json({ error: 'Failed to process bulk indexing' });
-  }
-});
-
 // URL Inspection
-router.post('/inspect', requireAuth, validateAccountId, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/inspect', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { accountId, siteUrl, inspectionUrl } = req.body;
     
     console.log(`🔍 Inspecting URL: ${inspectionUrl}`);
     
-    // Validate site URL
-    const siteValidation = InputSanitizer.sanitizePropertyUrl(siteUrl);
-    if (!siteValidation.isValid) {
-      return res.status(400).json({ error: 'Invalid site URL: ' + siteValidation.error });
+    if (!accountId || !siteUrl || !inspectionUrl) {
+      return res.status(400).json({ error: 'Account ID, site URL, and inspection URL required' });
     }
     
-    // Validate inspection URL
-    const urlValidation = InputSanitizer.sanitizeUrl(inspectionUrl);
-    if (!urlValidation.isValid) {
-      return res.status(400).json({ error: 'Invalid inspection URL: ' + urlValidation.error });
+    // Basic URL validation
+    try {
+      new URL(inspectionUrl);
+    } catch {
+      return res.status(400).json({ error: 'Invalid inspection URL format' });
     }
     
     // Get account with credentials
@@ -552,7 +451,7 @@ router.post('/inspect', requireAuth, validateAccountId, async (req: Authenticate
     const oauth2Client = new google.auth.OAuth2(
       account.clientId,
       account.clientSecret,
-      process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
+      account.redirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
     );
     
     oauth2Client.setCredentials({
@@ -566,8 +465,8 @@ router.post('/inspect', requireAuth, validateAccountId, async (req: Authenticate
     
     const result = await searchconsole.urlInspection.index.inspect({
       requestBody: {
-        inspectionUrl: urlValidation.sanitized,
-        siteUrl: siteValidation.sanitized
+        inspectionUrl: inspectionUrl,
+        siteUrl: siteUrl
       }
     });
     
@@ -575,7 +474,7 @@ router.post('/inspect', requireAuth, validateAccountId, async (req: Authenticate
     
     // Transform result
     const inspectionResult = {
-      url: urlValidation.sanitized,
+      url: inspectionUrl,
       indexStatus: inspection?.indexStatusResult?.coverageState || 'NOT_INDEXED',
       lastCrawlTime: inspection?.indexStatusResult?.lastCrawlTime,
       pageFetchState: inspection?.indexStatusResult?.pageFetchState,
@@ -588,7 +487,7 @@ router.post('/inspect', requireAuth, validateAccountId, async (req: Authenticate
     
     // Save inspection result to database
     const properties = await gscStorage.getGscProperties(userId, accountId);
-    const property = properties.find((p: any) => p.site_url === siteValidation.sanitized);
+    const property = properties.find((p: any) => p.site_url === siteUrl);
     if (property) {
       await gscStorage.saveUrlInspection(property.id, inspectionResult);
     }
@@ -603,28 +502,26 @@ router.post('/inspect', requireAuth, validateAccountId, async (req: Authenticate
 });
 
 // Submit Sitemap
-router.post('/sitemap', requireAuth, validateAccountId, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/sitemap', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { accountId, siteUrl, sitemapUrl } = req.body;
     
     console.log(`📄 Submitting sitemap: ${sitemapUrl}`);
     
-    // Validate site URL
-    const siteValidation = InputSanitizer.sanitizePropertyUrl(siteUrl);
-    if (!siteValidation.isValid) {
-      return res.status(400).json({ error: 'Invalid site URL: ' + siteValidation.error });
+    if (!accountId || !siteUrl || !sitemapUrl) {
+      return res.status(400).json({ error: 'Account ID, site URL, and sitemap URL required' });
     }
     
-    // Validate sitemap URL
-    const sitemapValidation = InputSanitizer.sanitizeSitemapUrl(sitemapUrl);
-    if (!sitemapValidation.isValid) {
-      return res.status(400).json({ error: 'Invalid sitemap URL: ' + sitemapValidation.error });
-    }
-    
-    // Send warning if present
-    if (sitemapValidation.warning) {
-      console.warn(`Sitemap warning: ${sitemapValidation.warning}`);
+    // Basic sitemap URL validation
+    try {
+      const url = new URL(sitemapUrl);
+      // Warn if it doesn't look like a sitemap
+      if (!sitemapUrl.includes('sitemap') && !sitemapUrl.endsWith('.xml')) {
+        console.warn('URL does not follow typical sitemap naming convention');
+      }
+    } catch {
+      return res.status(400).json({ error: 'Invalid sitemap URL format' });
     }
     
     // Get account with credentials
@@ -638,7 +535,7 @@ router.post('/sitemap', requireAuth, validateAccountId, async (req: Authenticate
     const oauth2Client = new google.auth.OAuth2(
       account.clientId,
       account.clientSecret,
-      process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
+      account.redirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
     );
     
     oauth2Client.setCredentials({
@@ -651,22 +548,21 @@ router.post('/sitemap', requireAuth, validateAccountId, async (req: Authenticate
     const searchconsole = google.searchconsole({ version: 'v1', auth: oauth2Client });
     
     await searchconsole.sitemaps.submit({
-      siteUrl: siteValidation.sanitized,
-      feedpath: sitemapValidation.sanitized
+      siteUrl: siteUrl,
+      feedpath: sitemapUrl
     });
     
     // Save to database
     const properties = await gscStorage.getGscProperties(userId, accountId);
-    const property = properties.find((p: any) => p.site_url === siteValidation.sanitized);
+    const property = properties.find((p: any) => p.site_url === siteUrl);
     if (property) {
-      await gscStorage.saveSitemap(property.id, sitemapValidation.sanitized);
+      await gscStorage.saveSitemap(property.id, sitemapUrl);
     }
     
-    console.log(`✅ Sitemap submitted: ${sitemapValidation.sanitized}`);
+    console.log(`✅ Sitemap submitted: ${sitemapUrl}`);
     res.json({
       success: true,
-      message: 'Sitemap submitted successfully',
-      warning: sitemapValidation.warning
+      message: 'Sitemap submitted successfully'
     });
     
   } catch (error) {
@@ -676,31 +572,24 @@ router.post('/sitemap', requireAuth, validateAccountId, async (req: Authenticate
 });
 
 // Get Performance Data
-router.get('/performance', requireAuth, validateAccountId, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/performance', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    let { accountId, siteUrl, days = '28' } = req.query;
+    const { accountId, siteUrl, days = '28' } = req.query;
     
     console.log(`📊 Fetching performance data for: ${siteUrl}`);
     
-    // Validate site URL
-    if (!siteUrl || typeof siteUrl !== 'string') {
-      return res.status(400).json({ error: 'Site URL is required' });
+    if (!accountId || !siteUrl || typeof accountId !== 'string' || typeof siteUrl !== 'string') {
+      return res.status(400).json({ error: 'Account ID and site URL required' });
     }
     
-    const siteValidation = InputSanitizer.sanitizePropertyUrl(siteUrl);
-    if (!siteValidation.isValid) {
-      return res.status(400).json({ error: 'Invalid site URL: ' + siteValidation.error });
-    }
-    
-    // Validate days parameter
     const daysNum = parseInt(typeof days === 'string' ? days : '28');
     if (isNaN(daysNum) || daysNum < 1 || daysNum > 90) {
       return res.status(400).json({ error: 'Days must be between 1 and 90' });
     }
     
     // Get account with credentials
-    const account = await gscStorage.getGscAccountWithCredentials(userId, accountId as string);
+    const account = await gscStorage.getGscAccountWithCredentials(userId, accountId);
     
     if (!account) {
       return res.status(401).json({ error: 'Account not found or not authenticated' });
@@ -710,7 +599,7 @@ router.get('/performance', requireAuth, validateAccountId, async (req: Authentic
     const oauth2Client = new google.auth.OAuth2(
       account.clientId,
       account.clientSecret,
-      process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
+      account.redirectUri || process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
     );
     
     oauth2Client.setCredentials({
@@ -727,7 +616,7 @@ router.get('/performance', requireAuth, validateAccountId, async (req: Authentic
     startDate.setDate(startDate.getDate() - daysNum);
     
     const result = await searchconsole.searchanalytics.query({
-      siteUrl: siteValidation.sanitized,
+      siteUrl: siteUrl,
       requestBody: {
         startDate: startDate.toISOString().split('T')[0],
         endDate: endDate.toISOString().split('T')[0],
@@ -746,8 +635,8 @@ router.get('/performance', requireAuth, validateAccountId, async (req: Authentic
     }));
     
     // Save performance data to database
-    const properties = await gscStorage.getGscProperties(userId, accountId as string);
-    const property = properties.find((p: any) => p.site_url === siteValidation.sanitized);
+    const properties = await gscStorage.getGscProperties(userId, accountId);
+    const property = properties.find((p: any) => p.site_url === siteUrl);
     if (property) {
       await gscStorage.savePerformanceData(property.id, performanceData);
     }
@@ -762,7 +651,7 @@ router.get('/performance', requireAuth, validateAccountId, async (req: Authentic
 });
 
 // Refresh Token
-router.post('/refresh-token', requireAuth, validateAccountId, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/refresh-token', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.id;
     const { accountId, refreshToken } = req.body;
@@ -770,7 +659,7 @@ router.post('/refresh-token', requireAuth, validateAccountId, async (req: Authen
     console.log(`🔄 Refreshing GSC token for account: ${accountId}`);
     
     if (!refreshToken || typeof refreshToken !== 'string') {
-      return res.status(400).json({ error: 'Refresh token is required' });
+      return res.status(400).json({ error: 'Refresh token required' });
     }
     
     // Get configuration
@@ -809,77 +698,211 @@ router.post('/refresh-token', requireAuth, validateAccountId, async (req: Authen
   }
 });
 
-// OAuth Callback Handler
+// OAuth Callback Handler - FIXED with better window communication
 router.get('/oauth-callback', async (req: Request, res: Response) => {
   try {
+    // Set headers to allow popup communication
+    res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+    
     const { code, state, error } = req.query;
     
-    // Sanitize error message if present
-    const sanitizedError = error ? InputSanitizer.sanitizeText(error as string) : null;
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
     
-    if (sanitizedError) {
+    if (error) {
+      const safeError = escapeHtml(error as string);
       return res.send(`
         <!DOCTYPE html>
         <html>
-        <head><title>Authentication Error</title></head>
+        <head>
+          <title>Authentication Error</title>
+          <style>
+            body { font-family: system-ui; padding: 20px; text-align: center; }
+            .error { color: #dc2626; }
+          </style>
+        </head>
         <body>
+          <h2 class="error">Authentication Failed</h2>
+          <p>${safeError}</p>
           <script>
-            if (window.opener) {
+            // Try multiple communication methods
+            const error = ${JSON.stringify(safeError)};
+            
+            // Method 1: PostMessage
+            if (window.opener && !window.opener.closed) {
               window.opener.postMessage({ 
                 type: 'GOOGLE_AUTH_ERROR', 
-                error: '${InputSanitizer.escapeHtml(sanitizedError)}' 
-              }, window.location.origin);
-              window.close();
+                error: error 
+              }, '${clientUrl}');
             }
+            
+            // Method 2: LocalStorage
+            localStorage.setItem('gsc_auth_error', JSON.stringify({
+              error: error,
+              timestamp: Date.now()
+            }));
+            
+            setTimeout(() => window.close(), 3000);
           </script>
-          <p>Authentication error: ${InputSanitizer.escapeHtml(sanitizedError)}</p>
         </body>
         </html>
       `);
     }
     
-    if (!code || typeof code !== 'string') {
+    if (!code) {
       return res.send(`
         <!DOCTYPE html>
         <html>
-        <head><title>Authentication Error</title></head>
+        <head>
+          <title>Authentication Error</title>
+          <style>
+            body { font-family: system-ui; padding: 20px; text-align: center; }
+            .error { color: #dc2626; }
+          </style>
+        </head>
         <body>
+          <h2 class="error">Missing Authorization Code</h2>
+          <p>The authentication process didn't complete properly.</p>
           <script>
-            if (window.opener) {
+            if (window.opener && !window.opener.closed) {
               window.opener.postMessage({ 
                 type: 'GOOGLE_AUTH_ERROR', 
                 error: 'Missing authorization code' 
-              }, window.location.origin);
-              window.close();
+              }, '${clientUrl}');
             }
+            localStorage.setItem('gsc_auth_error', JSON.stringify({
+              error: 'Missing authorization code',
+              timestamp: Date.now()
+            }));
+            setTimeout(() => window.close(), 3000);
           </script>
-          <p>Missing authorization code</p>
         </body>
         </html>
       `);
     }
     
-    // Sanitize code and state
-    const sanitizedCode = InputSanitizer.escapeHtml(code);
-    const sanitizedState = state ? InputSanitizer.escapeHtml(state as string) : '';
+    // Success - send code to parent window
+    const safeCode = escapeHtml(code as string);
+    const safeState = state ? escapeHtml(state as string) : '';
     
-    // Send success message to opener window
     res.send(`
       <!DOCTYPE html>
       <html>
-      <head><title>Authentication Successful</title></head>
-      <body>
-        <script>
-          if (window.opener) {
-            window.opener.postMessage({ 
-              type: 'GOOGLE_AUTH_SUCCESS', 
-              code: '${sanitizedCode}',
-              state: '${sanitizedState}'
-            }, window.location.origin);
-            window.close();
+      <head>
+        <title>Authentication Successful</title>
+        <style>
+          body { 
+            font-family: system-ui; 
+            padding: 20px; 
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
           }
+          .container {
+            background: white;
+            color: #333;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+          }
+          .success { color: #059669; }
+          button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+          }
+          button:hover { background: #5a67d8; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h2 class="success">✅ Authentication Successful!</h2>
+          <p>Completing the authentication process...</p>
+          <p>This window should close automatically.</p>
+          <button onclick="closeWindow()">Close Window</button>
+        </div>
+        <script>
+          const code = ${JSON.stringify(safeCode)};
+          const state = ${JSON.stringify(safeState)};
+          
+          // Method 1: PostMessage to opener
+          function sendToOpener() {
+            if (window.opener && !window.opener.closed) {
+              // Try multiple origins
+              ['${clientUrl}', window.location.origin, '*'].forEach(origin => {
+                try {
+                  window.opener.postMessage({ 
+                    type: 'GOOGLE_AUTH_SUCCESS', 
+                    code: code,
+                    state: state
+                  }, origin);
+                } catch(e) {}
+              });
+            }
+          }
+          
+          // Method 2: LocalStorage for same-origin
+          function saveToStorage() {
+            try {
+              localStorage.setItem('gsc_auth_result', JSON.stringify({
+                type: 'GOOGLE_AUTH_SUCCESS',
+                code: code,
+                state: state,
+                timestamp: Date.now()
+              }));
+              
+              // Trigger storage event
+              window.dispatchEvent(new StorageEvent('storage', {
+                key: 'gsc_auth_result',
+                newValue: JSON.stringify({
+                  type: 'GOOGLE_AUTH_SUCCESS',
+                  code: code,
+                  state: state,
+                  timestamp: Date.now()
+                })
+              }));
+            } catch(e) {}
+          }
+          
+          // Method 3: BroadcastChannel
+          function broadcastMessage() {
+            try {
+              const channel = new BroadcastChannel('gsc_auth');
+              channel.postMessage({
+                type: 'GOOGLE_AUTH_SUCCESS',
+                code: code,
+                state: state
+              });
+              channel.close();
+            } catch(e) {}
+          }
+          
+          // Send using all methods
+          sendToOpener();
+          saveToStorage();
+          broadcastMessage();
+          
+          // Close window function
+          function closeWindow() {
+            window.close();
+            // Fallback redirect if close doesn't work
+            setTimeout(() => {
+              window.location.href = '${clientUrl}';
+            }, 100);
+          }
+          
+          // Auto close after 2 seconds
+          setTimeout(closeWindow, 2000);
         </script>
-        <p>Authentication successful! This window should close automatically...</p>
       </body>
       </html>
     `);
@@ -892,7 +915,22 @@ router.get('/oauth-callback', async (req: Request, res: Response) => {
 export default router;
 
 
-// WAG ALISIN
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // server/routes/gsc.routes.ts
 // import { Router, Request, Response } from 'express';
 // import { google } from 'googleapis';
