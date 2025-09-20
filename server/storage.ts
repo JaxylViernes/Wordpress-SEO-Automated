@@ -2439,6 +2439,32 @@ async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Pro
     }
   }
 
+
+  async updateTrackedSeoIssue(
+  issueId: string,
+  updates: {
+    issueDescription?: string;
+    severity?: 'critical' | 'warning' | 'info';
+    currentValue?: string;
+    lastDetected?: Date;
+  }
+): Promise<void> {
+  try {
+    await this.db
+      .update(seoIssueTracking)
+      .set({
+        issueDescription: updates.issueDescription,
+        severity: updates.severity,
+        currentValue: updates.currentValue,
+        lastDetected: updates.lastDetected || new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(seoIssueTracking.id, issueId));
+  } catch (error) {
+    console.error('Error updating tracked SEO issue:', error);
+    throw error;
+  }
+}
   
   // Note: createContentSchedule and createActivityLog already exist in your code
   
