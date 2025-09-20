@@ -437,14 +437,6 @@ export class DatabaseStorage implements IStorage {
   // CONTENT IMAGES METHODS
   // ===============================
 
-  async createContentImage(data: InsertContentImage & { userId: string }): Promise<ContentImage> {
-  const validatedData = insertContentImageSchema.parse(data);
-  const imageWithUserId = { ...validatedData, userId: data.userId };
-  
-  const [image] = await db.insert(contentImages).values(imageWithUserId).returning();
-  return image;
-}
-
 async getContentImages(contentId: string): Promise<ContentImage[]> {
   return db
     .select()
@@ -470,18 +462,18 @@ async updateContentImage(imageId: string, updates: Partial<{
 }
 
 // Get images by user (for dashboard/analytics)
-async getUserContentImages(userId: string, limit: number = 50): Promise<ContentImage[]> {
-  return db
-    .select()
-    .from(contentImages)
-    .where(eq(contentImages.userId, userId))
-    .orderBy(desc(contentImages.createdAt))
-    .limit(limit);
-}
+// async getUserContentImages(userId: string, limit: number = 50): Promise<ContentImage[]> {
+//   return db
+//     .select()
+//     .from(contentImages)
+//     .where(eq(contentImages.userId, userId))
+//     .orderBy(desc(contentImages.createdAt))
+//     .limit(limit);
+// }
 
 // Delete content images (cascade when content is deleted)
 async deleteContentImages(contentId: string): Promise<void> {
-  await this.db.delete(contentImages).where(eq(contentImages.contentId, contentId));
+  await db.delete(contentImages).where(eq(contentImages.contentId, contentId));
 }
 
 // Get image usage statistics for a user
@@ -495,7 +487,7 @@ async getUserImageStats(userId: string): Promise<{
   thisMonth.setDate(1);
   thisMonth.setHours(0, 0, 0, 0);
 
-  const [allTimeStats] = await this.db
+  const [allTimeStats] = await db
     .select({
       totalImages: count(),
       totalCostCents: sum(contentImages.costCents)
@@ -503,7 +495,7 @@ async getUserImageStats(userId: string): Promise<{
     .from(contentImages)
     .where(eq(contentImages.userId, userId));
 
-  const [monthlyStats] = await this.db
+  const [monthlyStats] = await db
     .select({
       imagesThisMonth: count(),
       costThisMonthCents: sum(contentImages.costCents)
@@ -522,6 +514,43 @@ async getUserImageStats(userId: string): Promise<{
     imagesThisMonth: Number(monthlyStats.imagesThisMonth) || 0,
     costThisMonthCents: Number(monthlyStats.costThisMonthCents) || 0
   };
+}
+
+async getUserContentImages(userId: string, filters?: {
+  websiteId?: string;
+  contentId?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<ContentImage[]> {
+  let query = db
+    .select()
+    .from(contentImages)
+    .where(eq(contentImages.userId, userId));
+  
+  if (filters?.websiteId) {
+    query = query.where(eq(contentImages.websiteId, filters.websiteId));
+  }
+  
+  if (filters?.contentId) {
+    query = query.where(eq(contentImages.contentId, filters.contentId));
+  }
+  
+  return query
+    .orderBy(desc(contentImages.createdAt))
+    .limit(filters?.limit || 50)
+    .offset(filters?.offset || 0);
+}
+
+async createContentImage(data: InsertContentImage & { userId: string }): Promise<ContentImage> {
+  const imageRecord = {
+    id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    ...data,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+  
+  const [image] = await db.insert(contentImages).values(imageRecord).returning();
+  return image;
 }
 
   // ===============================
@@ -1966,108 +1995,108 @@ async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Pro
 
 
 
-async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Promise<AutoSchedule> {
-    try {
-      // Manually generate the UUID
-      const scheduleData = {
-        id: randomUUID(), // Generate UUID here
-        userId: schedule.userId,
-        websiteId: schedule.websiteId,
-        name: schedule.name,
-        frequency: schedule.frequency,
-        timeOfDay: schedule.timeOfDay,
-        customDays: schedule.customDays || [],
-        topics: schedule.topics || [],
-        keywords: schedule.keywords || null,
-        tone: schedule.tone || 'professional',
-        wordCount: schedule.wordCount || 800,
-        brandVoice: schedule.brandVoice || null,
-        targetAudience: schedule.targetAudience || null,
-        eatCompliance: schedule.eatCompliance || false,
-        aiProvider: schedule.aiProvider || 'openai',
-        includeImages: schedule.includeImages || false,
-        imageCount: schedule.imageCount || 1,
-        imageStyle: schedule.imageStyle || 'natural',
-        seoOptimized: schedule.seoOptimized !== false,
-        autoPublish: schedule.autoPublish || false,
-        publishDelay: schedule.publishDelay || 0,
-        topicRotation: schedule.topicRotation || 'random',
-        nextTopicIndex: schedule.nextTopicIndex || 0,
-        maxDailyCost: schedule.maxDailyCost || 5.00,
-        maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
-        costToday: schedule.costToday || 0,
-        postsThisMonth: schedule.postsThisMonth || 0,
-        lastRun: schedule.lastRun || null,
-        isActive: schedule.isActive !== false,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
+// async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Promise<AutoSchedule> {
+//     try {
+//       // Manually generate the UUID
+//       const scheduleData = {
+//         id: randomUUID(), // Generate UUID here
+//         userId: schedule.userId,
+//         websiteId: schedule.websiteId,
+//         name: schedule.name,
+//         frequency: schedule.frequency,
+//         timeOfDay: schedule.timeOfDay,
+//         customDays: schedule.customDays || [],
+//         topics: schedule.topics || [],
+//         keywords: schedule.keywords || null,
+//         tone: schedule.tone || 'professional',
+//         wordCount: schedule.wordCount || 800,
+//         brandVoice: schedule.brandVoice || null,
+//         targetAudience: schedule.targetAudience || null,
+//         eatCompliance: schedule.eatCompliance || false,
+//         aiProvider: schedule.aiProvider || 'openai',
+//         includeImages: schedule.includeImages || false,
+//         imageCount: schedule.imageCount || 1,
+//         imageStyle: schedule.imageStyle || 'natural',
+//         seoOptimized: schedule.seoOptimized !== false,
+//         autoPublish: schedule.autoPublish || false,
+//         publishDelay: schedule.publishDelay || 0,
+//         topicRotation: schedule.topicRotation || 'random',
+//         nextTopicIndex: schedule.nextTopicIndex || 0,
+//         maxDailyCost: schedule.maxDailyCost || 5.00,
+//         maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
+//         costToday: schedule.costToday || 0,
+//         postsThisMonth: schedule.postsThisMonth || 0,
+//         lastRun: schedule.lastRun || null,
+//         isActive: schedule.isActive !== false,
+//         createdAt: new Date(),
+//         updatedAt: new Date()
+//       };
 
-      const [newSchedule] = await db
-        .insert(autoSchedules)
-        .values(scheduleData)
-        .returning();
+//       const [newSchedule] = await db
+//         .insert(autoSchedules)
+//         .values(scheduleData)
+//         .returning();
       
-      console.log('Auto-schedule created successfully:', newSchedule.id);
-      return newSchedule;
-    } catch (error) {
-      console.error('Error creating auto-schedule:', error);
-      throw error;
-    }
-  }
+//       console.log('Auto-schedule created successfully:', newSchedule.id);
+//       return newSchedule;
+//     } catch (error) {
+//       console.error('Error creating auto-schedule:', error);
+//       throw error;
+//     }
+//   }
 
-  async getAutoSchedule(scheduleId: string): Promise<AutoSchedule | undefined> {
-    try {
-      const [schedule] = await db
-        .select()
-        .from(autoSchedules)
-        .where(eq(autoSchedules.id, scheduleId));
+//   async getAutoSchedule(scheduleId: string): Promise<AutoSchedule | undefined> {
+//     try {
+//       const [schedule] = await db
+//         .select()
+//         .from(autoSchedules)
+//         .where(eq(autoSchedules.id, scheduleId));
       
-      return schedule;
-    } catch (error) {
-      console.error('Error fetching auto-schedule:', error);
-      return undefined;
-    }
-  }
+//       return schedule;
+//     } catch (error) {
+//       console.error('Error fetching auto-schedule:', error);
+//       return undefined;
+//     }
+//   }
 
-  async deleteAutoSchedule(scheduleId: string): Promise<boolean> {
-    try {
-      // Soft delete
-      await db
-        .update(autoSchedules)
-        .set({ 
-          deletedAt: new Date(),
-          isActive: false,
-          updatedAt: new Date()
-        })
-        .where(eq(autoSchedules.id, scheduleId));
+//   async deleteAutoSchedule(scheduleId: string): Promise<boolean> {
+//     try {
+//       // Soft delete
+//       await db
+//         .update(autoSchedules)
+//         .set({ 
+//           deletedAt: new Date(),
+//           isActive: false,
+//           updatedAt: new Date()
+//         })
+//         .where(eq(autoSchedules.id, scheduleId));
       
-      return true;
-    } catch (error) {
-      console.error('Error deleting auto-schedule:', error);
-      return false;
-    }
-  }
+//       return true;
+//     } catch (error) {
+//       console.error('Error deleting auto-schedule:', error);
+//       return false;
+//     }
+//   }
 
-  async getUserAutoSchedules(userId: string): Promise<AutoSchedule[]> {
-    try {
-      const schedules = await db
-        .select()
-        .from(autoSchedules)
-        .where(
-          and(
-            eq(autoSchedules.userId, userId),
-            isNull(autoSchedules.deletedAt)
-          )
-        )
-        .orderBy(desc(autoSchedules.createdAt));
+//   async getUserAutoSchedules(userId: string): Promise<AutoSchedule[]> {
+//     try {
+//       const schedules = await db
+//         .select()
+//         .from(autoSchedules)
+//         .where(
+//           and(
+//             eq(autoSchedules.userId, userId),
+//             isNull(autoSchedules.deletedAt)
+//           )
+//         )
+//         .orderBy(desc(autoSchedules.createdAt));
       
-      return schedules;
-    } catch (error) {
-      console.error('Error fetching user auto-schedules:', error);
-      return [];
-    }
-  }
+//       return schedules;
+//     } catch (error) {
+//       console.error('Error fetching user auto-schedules:', error);
+//       return [];
+//     }
+//   }
 
   // ===============================
   // SEO ISSUE TRACKING METHODS
@@ -2464,6 +2493,32 @@ async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Pro
     }
   }
 
+
+  async updateTrackedSeoIssue(
+  issueId: string,
+  updates: {
+    issueDescription?: string;
+    severity?: 'critical' | 'warning' | 'info';
+    currentValue?: string;
+    lastDetected?: Date;
+  }
+): Promise<void> {
+  try {
+    await this.db
+      .update(seoIssueTracking)
+      .set({
+        issueDescription: updates.issueDescription,
+        severity: updates.severity,
+        currentValue: updates.currentValue,
+        lastDetected: updates.lastDetected || new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(seoIssueTracking.id, issueId));
+  } catch (error) {
+    console.error('Error updating tracked SEO issue:', error);
+    throw error;
+  }
+}
   
   // Note: createContentSchedule and createActivityLog already exist in your code
   

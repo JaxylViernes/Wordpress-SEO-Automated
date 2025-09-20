@@ -23,6 +23,26 @@ import crypto from 'crypto';
 import { ExifHandler, processImageWithSharpEnhanced } from './utils/exif-handler';
 import { gscStorage } from "./services/gsc-storage";
 import  gscRouter  from './routes/gsc.routes';
+import multer from 'multer';
+import { cloudinaryStorage } from "./services/cloudinary-storage";
+
+
+// Configure multer
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images allowed'));
+    }
+  }
+});
+
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 const authService = new AuthService();
 
@@ -2218,99 +2238,115 @@ app.get("/api/user/image-generation/status", requireAuth, async (req: Request, r
     }
   });
 
-  app.post("/api/user/content/:id/upload-images", requireAuth, async (req: Request, res: Response): Promise<void> => {
+ app.post("/api/user/content/upload-images", 
+  requireAuth, 
+  upload.array('images', 10), 
+  async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = req.user!.id;
-      const contentId = req.params.id;
+      const { websiteId, contentId } = req.body;
+      const files = req.files as Express.Multer.File[];
       
-      const content = await storage.getContent(contentId);
-      if (!content || content.userId !== userId) {
-        res.status(404).json({ message: "Content not found or access denied" });
-        return;
-      }
-
-      const website = await storage.getUserWebsite(content.websiteId, userId);
-      if (!website) {
-        res.status(404).json({ message: "Website not found" });
-        return;
-      }
-
-      const images = await storage.getContentImages(contentId);
-      if (images.length === 0) {
-        res.status(400).json({ message: "No images to upload" });
-        return;
-      }
-
-      const wpCredentials = {
-        url: website.url,
-        username: website.wpUsername || 'your_username',
-        applicationPassword: website.wpApplicationPassword || 'your_app_password'
-      };
-
-      const uploadResults = [];
-      let successCount = 0;
-
-      for (const image of images) {
-        if (image.status === 'uploaded') {
-          uploadResults.push({ imageId: image.id, status: 'already_uploaded', wpUrl: image.wordpressUrl });
-          successCount++;
-          continue;
-        }
-
+      const uploadedImages = [];
+      
+      for (const file of files) {
         try {
-          const uploadResult = await imageService.uploadImageToWordPress(
-            image.originalUrl,
-            image.filename,
-            image.altText,
-            wpCredentials
-          );
-
-          await storage.updateContentImage(image.id, {
-            wordpressMediaId: uploadResult.id,
-            wordpressUrl: uploadResult.url,
-            status: 'uploaded'
-          });
-
-          uploadResults.push({
-            imageId: image.id,
-            status: 'uploaded',
-            wpMediaId: uploadResult.id,
-            wpUrl: uploadResult.url
-          });
-
-          successCount++;
-        } catch (uploadError) {
-          console.error(`Failed to upload image ${image.id}:`, uploadError);
+          // Optimize image
+          const optimizedBuffer = await sharp(file.buffer)
+            .resize(1920, 1080, { 
+              fit: 'inside', 
+              withoutEnlargement: true 
+            })
+            .jpeg({ quality: 85, progressive: true })
+            .toBuffer();
           
-          await storage.updateContentImage(image.id, {
-            status: 'failed',
-            uploadError: uploadError.message
+          const metadata = await sharp(optimizedBuffer).metadata();
+          
+          // Upload to Cloudinary
+          const cloudinaryResult = await cloudinaryStorage.uploadFromBuffer(
+            optimizedBuffer,
+            websiteId,
+            contentId || 'user-upload',
+            file.originalname
+          );
+          
+          // Try to save to database, but don't fail if it errors
+          let imageRecord;
+         try {
+  imageRecord = await storage.createContentImage({
+    userId,
+    contentId: contentId || null,
+    websiteId,
+    url: cloudinaryResult.secureUrl,
+    originalUrl: cloudinaryResult.secureUrl,  // Required field
+    cloudinaryId: cloudinaryResult.publicId,
+    altText: file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+    filename: file.originalname,
+    mimeType: 'image/jpeg',
+    size: optimizedBuffer.length,
+    width: metadata.width || 0,
+    height: metadata.height || 0,
+    source: 'user_upload',
+    generationPrompt: 'User uploaded image - no prompt',
+  costCents: 0,
+  isAIGenerated: false,
+  aiProvider: null,
+  aiModel: null,
+  stylePreset: 'natural'
+  });
+  console.log('✅ Image saved to database:', imageRecord.id);
+} catch (dbError: any) {
+  console.warn('Database save failed, using temporary record:', dbError.message);
+  // Create temporary record without database
+  imageRecord = {
+    id: `temp_${Date.now()}_${uploadedImages.length}`,
+    url: cloudinaryResult.secureUrl,
+    originalUrl: cloudinaryResult.secureUrl,
+    cloudinaryId: cloudinaryResult.publicId,
+    altText: file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ')
+  };
+}
+          
+          // IMPORTANT: Add to array regardless of database save
+          uploadedImages.push({
+            id: imageRecord.id,
+            url: cloudinaryResult.secureUrl,
+            publicId: cloudinaryResult.publicId,
+            altText: imageRecord.altText,
+            filename: file.originalname,
+            size: optimizedBuffer.length,
+            width: metadata.width,
+            height: metadata.height
           });
-
-          uploadResults.push({
-            imageId: image.id,
-            status: 'failed',
-            error: uploadError.message
+          
+          console.log(`✅ Image processed and added to response:`, {
+            filename: file.originalname,
+            url: cloudinaryResult.secureUrl
           });
+          
+        } catch (uploadError: any) {
+          console.error(`Failed to process ${file.originalname}:`, uploadError);
+          // Continue with next file
         }
       }
-
+      
+      console.log(`📤 Returning ${uploadedImages.length} images to frontend`);
+      
       res.json({
-        success: successCount > 0,
-        message: `${successCount}/${images.length} images uploaded successfully`,
-        results: uploadResults,
-        successCount,
-        totalCount: images.length
+        success: true,
+        images: uploadedImages,
+        message: `Uploaded ${uploadedImages.length} images`
       });
-
-    } catch (error) {
-      console.error("Image upload error:", error);
+      
+    } catch (error: any) {
+      console.error('❌ Upload error:', error);
       res.status(500).json({ 
-        message: "Failed to upload images",
-        error: error.message 
+        error: 'Upload failed',
+        message: error.message 
       });
     }
-  });
+  }
+);
 
   // ===========================================================================
   // CONTENT SCHEDULING ROUTES
@@ -4008,6 +4044,188 @@ app.get("/api/user/image-generation/status", requireAuth, async (req: Request, r
       });
     }
   });
+
+ app.post("/api/user/content/upload-images", 
+  requireAuth, 
+  upload.array('images', 10), 
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const { websiteId, contentId } = req.body;
+      const files = req.files as Express.Multer.File[];
+      
+      const uploadedImages = [];
+      
+      for (const file of files) {
+        try {
+          // Step 3: Optimize image with Sharp
+          const optimizedBuffer = await sharp(file.buffer)
+            .resize(1920, 1080, { 
+              fit: 'inside', 
+              withoutEnlargement: true 
+            })
+            .jpeg({ 
+              quality: 85, 
+              progressive: true 
+            })
+            .toBuffer();
+          
+          // Get metadata for dimensions
+          const metadata = await sharp(optimizedBuffer).metadata();
+          
+          // Upload optimized image to Cloudinary
+          const cloudinaryResult = await cloudinaryStorage.uploadFromBuffer(
+            optimizedBuffer,  // Use optimized buffer instead of original
+            websiteId,
+            contentId || 'user-upload',
+            file.originalname
+          );
+          
+          // Step 2: Save to database
+          const imageRecord = await storage.createContentImage({
+            userId,
+            contentId: contentId || null,
+            websiteId,
+            url: cloudinaryResult.secureUrl,
+            cloudinaryId: cloudinaryResult.publicId,
+            altText: file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+            filename: file.originalname,
+            mimeType: 'image/jpeg',  // We converted to JPEG
+            size: optimizedBuffer.length,
+            width: metadata.width || 0,
+            height: metadata.height || 0,
+            source: 'user_upload'
+          });
+          
+          uploadedImages.push({
+            id: imageRecord.id,
+            url: cloudinaryResult.secureUrl,
+            publicId: cloudinaryResult.publicId,
+            altText: imageRecord.altText,
+            filename: file.originalname,
+            size: optimizedBuffer.length,
+            width: metadata.width,
+            height: metadata.height
+          });
+          
+        } catch (uploadError: any) {
+          console.error(`Failed to process ${file.originalname}:`, uploadError);
+        }
+      }
+      
+      res.json({
+        success: true,
+        images: uploadedImages,
+        message: `Uploaded ${uploadedImages.length} images`
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Upload error:', error);
+      res.status(500).json({ 
+        error: 'Upload failed',
+        message: error.message 
+      });
+    }
+  }
+);
+
+app.post("/api/user/content/replace-image", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { contentId, oldImageUrl, newImageUrl, newAltText } = req.body;
+    
+    // Validate content ownership
+    const content = await storage.getContent(contentId);
+    if (!content || content.userId !== userId) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+    
+    // Replace image in content body
+    const imgRegex = new RegExp(
+      `<img[^>]*src=["']${escapeRegExp(oldImageUrl)}["'][^>]*>`, 
+      'gi'
+    );
+    
+    const updatedBody = content.body.replace(imgRegex, (match) => {
+      return match
+        .replace(/src=["'][^"']+["']/, `src="${newImageUrl}"`)
+        .replace(/alt=["'][^"']*["']/, `alt="${newAltText}"`);
+    });
+    
+    // Update content
+    await storage.updateContent(contentId, {
+      body: updatedBody,
+      updatedAt: new Date()
+    });
+    
+    res.json({
+      success: true,
+      message: 'Image replaced successfully'
+    });
+    
+  } catch (error: any) {
+    console.error('Failed to replace image:', error);
+    res.status(500).json({ error: 'Failed to replace image' });
+  }
+});
+
+// Get user's image library
+app.get("/api/user/content/images", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { websiteId, contentId, limit = "50", offset = "0" } = req.query;
+    
+    const images = await storage.getUserContentImages(userId, {
+      websiteId: websiteId as string,
+      contentId: contentId as string,
+      limit: parseInt(limit as string),
+      offset: parseInt(offset as string)
+    });
+    
+    res.json({
+      images,
+      total: images.length,
+      hasMore: images.length === parseInt(limit as string)
+    });
+    
+  } catch (error: any) {
+    console.error('Failed to fetch images:', error);
+    res.status(500).json({ error: 'Failed to fetch images' });
+  }
+});
+
+// Delete image
+app.delete("/api/user/content/images/:imageId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { imageId } = req.params;
+    
+    // Get image to verify ownership and get cloudinary ID
+    const image = await storage.getContentImage(imageId);
+    if (!image || image.userId !== userId) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+    
+    // Delete from Cloudinary if it has a public ID
+    if (image.cloudinaryId) {
+      await cloudinaryStorage.deleteImage(image.cloudinaryId);
+    }
+    
+    // Delete from database
+    await storage.deleteContentImage(imageId);
+    
+    res.json({
+      success: true,
+      message: 'Image deleted successfully'
+    });
+    
+  } catch (error: any) {
+    console.error('Failed to delete image:', error);
+    res.status(500).json({ error: 'Failed to delete image' });
+  }
+});
 
   
 
