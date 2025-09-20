@@ -429,41 +429,6 @@ const handleCrawlWebsite = async (): Promise<void> => {
 };
 
 
-
-  // const handleCrawlWebsite = async () => {
-  //   if (!crawlUrl) {
-  //     addToast("Please enter a URL to crawl", "warning");
-  //     return;
-  //   }
-
-  //   setIsCrawling(true);
-  //   setCrawlProgress({ current: 0, total: 0, currentUrl: crawlUrl });
-
-  //   try {
-  //     // Use actual API call
-  //     const result = await api.crawlWebsiteImages(crawlUrl, crawlOptions);
-  //     const crawledData = result.images || [];
-      
-  //     setCrawledImages(prev => [...prev, ...crawledData]);
-  //     setImages(prev => [...prev, ...crawledData]);
-      
-  //     addToast(`Crawled ${crawledData.length} images from ${new URL(crawlUrl).hostname}`, "success");
-      
-  //     if (result.stats) {
-  //       console.log('Crawl stats:', result.stats);
-  //     }
-      
-  //     setCrawlUrl("");
-  //     setActiveTab('existing');
-      
-  //   } catch (error: any) {
-  //     addToast(error.message || "Failed to crawl website", "error");
-  //   } finally {
-  //     setIsCrawling(false);
-  //     setCrawlProgress(null);
-  //   }
-  // };
-
   const handleSelectAll = () => {
     if (selectedImages.length === filteredImages.length) {
       setSelectedImages([]);

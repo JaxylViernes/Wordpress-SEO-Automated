@@ -22,6 +22,7 @@ import { JSDOM } from 'jsdom';
 import crypto from 'crypto';
 import { ExifHandler, processImageWithSharpEnhanced } from './utils/exif-handler';
 import { gscStorage } from "./services/gsc-storage";
+import  gscRouter  from './routes/gsc.routes';
 import multer from 'multer';
 import { cloudinaryStorage } from "./services/cloudinary-storage";
 
@@ -95,32 +96,6 @@ const requireAuth = async (req: Request, res: Response, next: NextFunction): Pro
     res.status(500).json({ message: "Authentication error" });
   }
 };
-
-// // =============================================================================
-// // GOOGLE SEARCH CONSOLE CONFIGURATION
-// // =============================================================================
-
-// const gscOAuth2Client = new google.auth.OAuth2(
-//   process.env.GOOGLE_CLIENT_ID,
-//   process.env.GOOGLE_CLIENT_SECRET,
-//   process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-// );
-
-// console.log('OAuth2 Client Configuration:', {
-//   clientId: process.env.GOOGLE_CLIENT_ID ? 'Set' : 'MISSING',
-//   clientSecret: process.env.GOOGLE_CLIENT_SECRET ? 'Set' : 'MISSING',
-//   redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-// });
-
-// const GSC_SCOPES = [
-//   'https://www.googleapis.com/auth/webmasters',
-//   'https://www.googleapis.com/auth/indexing',
-//   'https://www.googleapis.com/auth/siteverification',
-//   'https://www.googleapis.com/auth/userinfo.email',
-//   'https://www.googleapis.com/auth/userinfo.profile'
-// ];
-
-// const gscUserTokens = new Map<string, any>();
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -3730,320 +3705,320 @@ app.get("/api/user/image-generation/status", requireAuth, async (req: Request, r
   });
 
   app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = req.user!.id;
-      const { imageIds, options } = req.body;
+  try {
+    const userId = req.user!.id;
+    const { imageIds, options, imageUrls } = req.body; // Accept imageUrls
+    
+    console.log(`🔄 Batch processing ${imageIds.length} images for user ${userId}`);
+    console.log('Processing options:', options);
+    console.log('Image URLs provided:', Object.keys(imageUrls || {}).length);
+    
+    if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
+      res.status(400).json({ 
+        error: 'Invalid request',
+        message: 'No images selected' 
+      });
+      return;
+    }
+    
+    if (!options || !options.action) {
+      res.status(400).json({ 
+        error: 'Invalid request',
+        message: 'Processing options required' 
+      });
+      return;
+    }
+    
+    const results = {
+      success: [] as any[],
+      failed: [] as string[],
+      errors: [] as any[]
+    };
+    
+    const websites = await storage.getUserWebsites(userId);
+    const websiteMap = new Map(websites.map(w => [w.id, w]));
+    
+    for (const imageId of imageIds) {
+      const startTime = Date.now();
       
-      console.log(`🔄 Batch processing ${imageIds.length} images for user ${userId}`);
-      console.log('Processing options:', options);
-      
-      if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
-        res.status(400).json({ 
-          error: 'Invalid request',
-          message: 'No images selected' 
-        });
-        return;
-      }
-      
-      if (!options || !options.action) {
-        res.status(400).json({ 
-          error: 'Invalid request',
-          message: 'Processing options required' 
-        });
-        return;
-      }
-      
-      const results = {
-        success: [] as any[],
-        failed: [] as string[],
-        errors: [] as any[]
-      };
-      
-      const websites = await storage.getUserWebsites(userId);
-      const websiteMap = new Map(websites.map(w => [w.id, w]));
-      
-      for (const imageId of imageIds) {
-        const startTime = Date.now();
+      try {
+        console.log(`Processing image: ${imageId}`);
         
-        try {
-          console.log(`Processing image: ${imageId}`);
+        const parts = imageId.split('_');
+        
+        // Handle crawled images
+        if (parts[0] === 'crawled' || imageId.startsWith('crawled')) {
+          console.log(`  Processing crawled image: ${imageId}`);
           
-          const parts = imageId.split('_');
+          // Get URL from the imageUrls mapping
+          const imageUrl = imageUrls?.[imageId];
           
-          if (parts[0] === 'wp' || parts[0] === 'media') {
-            const websiteId = parts[1];
-            const website = websiteMap.get(websiteId);
-            
-            if (!website || !website.url) {
-              throw new Error('Website not found or URL not configured');
-            }
-            
-            const baseUrl = website.url.replace(/\/$/, '');
-            let imageUrl: string | null = null;
-            let mediaId: string | null = null;
-            let imageName: string = 'processed-image.jpg';
-            
-            if (parts[0] === 'media') {
-              mediaId = parts[2];
-              const mediaUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
-              
-              const response = await fetch(mediaUrl);
-              if (response.ok) {
-                const media = await response.json();
-                imageUrl = media.source_url;
-                imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
-              }
-            } else if (parts[0] === 'wp') {
-              const postId = parts[2];
-              const postUrl = `${baseUrl}/wp-json/wp/v2/posts/${postId}?_embed`;
-              
-              const headers: any = {};
-              if (website.wpApplicationPassword) {
-                const username = website.wpUsername || website.wpApplicationName || 'admin';
-                const authString = `${username}:${website.wpApplicationPassword}`;
-                headers['Authorization'] = `Basic ${Buffer.from(authString).toString('base64')}`;
-              }
-              
-              const response = await fetch(postUrl, { headers });
-              if (response.ok) {
-                const post = await response.json();
-                
-                if (parts[3] === 'featured' && post._embedded?.['wp:featuredmedia']?.[0]) {
-                  const media = post._embedded['wp:featuredmedia'][0];
-                  imageUrl = media.source_url;
-                  mediaId = media.id;
-                  imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
-                } else {
-                  const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
-                  const matches = [...(post.content?.rendered || '').matchAll(imgRegex)];
-                  const imageIndex = parseInt(parts[3] || '0');
-                  
-                  if (matches[imageIndex]) {
-                    imageUrl = matches[imageIndex][1];
-                    
-                    const authString = website.wpApplicationPassword && website.wpUsername
-                      ? `Basic ${Buffer.from(`${website.wpUsername}:${website.wpApplicationPassword}`).toString('base64')}`
-                      : undefined;
-                    
-                    mediaId = await findMediaIdFromUrl(baseUrl, imageUrl, authString);
-                    
-                    if (mediaId) {
-                      console.log(`  Found media ID ${mediaId} for content image`);
-                      const mediaResponse = await fetch(`${baseUrl}/wp-json/wp/v2/media/${mediaId}`);
-                      if (mediaResponse.ok) {
-                        const media = await mediaResponse.json();
-                        imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
-                      }
-                    } else {
-                      console.log(`  Could not find media ID for content image`);
-                    }
-                  }
-                }
-              }
-            }
-            
-            if (imageUrl) {
-              console.log(`  Downloading image from: ${imageUrl}`);
-              const imageResponse = await fetch(imageUrl);
-              
-              if (!imageResponse.ok) {
-                throw new Error(`Failed to download image: ${imageResponse.statusText}`);
-              }
-              
-              const arrayBuffer = await imageResponse.arrayBuffer();
-              const imageBuffer = Buffer.from(arrayBuffer);
-              
-              const processedBuffer = await processImageWithSharp(imageBuffer, options);
-              
-              let uploadSuccess = false;
-              let newImageUrl = imageUrl;
-              
-              if (mediaId && website.wpApplicationPassword && website.wpUsername) {
-                console.log(`  Uploading processed image back to WordPress (Media ID: ${mediaId})`);
-                
-                try {
-                  const username = website.wpUsername || website.wpApplicationName || 'admin';
-                  const authString = `${username}:${website.wpApplicationPassword}`;
-                  const authHeader = `Basic ${Buffer.from(authString).toString('base64')}`;
-                  
-                  const form = new FormData();
-                  form.append('file', processedBuffer, {
-                    filename: imageName,
-                    contentType: 'image/jpeg'
-                  });
-                  
-                  const uploadUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
-                  console.log(`  Step 1: Uploading file to: ${uploadUrl}`);
-                  
-                  const uploadResponse = await fetch(uploadUrl, {
-                    method: 'POST',
-                    headers: {
-                      'Authorization': authHeader,
-                      ...form.getHeaders()
-                    },
-                    body: form as any
-                  });
-                  
-                  if (uploadResponse.ok) {
-                    const updatedMedia = await uploadResponse.json();
-                    newImageUrl = updatedMedia.source_url || updatedMedia.guid?.rendered || imageUrl;
-                    
-                    console.log(`  ✅ File uploaded successfully`);
-                    
-                    if (options.action !== 'strip') {
-                      console.log(`  Step 2: Updating metadata fields...`);
-                      
-                      await new Promise(resolve => setTimeout(resolve, 500));
-                      
-                      const metadataPayload = {
-                        alt_text: options.author ? `Image by ${options.author}` : '',
-                        caption: options.copyright ? `<p>${options.copyright}</p>` : '',
-                        description: `<p>Processed by AI Content Manager on ${new Date().toLocaleDateString()}.<br>Copyright: ${options.copyright || 'N/A'}<br>Author: ${options.author || 'N/A'}</p>`,
-                        title: imageName.replace(/-processed\.jpg$/, '').replace(/-/g, ' ')
-                      };
-                      
-                      console.log(`  Sending metadata:`, {
-                        alt_text: metadataPayload.alt_text,
-                        caption: options.copyright
-                      });
-                      
-                      const metadataResponse = await fetch(uploadUrl, {
-                        method: 'POST',
-                        headers: {
-                          'Authorization': authHeader,
-                          'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(metadataPayload)
-                      });
-                      
-                      if (metadataResponse.ok) {
-                        const metadataResult = await metadataResponse.json();
-                        console.log(`  ✅ Metadata fields updated!`);
-                        
-                        if (metadataResult.alt_text) {
-                          console.log(`  ✅ Alt text saved: "${metadataResult.alt_text}"`);
-                        }
-                        if (metadataResult.caption?.rendered) {
-                          console.log(`  ✅ Caption saved: "${metadataResult.caption.rendered}"`);
-                        }
-                      } else {
-                        const errorText = await metadataResponse.text();
-                        console.error(`  ⚠️ Metadata update failed: ${metadataResponse.status}`);
-                        console.error(`  Error details: ${errorText}`);
-                        
-                        console.log(`  Trying alternative field format...`);
-                        
-                        const altPayload = {
-                          meta: {
-                            alt_text: options.author ? `Image by ${options.author}` : ''
-                          },
-                          caption: {
-                            raw: options.copyright || '',
-                            rendered: options.copyright ? `<p>${options.copyright}</p>` : ''
-                          },
-                          description: {
-                            raw: `Processed on ${new Date().toLocaleDateString()}`,
-                            rendered: `<p>Processed on ${new Date().toLocaleDateString()}</p>`
-                          }
-                        };
-                        
-                        const altResponse = await fetch(uploadUrl, {
-                          method: 'PATCH',
-                          headers: {
-                            'Authorization': authHeader,
-                            'Content-Type': 'application/json'
-                          },
-                          body: JSON.stringify(altPayload)
-                        });
-                        
-                        if (altResponse.ok) {
-                          console.log(`  ✅ Metadata updated with alternative format`);
-                        } else {
-                          console.log(`  ⚠️ Alternative format also failed`);
-                        }
-                      }
-                    }
-                    
-                    uploadSuccess = true;
-                    console.log(`  ✅ WordPress update complete!`);
-                    console.log(`  New URL: ${newImageUrl}`);
-                    
-                  } else {
-                    const errorText = await uploadResponse.text();
-                    console.error(`  ⚠️ WordPress upload failed: ${uploadResponse.status} - ${errorText}`);
-                  }
-                } catch (uploadError: any) {
-                  console.error(`  ⚠️ Upload error: ${uploadError.message}`);
-                }
-              } else if (!mediaId) {
-                console.log(`  ℹ️ No media ID - cannot update WordPress (content images need manual update)`);
-              } else if (!website.wpApplicationPassword || !website.wpUsername) {
-                console.log(`  ⚠️ WordPress credentials not configured - cannot upload`);
-              }
-              
-              results.success.push({
-                imageId,
-                processingTime: `${Date.now() - startTime}ms`,
-                message: uploadSuccess 
-                  ? 'Image processed and uploaded to WordPress' 
-                  : 'Image processed successfully (WordPress update requires manual upload)',
-                size: processedBuffer.length,
-                uploaded: uploadSuccess,
-                wordpressUrl: newImageUrl
-              });
-            } else {
-              throw new Error('Could not determine image URL');
-            }
-          } else {
-            throw new Error(`Unknown image type: ${parts[0]}`);
+          if (!imageUrl) {
+            throw new Error(`No URL provided for crawled image: ${imageId}`);
           }
           
-        } catch (error: any) {
-          console.error(`Failed to process ${imageId}:`, error.message);
-          results.failed.push(imageId);
-          results.errors.push({
-            imageId,
-            message: error.message || 'Unknown error'
-          });
+          console.log(`  Downloading crawled image from: ${imageUrl}`);
+          
+          try {
+            // Download the image
+            const imageResponse = await fetch(imageUrl);
+            
+            if (!imageResponse.ok) {
+              throw new Error(`Failed to download image: ${imageResponse.status} ${imageResponse.statusText}`);
+            }
+            
+            const arrayBuffer = await imageResponse.arrayBuffer();
+            const imageBuffer = Buffer.from(arrayBuffer);
+            
+            // Process the image with Sharp according to options
+            const processedBuffer = await processImageWithSharp(imageBuffer, options);
+            
+            // For crawled images, we can't upload back to WordPress
+            // but we've successfully processed the image
+            results.success.push({
+              imageId,
+              processingTime: `${Date.now() - startTime}ms`,
+              message: 'Crawled image processed successfully (download processed image for use)',
+              size: processedBuffer.length,
+              uploaded: false,
+              originalUrl: imageUrl,
+              // You could optionally return base64 data for download
+              // processedData: `data:image/jpeg;base64,${processedBuffer.toString('base64')}`
+            });
+            
+          } catch (downloadError: any) {
+            throw new Error(`Failed to process crawled image: ${downloadError.message}`);
+          }
+          
+        } else if (parts[0] === 'wp' || parts[0] === 'media') {
+          // Existing WordPress image handling code
+          const websiteId = parts[1];
+          const website = websiteMap.get(websiteId);
+          
+          if (!website || !website.url) {
+            throw new Error('Website not found or URL not configured');
+          }
+          
+          const baseUrl = website.url.replace(/\/$/, '');
+          let imageUrl: string | null = null;
+          let mediaId: string | null = null;
+          let imageName: string = 'processed-image.jpg';
+          
+          if (parts[0] === 'media') {
+            mediaId = parts[2];
+            const mediaUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
+            
+            const response = await fetch(mediaUrl);
+            if (response.ok) {
+              const media = await response.json();
+              imageUrl = media.source_url;
+              imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
+            }
+          } else if (parts[0] === 'wp') {
+            const postId = parts[2];
+            const postUrl = `${baseUrl}/wp-json/wp/v2/posts/${postId}?_embed`;
+            
+            const headers: any = {};
+            if (website.wpApplicationPassword) {
+              const username = website.wpUsername || website.wpApplicationName || 'admin';
+              const authString = `${username}:${website.wpApplicationPassword}`;
+              headers['Authorization'] = `Basic ${Buffer.from(authString).toString('base64')}`;
+            }
+            
+            const response = await fetch(postUrl, { headers });
+            if (response.ok) {
+              const post = await response.json();
+              
+              if (parts[3] === 'featured' && post._embedded?.['wp:featuredmedia']?.[0]) {
+                const media = post._embedded['wp:featuredmedia'][0];
+                imageUrl = media.source_url;
+                mediaId = media.id;
+                imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
+              } else {
+                const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+                const matches = [...(post.content?.rendered || '').matchAll(imgRegex)];
+                const imageIndex = parseInt(parts[3] || '0');
+                
+                if (matches[imageIndex]) {
+                  imageUrl = matches[imageIndex][1];
+                  
+                  const authString = website.wpApplicationPassword && website.wpUsername
+                    ? `Basic ${Buffer.from(`${website.wpUsername}:${website.wpApplicationPassword}`).toString('base64')}`
+                    : undefined;
+                  
+                  mediaId = await findMediaIdFromUrl(baseUrl, imageUrl, authString);
+                  
+                  if (mediaId) {
+                    console.log(`  Found media ID ${mediaId} for content image`);
+                    const mediaResponse = await fetch(`${baseUrl}/wp-json/wp/v2/media/${mediaId}`);
+                    if (mediaResponse.ok) {
+                      const media = await mediaResponse.json();
+                      imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
+                    }
+                  } else {
+                    console.log(`  Could not find media ID for content image`);
+                  }
+                }
+              }
+            }
+          }
+          
+          if (imageUrl) {
+            console.log(`  Downloading image from: ${imageUrl}`);
+            const imageResponse = await fetch(imageUrl);
+            
+            if (!imageResponse.ok) {
+              throw new Error(`Failed to download image: ${imageResponse.statusText}`);
+            }
+            
+            const arrayBuffer = await imageResponse.arrayBuffer();
+            const imageBuffer = Buffer.from(arrayBuffer);
+            
+            const processedBuffer = await processImageWithSharp(imageBuffer, options);
+            
+            let uploadSuccess = false;
+            let newImageUrl = imageUrl;
+            
+            // WordPress upload code (existing)...
+            if (mediaId && website.wpApplicationPassword && website.wpUsername) {
+              console.log(`  Uploading processed image back to WordPress (Media ID: ${mediaId})`);
+              
+              try {
+                const username = website.wpUsername || website.wpApplicationName || 'admin';
+                const authString = `${username}:${website.wpApplicationPassword}`;
+                const authHeader = `Basic ${Buffer.from(authString).toString('base64')}`;
+                
+                const form = new FormData();
+                form.append('file', processedBuffer, {
+                  filename: imageName,
+                  contentType: 'image/jpeg'
+                });
+                
+                const uploadUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
+                console.log(`  Step 1: Uploading file to: ${uploadUrl}`);
+                
+                const uploadResponse = await fetch(uploadUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': authHeader,
+                    ...form.getHeaders()
+                  },
+                  body: form as any
+                });
+                
+                if (uploadResponse.ok) {
+                  const updatedMedia = await uploadResponse.json();
+                  newImageUrl = updatedMedia.source_url || updatedMedia.guid?.rendered || imageUrl;
+                  
+                  console.log(`  ✅ File uploaded successfully`);
+                  
+                  // Metadata update code (existing)...
+                  if (options.action !== 'strip') {
+                    console.log(`  Step 2: Updating metadata fields...`);
+                    
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    const metadataPayload = {
+                      alt_text: options.author ? `Image by ${options.author}` : '',
+                      caption: options.copyright ? `<p>${options.copyright}</p>` : '',
+                      description: `<p>Processed by AI Content Manager on ${new Date().toLocaleDateString()}.<br>Copyright: ${options.copyright || 'N/A'}<br>Author: ${options.author || 'N/A'}</p>`,
+                      title: imageName.replace(/-processed\.jpg$/, '').replace(/-/g, ' ')
+                    };
+                    
+                    const metadataResponse = await fetch(uploadUrl, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': authHeader,
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify(metadataPayload)
+                    });
+                    
+                    if (metadataResponse.ok) {
+                      console.log(`  ✅ Metadata fields updated!`);
+                    } else {
+                      console.error(`  ⚠️ Metadata update failed: ${metadataResponse.status}`);
+                    }
+                  }
+                  
+                  uploadSuccess = true;
+                  console.log(`  ✅ WordPress update complete!`);
+                  
+                } else {
+                  const errorText = await uploadResponse.text();
+                  console.error(`  ⚠️ WordPress upload failed: ${uploadResponse.status} - ${errorText}`);
+                }
+              } catch (uploadError: any) {
+                console.error(`  ⚠️ Upload error: ${uploadError.message}`);
+              }
+            } else if (!mediaId) {
+              console.log(`  ℹ️ No media ID - cannot update WordPress`);
+            } else if (!website.wpApplicationPassword || !website.wpUsername) {
+              console.log(`  ⚠️ WordPress credentials not configured - cannot upload`);
+            }
+            
+            results.success.push({
+              imageId,
+              processingTime: `${Date.now() - startTime}ms`,
+              message: uploadSuccess 
+                ? 'Image processed and uploaded to WordPress' 
+                : 'Image processed successfully (WordPress update requires manual upload)',
+              size: processedBuffer.length,
+              uploaded: uploadSuccess,
+              wordpressUrl: newImageUrl
+            });
+          } else {
+            throw new Error('Could not determine image URL');
+          }
+        } else {
+          throw new Error(`Unknown image type: ${parts[0]}`);
         }
+        
+      } catch (error: any) {
+        console.error(`Failed to process ${imageId}:`, error.message);
+        results.failed.push(imageId);
+        results.errors.push({
+          imageId,
+          message: error.message || 'Unknown error'
+        });
       }
-      
-      const successCount = results.success.length;
-      const uploadedCount = results.success.filter(r => r.uploaded).length;
-      const failedCount = results.failed.length;
-      const successRate = `${Math.round((successCount / imageIds.length) * 100)}%`;
-      
-      const response = {
-        total: imageIds.length,
-        processed: successCount,
-        uploaded: uploadedCount,
-        failed: failedCount,
-        successRate,
-        processingTime: `${Date.now()}ms`,
-        results: {
-          success: results.success,
-          failed: results.failed
-        },
-        message: uploadedCount > 0 
-          ? `Processed ${successCount} images, uploaded ${uploadedCount} to WordPress`
-          : `Processed ${successCount} of ${imageIds.length} images`,
-        errors: results.errors.length > 0 ? results.errors : undefined
-      };
-      
-      console.log(`✅ Batch processing complete: ${successCount}/${imageIds.length} successful, ${uploadedCount} uploaded to WordPress`);
-      
-      res.json(response);
-      
-    } catch (error: any) {
-      console.error("⌠Failed to process images:", error);
-      res.status(500).json({ 
-        error: 'Failed to process images',
-        message: error.message,
-        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-      });
     }
-  });
-
+    
+    const successCount = results.success.length;
+    const uploadedCount = results.success.filter(r => r.uploaded).length;
+    const failedCount = results.failed.length;
+    const successRate = `${Math.round((successCount / imageIds.length) * 100)}%`;
+    
+    const response = {
+      total: imageIds.length,
+      processed: successCount,
+      uploaded: uploadedCount,
+      failed: failedCount,
+      successRate,
+      processingTime: `${Date.now()}ms`,
+      results: {
+        success: results.success,
+        failed: results.failed
+      },
+      message: uploadedCount > 0 
+        ? `Processed ${successCount} images, uploaded ${uploadedCount} to WordPress`
+        : `Processed ${successCount} of ${imageIds.length} images`,
+      errors: results.errors.length > 0 ? results.errors : undefined
+    };
+    
+    console.log(`✅ Batch processing complete: ${successCount}/${imageIds.length} successful, ${uploadedCount} uploaded to WordPress`);
+    
+    res.json(response);
+    
+  } catch (error: any) {
+    console.error("❌ Failed to process images:", error);
+    res.status(500).json({ 
+      error: 'Failed to process images',
+      message: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
   app.get("/api/images/batch-process", requireAuth, async (req: Request, res: Response): Promise<void> => {
     try {
       const { contentId } = req.query;
@@ -4255,642 +4230,10 @@ app.delete("/api/user/content/images/:imageId", requireAuth, async (req: Request
   
 
 ///=======================GOOGLE SEARCH CONSOLE==========================//
+app.use('/api/gsc', requireAuth, gscRouter);
 
-// Initialize OAuth2 client for GSC
-const gscOAuth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-);
 
-console.log('OAuth2 Client Configuration:', {
-  clientId: process.env.GOOGLE_CLIENT_ID ? 'Set' : 'MISSING',
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET ? 'Set' : 'MISSING',
-  redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-});
 
-// GSC Scopes
-const GSC_SCOPES = [
-  'https://www.googleapis.com/auth/webmasters',
-  'https://www.googleapis.com/auth/indexing',
-  'https://www.googleapis.com/auth/siteverification',
-  'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/userinfo.profile'
-];
-
-// Store user GSC tokens (temporary in-memory cache)
-const gscUserTokens = new Map<string, any>();
-
-// Get OAuth URL for GSC
-app.get("/api/gsc/auth-url", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.id;
-    console.log(`🔐 Generating GSC OAuth URL for user: ${userId}`);
-    
-    const authUrl = gscOAuth2Client.generateAuthUrl({
-      access_type: 'offline',
-      scope: GSC_SCOPES,
-      prompt: 'consent',
-      state: userId
-    });
-    
-    res.json({ authUrl });
-  } catch (error) {
-    console.error('GSC auth URL error:', error);
-    res.status(500).json({ error: 'Failed to generate auth URL' });
-  }
-});
-
-// Exchange code for tokens
-app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.id;
-    const { code } = req.body;
-    
-    console.log(`🔐 Exchanging GSC auth code for user: ${userId}`);
-    
-    if (!code) {
-      res.status(400).json({ error: 'Authorization code required' });
-      return;
-    }
-    
-    // Create a new OAuth2 client instance for this request
-    const authClient = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-    );
-    
-    try {
-      // Exchange code for tokens
-      const { tokens } = await authClient.getToken(code);
-      
-      if (!tokens.access_token) {
-        console.error('No access token received');
-        res.status(400).json({ error: 'Failed to obtain access token' });
-        return;
-      }
-      
-      // Set credentials for this client instance
-      authClient.setCredentials(tokens);
-      
-      // Get user info
-      const oauth2 = google.oauth2({ version: 'v2', auth: authClient });
-      const { data: userInfo } = await oauth2.userinfo.get();
-      
-      // Store tokens
-      const gscAccount = {
-        id: userInfo.id!,
-        email: userInfo.email!,
-        name: userInfo.name || userInfo.email!,
-        picture: userInfo.picture,
-        accessToken: tokens.access_token!,
-        refreshToken: tokens.refresh_token || '',
-        tokenExpiry: tokens.expiry_date || Date.now() + 3600000,
-        isActive: true
-      };
-      
-      // Store in memory cache
-      gscUserTokens.set(`${userId}_${userInfo.id}`, tokens);
-      
-      // Save to database
-      try {
-        await gscStorage.saveGscAccount(userId, gscAccount);
-      } catch (storageError) {
-        console.error('Storage error (non-fatal):', storageError);
-      }
-      
-      // Log activity
-      try {
-        if (storage && storage.createActivityLog) {
-          await storage.createActivityLog({
-            userId,
-            type: "gsc_account_connected",
-            description: `Connected Google Search Console account: ${userInfo.email}`,
-            metadata: { 
-              gscAccountId: userInfo.id,
-              email: userInfo.email
-            }
-          });
-        }
-      } catch (logError) {
-        console.error('Activity log error (non-fatal):', logError);
-      }
-      
-      console.log(`✅ GSC account connected: ${userInfo.email}`);
-      res.json({ account: gscAccount });
-      
-    } catch (tokenError: any) {
-      if (tokenError.message?.includes('invalid_grant')) {
-        console.error('Invalid grant - code may have been used or expired');
-        res.status(400).json({ 
-          error: 'Authorization code expired or already used. Please try signing in again.' 
-        });
-        return;
-      }
-      
-      if (tokenError.message?.includes('redirect_uri_mismatch')) {
-        console.error('Redirect URI mismatch during token exchange');
-        res.status(400).json({ 
-          error: 'Configuration error. Please contact support.' 
-        });
-        return;
-      }
-      
-      throw tokenError;
-    }
-    
-  } catch (error: any) {
-    console.error('GSC auth error:', error);
-    const errorMessage = error.message || 'Authentication failed';
-    const statusCode = error.response?.status || 500;
-    
-    res.status(statusCode).json({ 
-      error: 'Authentication failed',
-      details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
-    });
-  }
-});
-
-// Get user's GSC properties
-app.get("/api/gsc/properties", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.id;
-    const { accountId } = req.query;
-    
-    console.log(`🌐 Fetching GSC properties for user: ${userId}, account: ${accountId}`);
-    
-    if (!accountId) {
-      res.status(400).json({ error: 'Account ID required' });
-      return;
-    }
-    
-    // Get tokens from memory or database
-    let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-    if (!tokens) {
-      const savedAccount = await gscStorage.getGscAccount(userId, accountId as string);
-      if (!savedAccount) {
-        res.status(401).json({ error: 'Not authenticated' });
-        return;
-      }
-      
-      tokens = {
-        access_token: savedAccount.accessToken,
-        refresh_token: savedAccount.refreshToken,
-        expiry_date: savedAccount.tokenExpiry
-      };
-      
-      // Cache in memory
-      gscUserTokens.set(`${userId}_${accountId}`, tokens);
-    }
-    
-    // Set credentials
-    gscOAuth2Client.setCredentials(tokens);
-    
-    // Get properties from Search Console
-    const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
-    const { data } = await searchconsole.sites.list();
-    
-    // Transform properties
-    const properties = (data.siteEntry || []).map(site => ({
-      siteUrl: site.siteUrl!,
-      permissionLevel: site.permissionLevel!,
-      siteType: site.siteUrl?.startsWith('sc-domain:') ? 'DOMAIN' : 'SITE',
-      verified: true,
-      accountId: accountId as string
-    }));
-    
-    console.log(`✅ Found ${properties.length} GSC properties`);
-    res.json(properties);
-    
-  } catch (error) {
-    console.error('Error fetching GSC properties:', error);
-    res.status(500).json({ error: 'Failed to fetch properties' });
-  }
-});
-
-// Submit URL for indexing
-app.post("/api/gsc/index", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.id;
-    const { accountId, url, type = 'URL_UPDATED' } = req.body;
-    
-    console.log(`📤 Submitting URL for indexing: ${url} (${type})`);
-    
-    if (!accountId || !url) {
-      res.status(400).json({ error: 'Account ID and URL required' });
-      return;
-    }
-    
-    // Get tokens from memory or database
-    let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-    if (!tokens) {
-      const savedAccount = await gscStorage.getGscAccount(userId, accountId);
-      if (!savedAccount) {
-        res.status(401).json({ error: 'Not authenticated' });
-        return;
-      }
-      
-      tokens = {
-        access_token: savedAccount.accessToken,
-        refresh_token: savedAccount.refreshToken,
-        expiry_date: savedAccount.tokenExpiry
-      };
-      
-      gscUserTokens.set(`${userId}_${accountId}`, tokens);
-    }
-    
-    gscOAuth2Client.setCredentials(tokens);
-    
-    // Use Indexing API
-    const indexing = google.indexing({ version: 'v3', auth: gscOAuth2Client });
-    
-    try {
-      const result = await indexing.urlNotifications.publish({
-        requestBody: {
-          url: url,
-          type: type
-        }
-      });
-      
-      // Log activity
-      await storage.createActivityLog({
-        userId,
-        type: "gsc_url_indexed",
-        description: `URL submitted for indexing: ${url}`,
-        metadata: { 
-          url,
-          type,
-          notifyTime: result.data.urlNotificationMetadata?.latestUpdate?.notifyTime
-        }
-      });
-      
-      console.log(`✅ URL submitted for indexing: ${url}`);
-      res.json({
-        success: true,
-        notifyTime: result.data.urlNotificationMetadata?.latestUpdate?.notifyTime,
-        url: url
-      });
-      
-    } catch (indexError: any) {
-      if (indexError.code === 429) {
-        res.status(429).json({ error: 'Daily quota exceeded (200 URLs/day)' });
-      } else {
-        throw indexError;
-      }
-    }
-    
-  } catch (error) {
-    console.error('Indexing error:', error);
-    res.status(500).json({ error: 'Failed to submit URL for indexing' });
-  }
-});
-
-// Inspect URL
-app.post("/api/gsc/inspect", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.id;
-    const { accountId, siteUrl, inspectionUrl } = req.body;
-    
-    console.log(`🔍 Inspecting URL: ${inspectionUrl}`);
-    
-    if (!accountId || !siteUrl || !inspectionUrl) {
-      res.status(400).json({ error: 'Account ID, site URL, and inspection URL required' });
-      return;
-    }
-    
-    // Get tokens from memory or database
-    let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-    if (!tokens) {
-      const savedAccount = await gscStorage.getGscAccount(userId, accountId);
-      if (!savedAccount) {
-        res.status(401).json({ error: 'Not authenticated' });
-        return;
-      }
-      
-      tokens = {
-        access_token: savedAccount.accessToken,
-        refresh_token: savedAccount.refreshToken,
-        expiry_date: savedAccount.tokenExpiry
-      };
-      
-      gscUserTokens.set(`${userId}_${accountId}`, tokens);
-    }
-    
-    gscOAuth2Client.setCredentials(tokens);
-    
-    // Use URL Inspection API
-    const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
-    
-    const result = await searchconsole.urlInspection.index.inspect({
-      requestBody: {
-        inspectionUrl: inspectionUrl,
-        siteUrl: siteUrl
-      }
-    });
-    
-    const inspection = result.data.inspectionResult;
-    
-    // Transform result
-    const inspectionResult = {
-      url: inspectionUrl,
-      indexStatus: inspection?.indexStatusResult?.coverageState || 'NOT_INDEXED',
-      lastCrawlTime: inspection?.indexStatusResult?.lastCrawlTime,
-      pageFetchState: inspection?.indexStatusResult?.pageFetchState,
-      googleCanonical: inspection?.indexStatusResult?.googleCanonical,
-      userCanonical: inspection?.indexStatusResult?.userCanonical,
-      sitemap: inspection?.indexStatusResult?.sitemap,
-      mobileUsability: inspection?.mobileUsabilityResult?.verdict || 'NEUTRAL',
-      richResultsStatus: inspection?.richResultsResult?.verdict
-    };
-    
-    console.log(`✅ URL inspection complete: ${inspectionResult.indexStatus}`);
-    res.json(inspectionResult);
-    
-  } catch (error) {
-    console.error('Inspection error:', error);
-    res.status(500).json({ error: 'Failed to inspect URL' });
-  }
-});
-
-// Submit sitemap
-app.post("/api/gsc/sitemap", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.id;
-    const { accountId, siteUrl, sitemapUrl } = req.body;
-    
-    console.log(`📄 Submitting sitemap: ${sitemapUrl}`);
-    
-    if (!accountId || !siteUrl || !sitemapUrl) {
-      res.status(400).json({ error: 'Account ID, site URL, and sitemap URL required' });
-      return;
-    }
-    
-    // Get tokens from memory or database
-    let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-    if (!tokens) {
-      const savedAccount = await gscStorage.getGscAccount(userId, accountId);
-      if (!savedAccount) {
-        res.status(401).json({ error: 'Not authenticated' });
-        return;
-      }
-      
-      tokens = {
-        access_token: savedAccount.accessToken,
-        refresh_token: savedAccount.refreshToken,
-        expiry_date: savedAccount.tokenExpiry
-      };
-      
-      gscUserTokens.set(`${userId}_${accountId}`, tokens);
-    }
-    
-    gscOAuth2Client.setCredentials(tokens);
-    
-    // Submit sitemap
-    const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
-    
-    await searchconsole.sitemaps.submit({
-      siteUrl: siteUrl,
-      feedpath: sitemapUrl
-    });
-    
-    // Log activity
-    await storage.createActivityLog({
-      userId,
-      type: "gsc_sitemap_submitted",
-      description: `Sitemap submitted: ${sitemapUrl}`,
-      metadata: { 
-        siteUrl,
-        sitemapUrl
-      }
-    });
-    
-    console.log(`✅ Sitemap submitted: ${sitemapUrl}`);
-    res.json({
-      success: true,
-      message: 'Sitemap submitted successfully'
-    });
-    
-  } catch (error) {
-    console.error('Sitemap submission error:', error);
-    res.status(500).json({ error: 'Failed to submit sitemap' });
-  }
-});
-
-// Get performance data
-app.get("/api/gsc/performance", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.id;
-    const { accountId, siteUrl, days = '28' } = req.query;
-    
-    console.log(`📊 Fetching performance data for: ${siteUrl}`);
-    
-    if (!accountId || !siteUrl) {
-      res.status(400).json({ error: 'Account ID and site URL required' });
-      return;
-    }
-    
-    // Get tokens from memory or database
-    let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-    if (!tokens) {
-      const savedAccount = await gscStorage.getGscAccount(userId, accountId as string);
-      if (!savedAccount) {
-        res.status(401).json({ error: 'Not authenticated' });
-        return;
-      }
-      
-      tokens = {
-        access_token: savedAccount.accessToken,
-        refresh_token: savedAccount.refreshToken,
-        expiry_date: savedAccount.tokenExpiry
-      };
-      
-      gscUserTokens.set(`${userId}_${accountId}`, tokens);
-    }
-    
-    gscOAuth2Client.setCredentials(tokens);
-    
-    // Get performance data
-    const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
-    
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - parseInt(days as string));
-    
-    const result = await searchconsole.searchanalytics.query({
-      siteUrl: siteUrl as string,
-      requestBody: {
-        startDate: startDate.toISOString().split('T')[0],
-        endDate: endDate.toISOString().split('T')[0],
-        dimensions: ['date'],
-        metrics: ['clicks', 'impressions', 'ctr', 'position'],
-        rowLimit: 1000
-      }
-    });
-    
-    const performanceData = (result.data.rows || []).map(row => ({
-      date: row.keys?.[0],
-      clicks: row.clicks || 0,
-      impressions: row.impressions || 0,
-      ctr: row.ctr || 0,
-      position: row.position || 0
-    }));
-    
-    console.log(`✅ Performance data fetched: ${performanceData.length} days`);
-    res.json(performanceData);
-    
-  } catch (error) {
-    console.error('Performance data error:', error);
-    res.status(500).json({ error: 'Failed to fetch performance data' });
-  }
-});
-
-// Refresh GSC token
-app.post("/api/gsc/refresh-token", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.id;
-    const { accountId, refreshToken } = req.body;
-    
-    console.log(`🔄 Refreshing GSC token for account: ${accountId}`);
-    
-    gscOAuth2Client.setCredentials({ refresh_token: refreshToken });
-    const { credentials } = await gscOAuth2Client.refreshAccessToken();
-    
-    // Update stored tokens in memory
-    gscUserTokens.set(`${userId}_${accountId}`, credentials);
-    
-    // Update in database
-    await gscStorage.updateGscAccount(userId, accountId, {
-      accessToken: credentials.access_token!,
-      tokenExpiry: credentials.expiry_date!
-    });
-    
-    console.log(`✅ GSC token refreshed for account: ${accountId}`);
-    res.json({
-      accessToken: credentials.access_token,
-      tokenExpiry: credentials.expiry_date
-    });
-    
-  } catch (error) {
-    console.error('Token refresh error:', error);
-    res.status(500).json({ error: 'Failed to refresh token' });
-  }
-});
-
-// OAuth callback handler
-app.get("/api/gsc/oauth-callback", async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { code, state, error } = req.query;
-    
-    if (error) {
-      res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Authentication Error</title></head>
-        <body>
-          <script>
-            if (window.opener) {
-              window.opener.postMessage({
-                type: 'GOOGLE_AUTH_ERROR',
-                error: '${error}'
-              }, '*');
-              window.close();
-            } else {
-              window.location.href = '/google-search-console?error=${error}';
-            }
-          </script>
-        </body>
-        </html>
-      `);
-      return;
-    }
-    
-    if (!code) {
-      res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Authentication Error</title></head>
-        <body>
-          <script>
-            if (window.opener) {
-              window.opener.postMessage({
-                type: 'GOOGLE_AUTH_ERROR',
-                error: 'No authorization code received'
-              }, '*');
-              window.close();
-            } else {
-              window.location.href = '/google-search-console?error=no_code';
-            }
-          </script>
-        </body>
-        </html>
-      `);
-      return;
-    }
-    
-    // Send success message to opener window
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head><title>Authentication Successful</title></head>
-      <body>
-        <script>
-          if (window.opener) {
-            window.opener.postMessage({
-              type: 'GOOGLE_AUTH_SUCCESS',
-              code: '${code}',
-              state: '${state || ''}'
-            }, '*');
-            window.close();
-          } else {
-            window.location.href = '/google-search-console?code=${code}';
-          }
-        </script>
-        <p>Authentication successful! This window should close automatically...</p>
-      </body>
-      </html>
-    `);
-  } catch (error) {
-    console.error('OAuth callback error:', error);
-    res.status(500).send('Authentication failed');
-  }
-});
-
-// Get all GSC accounts for a user
-app.get("/api/gsc/accounts", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.id;
-    const accounts = await gscStorage.getAllGscAccounts(userId);
-    res.json(accounts);
-  } catch (error) {
-    console.error('Error fetching GSC accounts:', error);
-    res.status(500).json({ error: 'Failed to fetch accounts' });
-  }
-});
-
-// Remove GSC account
-app.post("/api/gsc/remove-account", requireAuth, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const userId = req.user!.id;
-    const { accountId } = req.body;
-    
-    if (!accountId) {
-      res.status(400).json({ error: 'Account ID required' });
-      return;
-    }
-    
-    await gscStorage.deleteGscAccount(userId, accountId);
-    
-    // Remove from memory cache
-    gscUserTokens.delete(`${userId}_${accountId}`);
-    
-    console.log(`🗑️ GSC account removed: ${accountId}`);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error removing GSC account:', error);
-    res.status(500).json({ error: 'Failed to remove account' });
-  }
-});
 
   // ===========================================================================
   // DASHBOARD & ACTIVITY ROUTES
