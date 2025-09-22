@@ -15,6 +15,13 @@
       "when": 1757312298764,
       "tag": "0001_dazzling_slayback",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1758543079404,
+      "tag": "0002_rainy_nova",
+      "breakpoints": true
     }
   ]
 }

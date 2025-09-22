@@ -2848,6 +2848,7 @@ app.get("/api/user/websites/:websiteId/detailed-seo", requireAuth, async (req: R
   }
 });
 
+
   app.get("/api/user/websites/:websiteId/detailed-seo", requireAuth, async (req: Request, res: Response): Promise<void> => {
     try {
       const { websiteId } = req.params;

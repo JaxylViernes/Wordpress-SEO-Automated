@@ -106,15 +106,16 @@ app.use(helmet({
   crossOriginOpenerPolicy: false, // We set this manually above
   crossOriginEmbedderPolicy: false, // We set this manually above
   contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      connectSrc: ["'self'", "https://www.googleapis.com", "https://accounts.google.com", "https://oauth2.googleapis.com"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // unsafe-eval needed for some OAuth flows
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:", "*.googleusercontent.com"],
-      frameAncestors: ["'self'"],
-    },
+  directives: {
+    defaultSrc: ["'self'"],
+    connectSrc: ["'self'", "https://www.googleapis.com", "https://accounts.google.com", "https://oauth2.googleapis.com"],
+    scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+    styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://fonts.gstatic.com"], // ← FIXED
+    fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"], // ← ADD THIS LINE
+    imgSrc: ["'self'", "data:", "https:", "*.googleusercontent.com"],
+    frameAncestors: ["'self'"],
   },
+},
   hsts: {
     maxAge: 31536000,
     includeSubDomains: true,
