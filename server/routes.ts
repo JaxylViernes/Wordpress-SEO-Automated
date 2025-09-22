@@ -2723,6 +2723,61 @@ app.get("/api/user/image-generation/status", requireAuth, async (req: Request, r
   // SEO ANALYSIS & TRACKING ROUTES
   // ===========================================================================
   
+  // In your API endpoint for detailed-seo
+app.get("/api/user/websites/:websiteId/detailed-seo", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { websiteId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
+
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+
+    console.log(`Getting detailed SEO data for website ${websiteId}`);
+
+    const detailedData = await seoService.getDetailedSeoData(websiteId, userId);
+    
+    // Add debugging
+    console.log(`API Response - Total issues: ${detailedData.trackedIssues?.length || 0}`);
+    console.log(`API Response - Fixed: ${detailedData.trackedIssues?.filter(i => i.status === 'fixed').length || 0}`);
+    console.log(`API Response - Resolved: ${detailedData.trackedIssues?.filter(i => i.status === 'resolved').length || 0}`);
+
+    res.json(detailedData);
+  } catch (error) {
+    console.error("Error getting detailed SEO data:", error);
+    res.status(500).json({ 
+      message: "Failed to get detailed SEO data",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+});
+
+  app.get("/api/user/seo-detailed/:websiteId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { websiteId } = req.params;
+    const userId = req.user!.id;
+    
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+    
+    const detailedData = await storage.getDetailedSeoData(websiteId, userId);
+    res.json(detailedData);
+  } catch (error) {
+    console.error("Error fetching detailed SEO data:", error);
+    res.status(500).json({ message: "Failed to fetch detailed SEO data" });
+  }
+});
+
   app.get("/api/user/websites/:id/seo-reports", requireAuth, async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = req.user!.id;
@@ -2945,6 +3000,61 @@ app.get("/api/user/image-generation/status", requireAuth, async (req: Request, r
     }
   });
 
+
+ app.delete('/api/user/websites/:websiteId/seo-reports', async (req, res) => {
+  try {
+    console.log('DELETE SEO reports - Session userId:', req.session?.userId);
+    
+    // Use session.userId instead of req.user.id
+    const userId = req.session?.userId || req.user?.id;
+    
+    if (!userId) {
+      console.log('No userId found in session or req.user');
+      return res.status(401).json({ 
+        message: 'Authentication required' 
+      });
+    }
+    
+    const { websiteId } = req.params;
+    
+    console.log(`Clearing SEO data for website ${websiteId}, user ${userId}`);
+    
+    // Verify website ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      return res.status(404).json({ 
+        message: 'Website not found or access denied' 
+      });
+    }
+    
+    // Clear all SEO data
+    const result = await storage.clearAllSeoData(websiteId, userId);
+    
+    // Log the activity
+    await storage.createActivityLog({
+      userId,
+      websiteId,
+      type: 'seo_history_cleared',
+      description: 'SEO history and tracked issues cleared',
+      metadata: {
+        deletedReports: result.deletedReports,
+        deletedIssues: result.deletedIssues
+      }
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'SEO history cleared successfully',
+      ...result
+    });
+  } catch (error) {
+    console.error('Error in DELETE route:', error);
+    res.status(500).json({ 
+      message: 'Failed to clear SEO history',
+      error: error.message 
+    });
+  }
+});
   // ===========================================================================
   // AI FIX ROUTES
   // ===========================================================================

@@ -43,6 +43,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Trash2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
@@ -291,6 +303,7 @@ const mapReportIssueToTrackingType = (title: string): string => {
 };
 
 export default function SEOAnalysis() {
+  const [showClearHistoryDialog, setShowClearHistoryDialog] = useState(false);
   const [selectedWebsite, setSelectedWebsite] = useState<string>("");
   const [fixResult, setFixResult] = useState<any>(null);
   const [progressDialog, setProgressDialog] = useState({
@@ -514,6 +527,7 @@ export default function SEOAnalysis() {
 });
 
 
+
   // Fix with AI mutations
   const fixWithAIMutation = useMutation({
   mutationFn: (dryRun: boolean) => api.fixWithAI(selectedWebsite, dryRun),
@@ -604,6 +618,34 @@ export default function SEOAnalysis() {
   },
 });
 
+
+const clearHistoryMutation = useMutation({
+  mutationFn: () => api.clearSeoHistory(selectedWebsite),
+  onSuccess: () => {
+    // Clear the cached data
+    queryClient.setQueryData(["/api/seo-reports", selectedWebsite], []);
+    queryClient.invalidateQueries({
+      queryKey: ["/api/seo-reports", selectedWebsite],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ["/api/seo-detailed", selectedWebsite],
+    });
+    
+    toast({
+      title: "History Cleared",
+      description: `Successfully cleared all SEO analysis history for ${getWebsiteName(selectedWebsite)}.`,
+    });
+    
+    setShowClearHistoryDialog(false);
+  },
+  onError: (error: any) => {
+    toast({
+      title: "Failed to Clear History",
+      description: error?.message || "Unable to clear analysis history. Please try again.",
+      variant: "destructive",
+    });
+  },
+});
   // Helper functions
   const getWebsiteName = (websiteId: string) => {
     const website = websites?.find((w) => w.id === websiteId);
@@ -1060,7 +1102,7 @@ export default function SEOAnalysis() {
               </div>
 
               {/* Detailed Analysis Tabs */}
-              <Tabs defaultValue="history" className="space-y-6">
+              <Tabs defaultValue="issues" className="space-y-6">
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="issues">Issues & Fixes</TabsTrigger>
                   <TabsTrigger value="history">History</TabsTrigger>
@@ -1431,7 +1473,7 @@ export default function SEOAnalysis() {
                               Fixed: {formatTimeAgo(issue.fixedAt)}
                             </span>
                           )}
-                          {issue.trackingInfo?.fix_method && (
+                          {/* {issue.trackingInfo?.fix_method && (
                             <Badge
                               variant="outline"
                               className="text-xs bg-green-100 text-green-800"
@@ -1440,7 +1482,7 @@ export default function SEOAnalysis() {
                                 ? "🤖 AI Fixed"
                                 : "👤 Manual"}
                             </Badge>
-                          )}
+                          )} */}
                         </div>
                       </div>
                     </div>
@@ -1466,90 +1508,133 @@ export default function SEOAnalysis() {
   </Card>
 </TabsContent>
 
-                <TabsContent value="history">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Analysis History</CardTitle>
-                      <CardDescription>
-                        Previous SEO analysis results for{" "}
-                        {getWebsiteName(selectedWebsite)}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {isLoading ? (
-                        <div className="text-center py-8">
-                          <div className="text-gray-500">
-                            Loading analysis history...
-                          </div>
-                        </div>
-                      ) : seoReports && seoReports.length > 0 ? (
-                        <div className="space-y-3">
-                          {seoReports.map((report) => (
-                            <div
-                              key={report.id}
-                              className="flex items-center justify-between p-3 border rounded-lg"
-                            >
-                              <div className="flex items-center space-x-4">
-                                <div
-                                  className={`text-2xl font-bold ${getScoreColor(
-                                    report.score
-                                  )}`}
-                                >
-                                  {report.score}
-                                </div>
-                                <div>
-                                  <p className="font-medium text-gray-900">
-                                    SEO Score: {report.score}/100
-                                  </p>
-                                  <p className="text-sm text-gray-500">
-                                    {formatTimeAgo(report.createdAt)}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                {report.metadata?.aiAnalysisPerformed && (
-                                  <Badge variant="default" className="text-xs">
-                                    <Brain className="w-3 h-3 mr-1" />
-                                    AI-Enhanced
-                                  </Badge>
-                                )}
-                                {report.pageSpeedScore && (
-                                  <Badge variant="outline">
-                                    Speed: {report.pageSpeedScore}
-                                  </Badge>
-                                )}
-                                <Badge variant="outline">
-                                  Issues:{" "}
-                                  {(report.issues as any[])?.length || 0}
-                                </Badge>
-                                {/* <Button size="sm" variant="ghost" asChild>
-                                  <a
-                                    href={getWebsiteUrl(selectedWebsite)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                </Button> */}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-8">
-                          <Search className="mx-auto h-12 w-12 text-gray-400" />
-                          <h3 className="mt-2 text-sm font-medium text-gray-900">
-                            No analysis history
-                          </h3>
-                          <p className="mt-1 text-sm text-gray-500">
-                            Run your first AI-enhanced SEO analysis to see
-                            results here.
-                          </p>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </TabsContent>
+               <TabsContent value="history">
+  <Card>
+    <CardHeader>
+      <div className="flex items-center justify-between">
+        <div>
+          <CardTitle>Analysis History</CardTitle>
+          <CardDescription>
+            Previous SEO analysis results for{" "}
+            {getWebsiteName(selectedWebsite)}
+          </CardDescription>
+        </div>
+        {seoReports && seoReports.length > 0 && (
+          <AlertDialog open={showClearHistoryDialog} onOpenChange={setShowClearHistoryDialog}>
+            <AlertDialogTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Clear History
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Clear Analysis History?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete all SEO analysis history for{" "}
+                  <span className="font-medium">{getWebsiteName(selectedWebsite)}</span>.
+                  This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => clearHistoryMutation.mutate()}
+                  disabled={clearHistoryMutation.isPending}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {clearHistoryMutation.isPending ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Clearing...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Clear History
+                    </>
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
+      </div>
+    </CardHeader>
+    <CardContent>
+      {isLoading ? (
+        <div className="text-center py-8">
+          <div className="text-gray-500">
+            Loading analysis history...
+          </div>
+        </div>
+      ) : seoReports && seoReports.length > 0 ? (
+        <div className="space-y-3">
+          {seoReports.map((report) => (
+            <div
+              key={report.id}
+              className="flex items-center justify-between p-3 border rounded-lg"
+            >
+              <div className="flex items-center space-x-4">
+                <div
+                  className={`text-2xl font-bold ${getScoreColor(
+                    report.score
+                  )}`}
+                >
+                  {report.score}
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">
+                    SEO Score: {report.score}/100
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {formatTimeAgo(report.createdAt)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                {report.metadata?.aiAnalysisPerformed && (
+                  <Badge variant="default" className="text-xs">
+                    <Brain className="w-3 h-3 mr-1" />
+                    AI-Enhanced
+                  </Badge>
+                )}
+                {report.pageSpeedScore && (
+                  <Badge variant="outline">
+                    Speed: {report.pageSpeedScore}
+                  </Badge>
+                )}
+                <Badge variant="outline">
+                  Issues:{" "}
+                  {(report.issues as any[])?.length || 0}
+                </Badge>
+              </div>
+            </div>
+          ))}
+          <div className="text-xs text-gray-500 mt-4 pt-4 border-t">
+            {seoReports.length} analysis record{seoReports.length !== 1 ? 's' : ''} • 
+            Oldest: {formatTimeAgo(seoReports[seoReports.length - 1].createdAt)}
+          </div>
+        </div>
+      ) : (
+        <div className="text-center py-8">
+          <Search className="mx-auto h-12 w-12 text-gray-400" />
+          <h3 className="mt-2 text-sm font-medium text-gray-900">
+            No analysis history
+          </h3>
+          <p className="mt-1 text-sm text-gray-500">
+            Run your first AI-enhanced SEO analysis to see
+            results here.
+          </p>
+        </div>
+      )}
+    </CardContent>
+  </Card>
+</TabsContent>
               </Tabs>
             </div>
           )}

@@ -728,8 +728,6 @@ private isValidHtml(html: string): boolean {
   analysisTime: number;
   success: boolean;
   error?: string;
-  simulated?: boolean;
-  confidence?: 'high' | 'medium' | 'low';
 }> {
   const reanalysisStartTime = Date.now();
   
@@ -739,93 +737,58 @@ private isValidHtml(html: string): boolean {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
     
-    this.addLog("Running fresh SEO analysis to measure improvement...", "info");
+    this.addLog("Running score-only reanalysis...", "info");
     
-    let newAnalysis;
-    try {
-      newAnalysis = await seoService.analyzeWebsite(website.url, [], userId);
-    } catch (analysisError) {
-      this.addLog(`SEO analysis failed during reanalysis: ${analysisError.message}`, "error");
-      
-      try {
-        newAnalysis = await seoService.analyzeWebsite(website.url, []);
-        this.addLog("Fallback analysis (without user API keys) succeeded", "warning");
-      } catch (fallbackError) {
-        throw new Error(`Both primary and fallback reanalysis failed: ${fallbackError.message}`);
-      }
-    }
+    // Just get the score - don't store issues or update tracking
+    const newAnalysis = await seoService.analyzeWebsite(
+      website.url, 
+      [], 
+      userId, 
+      websiteId
+    );
     
     const finalScore = newAnalysis.score;
     const scoreImprovement = finalScore - initialScore;
-    const analysisTime = Date.now() - reanalysisStartTime;
     
-    // Determine confidence level based on various factors
-    let confidence: 'high' | 'medium' | 'low' = 'high';
-    if (Math.abs(scoreImprovement) > 30) {
-      confidence = 'low'; // Unusually large change might indicate measurement error
-    } else if (scoreImprovement < 0) {
-      confidence = 'medium'; // Score decreased might indicate timing issues
-    }
+    // Save score report but DON'T update issue tracking
+    await storage.createSeoReport({
+      userId,
+      websiteId,
+      score: finalScore,
+      issues: newAnalysis.issues,
+      recommendations: newAnalysis.recommendations,
+      pageSpeedScore: newAnalysis.pageSpeedScore,
+      metadata: {
+        postAIFix: true,
+        previousScore: initialScore,
+        scoreImprovement,
+        fixSession: new Date().toISOString(),
+        skipIssueTracking: true  // Flag to skip issue updates
+      },
+    });
     
-    // Save the new analysis with enhanced metadata
-    try {
-      await storage.createSeoReport({
-        userId,
-        websiteId,
-        score: newAnalysis.score,
-        issues: newAnalysis.issues,
-        recommendations: newAnalysis.recommendations,
-        pageSpeedScore: newAnalysis.pageSpeedScore,
-        metadata: {
-          postAIFix: true,
-          previousScore: initialScore,
-          scoreImprovement,
-          scoreConfidence: confidence,
-          fixSession: new Date().toISOString(),
-          reanalysisTime: analysisTime,
-        },
-      });
-      
-      this.addLog("New SEO report saved to database", "success");
-    } catch (saveError) {
-      this.addLog(`Failed to save reanalysis report: ${saveError.message}`, "warning");
-    }
-    
-    // Update website with new score
-    try {
-      await storage.updateWebsite(websiteId, {
-        seoScore: finalScore,
-        lastAnalyzed: new Date(),
-      });
-      
-      this.addLog("Website score updated", "success");
-    } catch (updateError) {
-      this.addLog(`Failed to update website score: ${updateError.message}`, "warning");
-    }
+    // Update website score only
+    await storage.updateWebsite(websiteId, {
+      seoScore: finalScore,
+      lastAnalyzed: new Date(),
+    });
     
     this.addLog(
-      `Reanalysis complete: ${initialScore} → ${finalScore} (${
+      `Score reanalysis: ${initialScore} → ${finalScore} (${
         scoreImprovement >= 0 ? "+" : ""
-      }${scoreImprovement.toFixed(1)}) [Confidence: ${confidence}]`,
-      scoreImprovement > 0 ? "success" : scoreImprovement === 0 ? "info" : "warning"
+      }${scoreImprovement})`,
+      scoreImprovement > 0 ? "success" : "info"
     );
     
     return {
       enabled: true,
       initialScore,
       finalScore,
-      scoreImprovement: Number(scoreImprovement.toFixed(1)),
-      analysisTime: Math.round(analysisTime / 1000),
+      scoreImprovement,
+      analysisTime: Math.round((Date.now() - reanalysisStartTime) / 1000),
       success: true,
-      confidence,
     };
   } catch (error) {
-    const errorMessage = `Reanalysis failed: ${
-      error instanceof Error ? error.message : "Unknown error"
-    }`;
-    
-    this.addLog(errorMessage, "error");
-    
     return {
       enabled: true,
       initialScore,
@@ -833,8 +796,7 @@ private isValidHtml(html: string): boolean {
       scoreImprovement: 0,
       analysisTime: Math.round((Date.now() - reanalysisStartTime) / 1000),
       success: false,
-      error: errorMessage,
-      confidence: 'low',
+      error: error.message,
     };
   }
 }
@@ -1183,7 +1145,7 @@ private calculateMaxImprovement(actuallyFixedCount: Map<string, number>): number
     }
   }
 
- async analyzeAndFixWebsite(
+async analyzeAndFixWebsite(
   websiteId: string,
   userId: string,
   dryRun: boolean = true,
@@ -1230,7 +1192,7 @@ private calculateMaxImprovement(actuallyFixedCount: Map<string, number>): number
     // Get tracked issues but ONLY those that need fixing
     const trackedIssues = await storage.getTrackedSeoIssues(websiteId, userId, {
       autoFixableOnly: true,
-      status: ['detected', 'reappeared'] // ONLY get issues that need fixing, not 'fixed' or 'resolved'
+      status: ['detected', 'reappeared'] // ONLY get issues that need fixing
     });
 
     this.addLog(`Found ${trackedIssues.length} tracked fixable issues (excluding already fixed)`);
@@ -1329,31 +1291,31 @@ private calculateMaxImprovement(actuallyFixedCount: Map<string, number>): number
         fixSessionId
       );
 
-      // Reanalysis logic
+      // Score-only reanalysis (no issue verification)
       const shouldReanalyze = options.enableReanalysis !== false;
       const forceReanalysis = options.forceReanalysis === true;
       
       if (shouldReanalyze && (successfulFixes.length > 0 || forceReanalysis)) {
-        this.addLog("Starting post-fix reanalysis...", "info");
+        this.addLog("Starting post-fix score reanalysis...", "info");
         
-        reanalysisData = await this.performReanalysis(
+        reanalysisData = await this.performScoreOnlyReanalysis(
           website,
           userId,
           websiteId,
           latestReport.score,
-          options.reanalysisDelay || 5000
+          options.reanalysisDelay || 10000 // Default 10 seconds
         );
         
         if (reanalysisData.success) {
           this.addLog(
-            `Reanalysis completed: Score improved by ${reanalysisData.scoreImprovement} points`,
+            `Score improved by ${reanalysisData.scoreImprovement} points`,
             reanalysisData.scoreImprovement > 0 ? "success" : "info"
           );
           
-          // After successful reanalysis, verify which issues are truly fixed
-          await this.verifyFixedIssues(websiteId, userId, fixSessionId);
+          // NO ISSUE VERIFICATION - fixed issues stay fixed
+          // The next full analysis (tomorrow) will catch any reappeared issues
         } else {
-          this.addLog(`Reanalysis failed: ${reanalysisData.error}`, "warning");
+          this.addLog(`Score reanalysis failed: ${reanalysisData.error}`, "warning");
         }
       }
 
@@ -1486,6 +1448,102 @@ private calculateMaxImprovement(actuallyFixedCount: Map<string, number>): number
       detailedLog: [...this.log],
     };
   }
+}
+
+// New simplified reanalysis method (score only)
+private async performScoreOnlyReanalysis(
+  website: any,
+  userId: string,
+  websiteId: string,
+  initialScore: number,
+  delay: number = 10000
+): Promise<{
+  enabled: boolean;
+  initialScore: number;
+  finalScore: number;
+  scoreImprovement: number;
+  analysisTime: number;
+  success: boolean;
+  error?: string;
+}> {
+  const reanalysisStartTime = Date.now();
+  
+  try {
+    if (delay > 0) {
+      this.addLog(`Waiting ${delay}ms for WordPress changes to propagate...`, "info");
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    
+    this.addLog("Running score-only reanalysis (not updating issue tracking)...", "info");
+    
+    // IMPORTANT: Pass skipIssueTracking flag
+    const newAnalysis = await seoService.analyzeWebsite(
+      website.url, 
+      [], 
+      userId, 
+      websiteId,
+      { skipIssueTracking: true }  // ADD THIS FLAG
+    );
+    
+    const newScore = newAnalysis.score;
+    
+    // FIX: Define scoreImprovement before using it
+    const scoreImprovement = newScore - initialScore;
+    
+    // Save score report with flag to skip issue tracking
+    await storage.createSeoReport({
+      userId,
+      websiteId,
+      score: newScore,
+      issues: newAnalysis.issues,
+      recommendations: newAnalysis.recommendations,
+      pageSpeedScore: newAnalysis.pageSpeedScore,
+      metadata: {
+        postAIFix: true,
+        previousScore: initialScore,
+        scoreImprovement: scoreImprovement,  // Now using the defined variable
+        fixSession: new Date().toISOString(),
+        skipIssueTracking: true,
+        reanalysisOnly: true
+      },
+    });
+    
+    // Update website score only
+    await storage.updateWebsite(websiteId, {
+      seoScore: newScore,
+      lastAnalyzed: new Date(),
+    });
+    
+    this.addLog(
+      `Score reanalysis complete: ${initialScore} → ${newScore} (${
+        scoreImprovement >= 0 ? "+" : ""
+      }${scoreImprovement.toFixed(1)})`,
+      scoreImprovement > 0 ? "success" : scoreImprovement === 0 ? "info" : "warning"
+    );
+    
+    return {
+      enabled: true,
+      initialScore,
+      finalScore: newScore,
+      scoreImprovement: Number(scoreImprovement.toFixed(1)),
+      analysisTime: Math.round((Date.now() - reanalysisStartTime) / 1000),
+      success: true,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    this.addLog(`Score reanalysis failed: ${errorMessage}`, "error");
+    
+    return {
+      enabled: true,
+      initialScore,
+      finalScore: initialScore,
+      scoreImprovement: 0,
+      analysisTime: Math.round((Date.now() - reanalysisStartTime) / 1000),
+      success: false,
+      error: errorMessage,
+    };
+  }
+
 }
 
 // Add this helper method to verify which issues are truly fixed after reanalysis

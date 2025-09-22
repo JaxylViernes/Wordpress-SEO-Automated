@@ -211,6 +211,13 @@ updateContent: (id: string, data: {
     return res.json();
   }),
 
+  getDetailedSeoData: async (websiteId: string) => {
+  const response = await fetch(`/api/user/websites/${websiteId}/detailed-seo`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch detailed SEO data');
+  }
+  return response.json();
+},
   // User-scoped activity logs
   getActivityLogs: (websiteId?: string) => {
     const url = websiteId ? 
@@ -382,6 +389,24 @@ updateContent: (id: string, data: {
         recentReports[0].score - recentReports[recentReports.length - 1].score : 0
     };
   },
+
+
+   clearSeoHistory: async (websiteId: string): Promise<void> => {
+  const response = await fetch(`/api/user/websites/${websiteId}/seo-reports`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',  // Add this to ensure cookies are sent
+  });
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Failed to clear SEO history' }));
+    throw new Error(error.message || 'Failed to clear SEO history');
+  }
+  
+  return response.json();
+},
 
   getClientReports: (websiteId?: string) => {
     const url = websiteId ? 

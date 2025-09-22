@@ -204,17 +204,22 @@ export class EnhancedSEOService {
       return process.env.GOOGLE_PAGESPEED_API_KEY || null;
     }
   }
-  async analyzeWebsite(
+ // In seo-service.ts - Complete analyzeWebsite method with skip tracking option
+
+async analyzeWebsite(
   url: string,
   targetKeywords?: string[],
   userId?: string,
-  websiteId?: string
+  websiteId?: string,
+  options?: { skipIssueTracking?: boolean }  // ADD OPTIONS PARAMETER
 ): Promise<EnhancedSEOAnalysisResult> {
   try {
     console.log(
       `Starting enhanced SEO analysis for: ${url}${
         userId ? ` (user: ${userId})` : ""
-      }${websiteId ? ` (website: ${websiteId})` : ""}`
+      }${websiteId ? ` (website: ${websiteId})` : ""}${
+        options?.skipIssueTracking ? " [SKIP ISSUE TRACKING]" : ""
+      }`
     );
 
     const normalizedUrl = this.normalizeUrl(url);
@@ -239,7 +244,6 @@ export class EnhancedSEOService {
       metaDescription,
       targetKeywords || [],
       userId,
-      //nadagdag
       websiteId
     );
 
@@ -292,8 +296,10 @@ export class EnhancedSEOService {
             analysisUrl: url,
             targetKeywords,
             aiAnalysisPerformed: !!userId,
-            hasTrackedIssues: true,
-            trackingEnabled: true
+            hasTrackedIssues: !options?.skipIssueTracking,  // Record if we're tracking
+            trackingEnabled: !options?.skipIssueTracking,
+            skipIssueTracking: options?.skipIssueTracking || false,  // Store the flag
+            timestamp: new Date().toISOString()
           },
         });
         seoReportId = seoReport.id;
@@ -304,19 +310,30 @@ export class EnhancedSEOService {
           updatedAt: new Date(),
         });
 
-        // NEW: Track individual issues
-        await this.storeTrackedIssues(issues, userId, websiteId, seoReportId);
-
-        console.log(`SEO report created with ID: ${seoReportId} and issues tracked`);
+        // CONDITIONAL ISSUE TRACKING - Skip if flag is set
+        if (!options?.skipIssueTracking) {
+          // Only track issues if not explicitly skipped (normal analysis)
+          await this.storeTrackedIssues(issues, userId, websiteId, seoReportId);
+          console.log(`SEO report created with ID: ${seoReportId} and issues tracked`);
+        } else {
+          // Skip issue tracking for reanalysis after fixes
+          console.log(
+            `SEO report created with ID: ${seoReportId} [ISSUE TRACKING SKIPPED - Reanalysis Mode]`
+          );
+        }
       } catch (error) {
         console.error("Failed to store SEO report or track issues:", error);
         console.log("Continuing with analysis despite storage failure");
       }
     } else {
-      console.log("Skipping SEO report storage and issue tracking - missing userId or websiteId");
+      console.log("Skipping SEO report storage - missing userId or websiteId");
     }
 
-    console.log(`Enhanced SEO analysis completed. Score: ${score}`);
+    console.log(
+      `Enhanced SEO analysis completed. Score: ${score}${
+        options?.skipIssueTracking ? " (tracking skipped)" : ""
+      }`
+    );
 
     return {
       score,
@@ -331,7 +348,6 @@ export class EnhancedSEOService {
     throw new Error(`Failed to analyze website SEO: ${error.message}`);
   }
 }
-
 
 // Add method to get detailed SEO data including tracked issues (UPDATED)
 async getDetailedSeoData(
@@ -414,11 +430,21 @@ private async storeTrackedIssues(
     return;
   }
 
+  // Check if this is a score-only reanalysis - if so, skip issue tracking
+  try {
+    const report = await storage.getSeoReport(seoReportId);
+    if (report?.metadata?.skipIssueTracking || report?.metadata?.reanalysisOnly) {
+      console.log('Skipping issue tracking for score-only reanalysis');
+      return;
+    }
+  } catch (error) {
+    console.log('Could not check report metadata, continuing with tracking');
+  }
+
   console.log(`Tracking ${issues.length} SEO issues for website ${websiteId}`);
 
   // Get ALL existing tracked issues, including fixed ones
   const existingTrackedIssues = await storage.getTrackedSeoIssues(websiteId, userId, {
-    // Get all statuses to properly handle reappearing issues
     limit: 500
   });
 
@@ -458,16 +484,44 @@ private async storeTrackedIssues(
         );
 
         if (existingIssue) {
-          // Issue exists - check its status
-          if (existingIssue.status === 'fixed' || existingIssue.status === 'resolved') {
-            // Issue was previously fixed but is detected again
-            console.log(`Issue "${issue.title}" reappeared after being ${existingIssue.status}`);
+          // Handle fixed issues with grace period
+           if (existingIssue.status === 'fixed') {
+    const fixedAt = new Date(existingIssue.fixedAt || existingIssue.updatedAt);
+    const hoursSinceFixed = (Date.now() - fixedAt.getTime()) / (1000 * 60 * 60);
+    
+    // Extend grace period to 48 hours for AI fixes
+    const gracePeriodHours = existingIssue.fixMethod === 'ai_automatic' ? 48 : 24;
+    
+    if (hoursSinceFixed < gracePeriodHours) {
+      console.log(`Skipping recently fixed issue (${hoursSinceFixed.toFixed(1)}h ago): ${issue.title}`);
+      continue; // Don't update status - let it stay fixed
+    }
+    
+    // After grace period, mark as reappeared
+    console.log(`Issue reappeared after ${hoursSinceFixed.toFixed(1)}h: ${issue.title}`);
+    await storage.updateSeoIssueStatus(existingIssue.id, 'reappeared', {
+      resolutionNotes: `Issue detected again after ${Math.round(hoursSinceFixed)}h grace period`,
+      previousStatus: 'fixed',
+      reappearedAt: new Date(),
+      lastSeenAt: new Date()
+    });
+  } else if (existingIssue.status === 'resolved') {
+            // Resolved issues also get grace period
+            const resolvedAt = new Date(existingIssue.resolvedAt || existingIssue.updatedAt);
+            const hoursSinceResolved = (Date.now() - resolvedAt.getTime()) / (1000 * 60 * 60);
             
+            if (hoursSinceResolved < 24) {
+              console.log(`Skipping recently resolved issue: ${issue.title}`);
+              continue;
+            }
+            
+            // After grace period, mark as reappeared
+            console.log(`Issue reappeared after being resolved: ${issue.title}`);
             await storage.updateSeoIssueStatus(existingIssue.id, 'reappeared', {
-              resolutionNotes: 'Issue detected again in new analysis',
-              previousStatus: existingIssue.status,
-              reappearedAt: new Date().toISOString(),
-              lastSeenAt: new Date().toISOString()
+              resolutionNotes: 'Issue detected again after being resolved',
+              previousStatus: 'resolved',
+              reappearedAt: new Date(),
+              lastSeenAt: new Date()
             });
           } else if (existingIssue.status === 'fixing') {
             // Reset stuck fixing status
@@ -475,12 +529,12 @@ private async storeTrackedIssues(
             
             await storage.updateSeoIssueStatus(existingIssue.id, 'detected', {
               resolutionNotes: 'Reset from stuck fixing status during new analysis',
-              lastSeenAt: new Date().toISOString()
+              lastSeenAt: new Date()
             });
           } else if (existingIssue.status === 'detected' || existingIssue.status === 'reappeared') {
-            // Update last seen timestamp
+            // Just update last seen timestamp
             await storage.updateSeoIssueStatus(existingIssue.id, existingIssue.status, {
-              lastSeenAt: new Date().toISOString()
+              lastSeenAt: new Date()
             });
           }
         } else {
@@ -502,8 +556,8 @@ private async storeTrackedIssues(
             elementPath: this.generateElementPath(issue.title),
             currentValue: this.extractCurrentValue(issue.title, issue.description),
             recommendedValue: this.generateRecommendedValue(issue.title, issue.description),
-            detectedAt: new Date().toISOString(),
-            lastSeenAt: new Date().toISOString()
+            detectedAt: new Date(),
+            lastSeenAt: new Date()
           });
           
           console.log(`Created new tracked issue: ${issue.title}`);
@@ -513,10 +567,10 @@ private async storeTrackedIssues(
       }
     }
 
-    // Mark issues as resolved if they're no longer detected
-    // But ONLY if they were previously 'detected' or 'reappeared', not 'fixed'
+    // Mark issues as resolved if no longer detected
+    // BUT respect grace period for fixed/resolved issues
     const issuesToResolve = existingTrackedIssues.filter(existing => {
-      // Only auto-resolve issues that were detected/reappeared, not manually fixed
+      // Only auto-resolve if currently detected/reappeared
       if (!['detected', 'reappeared'].includes(existing.status)) {
         return false;
       }
@@ -528,20 +582,23 @@ private async storeTrackedIssues(
       await storage.updateSeoIssueStatus(issueToResolve.id, 'resolved', {
         resolutionNotes: 'Issue no longer detected in latest analysis',
         resolvedAutomatically: true,
-        resolvedAt: new Date().toISOString()
+        resolvedAt: new Date()
       });
       console.log(`Auto-resolved issue: ${issueToResolve.issueTitle}`);
     }
 
-    // Important: Don't change 'fixed' issues to 'resolved' automatically
-    // They should stay as 'fixed' to show they were addressed by AI
-    const fixedIssues = existingTrackedIssues.filter(existing => 
-      existing.status === 'fixed' && !currentIssueTypes.has(existing.issueType)
-    );
-    
-    console.log(`${fixedIssues.length} issues remain marked as 'fixed' (not in current analysis)`);
+    // Log summary
+    const fixedCount = existingTrackedIssues.filter(i => i.status === 'fixed' && 
+      !currentIssueTypes.has(i.issueType)).length;
+    const resolvedCount = issuesToResolve.length;
+    const newCount = issues.filter(issue => 
+      !existingTrackedIssues.some(existing => 
+        this.mapIssueToTrackingType(issue.title) === existing.issueType
+      )
+    ).length;
 
-    console.log(`Successfully processed ${issues.length} issues for tracking`);
+    console.log(`Issue tracking complete: ${newCount} new, ${fixedCount} remain fixed, ${resolvedCount} resolved`);
+    
   } catch (error) {
     console.error('Error in storeTrackedIssues:', error);
   }
