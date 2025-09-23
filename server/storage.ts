@@ -44,10 +44,6 @@ import {
   type InsertBackup,
   type UserSettings, // Add this line
   type InsertUserSettings, // Add this line
-  type SeoIssueTracking as SeoIssueTrackingType,  // ADD THIS if there's a type
-  type InsertSeoIssueTracking,
- 
-  //nadagdag
   gscConfigurations,
   gscAccounts,
   gscProperties,
@@ -68,7 +64,6 @@ import { db } from "./db";
 import { lte, gte, count, eq, desc, and, or, isNull, inArray,sql,not } from "drizzle-orm";
 import { wordPressAuthService } from "./services/wordpress-auth";
 import { contentImages, insertContentImageSchema, type InsertContentImage, type ContentImage } from "@shared/schema";
-//nadagdag
 import { autoSchedules, type AutoSchedule, type InsertAutoSchedule } from "@shared/schema";
 import { gscStorage } from "./services/gsc-storage";
 import { randomUUID, createHash } from 'crypto';
@@ -204,8 +199,6 @@ export interface IStorage {
   validateUserApiKey(userId: string, keyId: string): Promise<{ valid: boolean; error?: string }>;
 
 
-
-  //nadagdag
   //======================GOOGLE SEARCH CONSOLE================//
 
  saveGscConfiguration(userId: string, config: InsertGscConfiguration): Promise<GscConfiguration>;
@@ -1081,15 +1074,12 @@ async createContentSchedule(data: {
   scheduledFor?: Date | string | null;
   status?: string;
   title?: string | null;
-  topic?: string | null;  //nadagdag - Add topic to parameters
+  topic?: string | null;
   metadata?: any;
 }) {
-  //nadagdag - Step 1: Handle field name variations (camelCase vs snake_case)
   const contentId = data.contentId || data.content_id;
   const userId = data.userId || data.user_id;
   const websiteId = data.websiteId || data.website_id;
-  
-  //nadagdag - Step 2: CRITICAL - Ensure scheduled_date is NEVER null
   let scheduledDate: Date;
   
   // Try all possible date field variations
@@ -1112,14 +1102,12 @@ async createContentSchedule(data: {
     scheduledDate = new Date();
   }
   
-  //nadagdag - Step 3: Ensure title is NEVER null
   let title = data.title;
   if (!title || title.trim() === '') {
     title = `Content scheduled on ${scheduledDate.toLocaleDateString()}`;
     console.warn('⚠️ No title provided, using default:', title);
   }
   
-  //nadagdag - Step 4: Extract and ensure topic is NEVER null
   // Try to get topic from direct field or from metadata
   let topic = data.topic || data.metadata?.topic;
   if (!topic || topic.trim() === '') {
@@ -1127,7 +1115,6 @@ async createContentSchedule(data: {
     console.warn('⚠️ No topic provided, using default:', topic);
   }
   
-  //nadagdag - Step 5: Validate required fields
   if (!contentId) {
     throw new Error('contentId is required for createContentSchedule');
   }
@@ -1138,19 +1125,17 @@ async createContentSchedule(data: {
     throw new Error('websiteId is required for createContentSchedule');
   }
   
-  //nadagdag - Step 6: Debug logging
   console.log('📋 Creating content_schedule entry:', {
     contentId: contentId,
     userId: userId,
     websiteId: websiteId,
     scheduled_date: scheduledDate.toISOString(),
     title: title,
-    topic: topic,  //nadagdag - Log topic
+    topic: topic,
     status: data.status || 'scheduled',
   });
   
   try {
-    //nadagdag - Step 7: Insert using Drizzle ORM with all required fields
     const [schedule] = await db
       .insert(contentSchedule)  // Make sure this table is imported
       .values({
@@ -1159,7 +1144,7 @@ async createContentSchedule(data: {
         websiteId: websiteId,      
         scheduledDate: scheduledDate,  
         title: title,
-        topic: topic,  //nadagdag - CRITICAL: Include topic as direct field
+        topic: topic,
         status: data.status || 'scheduled',
         metadata: data.metadata || {},
         publishedAt: null,
@@ -1176,7 +1161,6 @@ async createContentSchedule(data: {
     return schedule;
     
   } catch (error: any) {
-    //nadagdag - Enhanced error logging
     console.error('❌ Database error in createContentSchedule:', error);
     console.error('Failed data:', {
       contentId,
@@ -1184,7 +1168,7 @@ async createContentSchedule(data: {
       websiteId,
       scheduled_date: scheduledDate?.toISOString(),
       title,
-      topic,  //nadagdag - Log topic in error
+      topic,
       status: data.status,
     });
     
@@ -1237,86 +1221,6 @@ async updateContentScheduleByContentId(contentId: string, updates: {
   
   return result[0] || null;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//WAG ALISIN
-// // Update the existing createContentSchedule method to work with contentId
-// async createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule> {
-//   const [scheduleRecord] = await db
-//     .insert(contentSchedule)
-//     .values({
-//       ...schedule,
-//       userId: schedule.userId
-//     })
-//     .returning();
-//   return scheduleRecord;
-// }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // Update client report methods - ADD THIS METHOD TO SUPPORT REPORT UPDATES
 async updateClientReport(id: string, updates: Partial<{
@@ -1788,8 +1692,6 @@ async getOrCreateUserSettings(userId: string): Promise<UserSettings> {
     };
   }
 
-
-  //nadagdag
   // Auto-Schedule Methods for Neon Database
   async getActiveAutoSchedules(): Promise<AutoSchedule[]> {
     try {
@@ -1823,8 +1725,6 @@ async getOrCreateUserSettings(userId: string): Promise<UserSettings> {
   }
 
 
-  
-//nadagdag - Fixed to ensure numeric values are properly handled
   async updateAutoSchedule(scheduleId: string, updates: any): Promise<void> {
     try {
       const updateData: any = {
@@ -2146,182 +2046,6 @@ async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Pro
   // SEO ISSUE TRACKING METHODS
   // ===============================
 
-  async createSeoIssue(issue: {
-  userId: string;
-  websiteId: string;
-  seoReportId?: string;
-  issueType: string;
-  issueTitle: string;
-  issueDescription?: string;
-  severity: 'critical' | 'warning' | 'info';
-  autoFixAvailable: boolean;
-  status?: 'detected' | 'fixing' | 'fixed' | 'resolved' | 'reappeared';
-  elementPath?: string;
-  currentValue?: string;
-  recommendedValue?: string;
-  detectedAt?: Date;
-  lastSeenAt?: Date;
-}): Promise<any> {
-  try {
-    const now = new Date();
-    
-    // First check if this issue already exists
-    const existingIssues = await db
-      .select()
-      .from(seoIssueTracking)
-      .where(
-        and(
-          eq(seoIssueTracking.websiteId, issue.websiteId),
-          eq(seoIssueTracking.userId, issue.userId),
-          eq(seoIssueTracking.issueType, issue.issueType)
-        )
-      )
-      .limit(1);
-
-    if (existingIssues.length > 0) {
-      // Issue already exists, update it instead
-      const existingIssue = existingIssues[0];
-      
-      // Determine the new status
-      let newStatus = existingIssue.status;
-      if (existingIssue.status === 'fixed' || existingIssue.status === 'resolved') {
-        newStatus = 'reappeared';
-      } else if (existingIssue.status === 'fixing') {
-        newStatus = 'detected'; // Reset stuck fixing status
-      }
-      
-      const [updatedIssue] = await db
-        .update(seoIssueTracking)
-        .set({
-          status: newStatus,
-          lastSeenAt: issue.lastSeenAt || now,
-          issueDescription: issue.issueDescription || existingIssue.issueDescription,
-          severity: issue.severity,
-          autoFixAvailable: issue.autoFixAvailable,
-          currentValue: issue.currentValue,
-          recommendedValue: issue.recommendedValue,
-          metadata: {
-            ...existingIssue.metadata,
-            lastDetectedInReport: issue.seoReportId,
-            detectionCount: (existingIssue.metadata?.detectionCount || 0) + 1,
-            reappearedAt: newStatus === 'reappeared' ? now.toISOString() : existingIssue.metadata?.reappearedAt
-          },
-          updatedAt: now
-        })
-        .where(eq(seoIssueTracking.id, existingIssue.id))
-        .returning();
-      
-      console.log(`Updated existing issue: ${issue.issueTitle} (${existingIssue.status} → ${newStatus})`);
-      return updatedIssue;
-    }
-    
-    // Create new issue
-    const [newIssue] = await db
-      .insert(seoIssueTracking)
-      .values({
-        websiteId: issue.websiteId,
-        userId: issue.userId,
-        issueType: issue.issueType,
-        issueTitle: issue.issueTitle,
-        issueDescription: issue.issueDescription,
-        severity: issue.severity,
-        status: issue.status || 'detected',
-        autoFixAvailable: issue.autoFixAvailable,
-        detectedAt: issue.detectedAt || now,
-        lastSeenAt: issue.lastSeenAt || now,
-        elementPath: issue.elementPath,
-        currentValue: issue.currentValue,
-        recommendedValue: issue.recommendedValue,
-        metadata: {
-          firstDetectedInReport: issue.seoReportId,
-          detectionCount: 1
-        },
-        createdAt: now,
-        updatedAt: now
-      })
-      .returning();
-    
-    console.log(`Created new tracked issue: ${issue.issueTitle}`);
-    return newIssue;
-  } catch (error) {
-    console.error('Error creating SEO issue:', error);
-    throw error;
-  }
-}
-
-async getDetailedSeoData(websiteId: string, userId: string): Promise<{
-  hasAIAnalysis: boolean;
-  trackedIssues: any[];
-  issuesSummary: any;
-  recentActivity: any[];
-}> {
-  try {
-    // Get the latest SEO report
-    const seoReports = await this.getSeoReportsByWebsite(websiteId);
-    const latestReport = seoReports[0];
-    
-    const hasAIAnalysis = latestReport?.metadata?.aiAnalysisPerformed || false;
-    
-    // IMPORTANT: Get ALL tracked issues without status filter
-    const trackedIssues = await this.getTrackedSeoIssues(websiteId, userId, {
-      limit: 200  // Increase limit to ensure we get all issues
-      // NO status filter - get everything
-    });
-    
-    // Log what we're getting
-    console.log(`getDetailedSeoData: Retrieved ${trackedIssues.length} total issues`);
-    console.log(`Status breakdown:
-      - detected: ${trackedIssues.filter(i => i.status === 'detected').length}
-      - fixing: ${trackedIssues.filter(i => i.status === 'fixing').length}
-      - fixed: ${trackedIssues.filter(i => i.status === 'fixed').length}
-      - resolved: ${trackedIssues.filter(i => i.status === 'resolved').length}
-      - reappeared: ${trackedIssues.filter(i => i.status === 'reappeared').length}
-    `);
-    
-    // Get summary statistics
-    const issuesSummary = await this.getSeoIssueTrackingSummary(websiteId, userId);
-    
-    // Get recent activity
-    const recentActivity = trackedIssues
-      .filter(issue => issue.metadata?.statusHistory)
-      .flatMap(issue => 
-        (issue.metadata.statusHistory || []).map((history: any) => ({
-          ...history,
-          issueTitle: issue.issueTitle,
-          issueType: issue.issueType,
-          issueId: issue.id
-        }))
-      )
-      .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, 10);
-
-    return {
-      hasAIAnalysis,
-      trackedIssues,  // This should include ALL issues including fixed/resolved
-      issuesSummary,
-      recentActivity
-    };
-  } catch (error) {
-    console.error('Error getting detailed SEO data:', error);
-    return {
-      hasAIAnalysis: false,
-      trackedIssues: [],
-      issuesSummary: {
-        totalIssues: 0,
-        detected: 0,
-        fixing: 0,
-        fixed: 0,
-        resolved: 0,
-        reappeared: 0,
-        autoFixable: 0,
-        completionPercentage: 0,
-        lastActivity: null
-      },
-      recentActivity: []
-    };
-  }
-}
-
   private generateIssueHash(issueType: string, websiteId: string, elementPath?: string): string {
     const hashInput = `${issueType}-${websiteId}-${elementPath || 'global'}`;
     return createHash('sha256').update(hashInput).digest('hex').substring(0, 16);
@@ -2499,96 +2223,81 @@ async getDetailedSeoData(websiteId: string, userId: string): Promise<{
    * Update issue status (used during AI fixing)
    */
   async updateSeoIssueStatus(
-  issueId: string,
-  status: 'detected' | 'fixing' | 'fixed' | 'resolved' | 'reappeared',
-  updates: {
-    fixMethod?: 'ai_automatic' | 'manual';
-    fixSessionId?: string;
-    fixBefore?: string;
-    fixAfter?: string;
-    aiModel?: string;
-    tokensUsed?: number;
-    fixError?: string;
-    resolutionNotes?: string;
-    previousStatus?: string;
-    reappearedAt?: Date;
-    lastSeenAt?: Date;
-    fixedAt?: Date;
-    resolvedAt?: Date;
-    resolvedAutomatically?: boolean;
-  } = {}
-): Promise<SeoIssueTracking | null> {
-  try {
-    const now = new Date();
-    const updateData: any = {
-      status,
-      updatedAt: now
-    };
-
-    // Handle Date fields properly
-    if (updates.fixedAt) updateData.fixedAt = updates.fixedAt;
-    if (updates.resolvedAt) updateData.resolvedAt = updates.resolvedAt;
-    if (updates.lastSeenAt) updateData.lastSeenAt = updates.lastSeenAt;
-    
-    // Set timestamps based on status if not explicitly provided
-    if (status === 'fixed' && !updates.fixedAt) {
-      updateData.fixedAt = now;
-    }
-    if (status === 'resolved' && !updates.resolvedAt) {
-      updateData.resolvedAt = now;
-    }
-
-    // Add other fix details if provided
-    Object.entries(updates).forEach(([key, value]) => {
-      if (value !== undefined && !['fixedAt', 'resolvedAt', 'lastSeenAt', 'reappearedAt'].includes(key)) {
-        updateData[key] = value;
-      }
-    });
-
-    // Update metadata with fix information
-    const [existingIssue] = await db
-      .select()
-      .from(seoIssueTracking)
-      .where(eq(seoIssueTracking.id, issueId))
-      .limit(1);
-
-    if (existingIssue) {
-      updateData.metadata = {
-        ...existingIssue.metadata,
-        statusHistory: [
-          ...(existingIssue.metadata?.statusHistory || []),
-          {
-            previousStatus: existingIssue.status,
-            newStatus: status,
-            timestamp: now.toISOString(),
-            fixMethod: updates.fixMethod,
-            fixSessionId: updates.fixSessionId,
-            resolutionNotes: updates.resolutionNotes
-          }
-        ],
-        fixAttempts: status === 'fixing' 
-          ? (existingIssue.metadata?.fixAttempts || 0) + 1
-          : existingIssue.metadata?.fixAttempts,
-        lastFixError: updates.fixError || existingIssue.metadata?.lastFixError,
-        previousStatus: updates.previousStatus,
-        reappearedAt: updates.reappearedAt?.toISOString(),
-        resolvedAutomatically: updates.resolvedAutomatically
+    issueId: string,
+    status: 'detected' | 'fixing' | 'fixed' | 'resolved' | 'reappeared',
+    updates: {
+      fixMethod?: 'ai_automatic' | 'manual';
+      fixSessionId?: string;
+      fixBefore?: string;
+      fixAfter?: string;
+      aiModel?: string;
+      tokensUsed?: number;
+      fixError?: string;
+      resolutionNotes?: string;
+    } = {}
+  ): Promise<SeoIssueTracking | null> {
+    try {
+      const now = new Date();
+      const updateData: any = {
+        status,
+        updatedAt: now
       };
+
+      // Set appropriate timestamps based on status
+      if (status === 'fixed' || status === 'resolved') {
+        updateData.fixedAt = now;
+        if (status === 'resolved') {
+          updateData.resolvedAt = now;
+        }
+      }
+
+      // Add fix details if provided
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value !== undefined) {
+          updateData[key] = value;
+        }
+      });
+
+      // Update metadata with fix information
+      const [existingIssue] = await db
+        .select()
+        .from(seoIssueTracking)
+        .where(eq(seoIssueTracking.id, issueId))
+        .limit(1);
+
+      if (existingIssue) {
+        updateData.metadata = {
+          ...existingIssue.metadata,
+          statusHistory: [
+            ...(existingIssue.metadata?.statusHistory || []),
+            {
+              previousStatus: existingIssue.status,
+              newStatus: status,
+              timestamp: now.toISOString(),
+              fixMethod: updates.fixMethod,
+              fixSessionId: updates.fixSessionId
+            }
+          ],
+          fixAttempts: status === 'fixing' 
+            ? (existingIssue.metadata?.fixAttempts || 0) + 1
+            : existingIssue.metadata?.fixAttempts,
+          lastFixError: updates.fixError || existingIssue.metadata?.lastFixError
+        };
+      }
+
+      const [updatedIssue] = await db
+        .update(seoIssueTracking)
+        .set(updateData)
+        .where(eq(seoIssueTracking.id, issueId))
+        .returning();
+
+      console.log(`Updated SEO issue ${issueId} status to: ${status}`);
+      return updatedIssue;
+    } catch (error) {
+      console.error('Error updating SEO issue status:', error);
+      throw error;
     }
-
-    const [updatedIssue] = await db
-      .update(seoIssueTracking)
-      .set(updateData)
-      .where(eq(seoIssueTracking.id, issueId))
-      .returning();
-
-    console.log(`Updated SEO issue ${issueId} status from ${existingIssue?.status} to: ${status}`);
-    return updatedIssue;
-  } catch (error) {
-    console.error('Error updating SEO issue status:', error);
-    throw error;
   }
-}
 
   /**
    * Bulk update issue statuses (useful for batch fixes)
@@ -2885,12 +2594,7 @@ async clearAllSeoData(websiteId: string, userId: string): Promise<{
   }
 }
 
-  
-  // Note: createContentSchedule and createActivityLog already exist in your code
-  
-
-  
-  //nadagdag
+ 
   //================Google Search Console===================
 
 
