@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Key, Globe, Bot, Bell, Shield, User, Trash2, Eye, EyeOff, Check, X, Loader2, Plus, RotateCcw } from "lucide-react";
+import { Save, Key, Globe, Bot, Bell, Shield, User, Trash2, Eye, EyeOff, Check, X, Loader2, Plus, RotateCcw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,10 +12,22 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 
-// ADD THIS IMPORT
+// Add these imports for the confirmation dialog
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+// Sanitizer import
 import { Sanitizer } from "@/utils/inputSanitizer";
 
-// API Key interfaces (keeping existing API key types)
+// Keep existing interfaces...
 interface UserApiKey {
   id: string;
   provider: string;
@@ -35,58 +47,39 @@ interface ApiKeyFormData {
 
 interface ApiKeyStatus {
   providers: {
-    openai: {
-      configured: boolean;
-      keyName?: string;
-      lastValidated?: string;
-      status: string;
-    };
-    anthropic: {
-      configured: boolean;
-      keyName?: string;
-      lastValidated?: string;
-      status: string;
-    };
-    google_pagespeed: {
-      configured: boolean;
-      keyName?: string;
-      lastValidated?: string;
-      status: string;
-    };
+    openai: { configured: boolean; keyName?: string; lastValidated?: string; status: string; };
+    anthropic: { configured: boolean; keyName?: string; lastValidated?: string; status: string; };
+    google_pagespeed: { configured: boolean; keyName?: string; lastValidated?: string; status: string; };
   };
 }
 
-// Settings interface
 interface UserSettings {
-  profile: {
-    name: string;
-    email: string;
-    company: string;
-    timezone: string;
-  };
-  notifications: {
-    emailReports: boolean;
-    contentGenerated: boolean;
-    seoIssues: boolean;
-    systemAlerts: boolean;
-  };
-  automation: {
-    defaultAiModel: string;
-    autoFixSeoIssues: boolean;
-    contentGenerationFrequency: string;
-    reportGeneration: string;
-  };
-  security: {
-    twoFactorAuth: boolean;
-    sessionTimeout: number;
-    allowApiAccess: boolean;
-  };
+  profile: { name: string; email: string; company: string; timezone: string; };
+  notifications: { emailReports: boolean; contentGenerated: boolean; seoIssues: boolean; systemAlerts: boolean; };
+  automation: { defaultAiModel: string; autoFixSeoIssues: boolean; contentGenerationFrequency: string; reportGeneration: string; };
+  security: { twoFactorAuth: boolean; sessionTimeout: number; allowApiAccess: boolean; };
+}
+
+// Delete confirmation state type
+interface DeleteConfirmation {
+  isOpen: boolean;
+  type: 'apiKey' | 'website' | null;
+  itemId: string;
+  itemName: string;
 }
 
 export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("profile");
+  
+  // Delete confirmation state
+  const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation>({
+    isOpen: false,
+    type: null,
+    itemId: '',
+    itemName: ''
+  });
   
   // API Key management state
   const [isAddingKey, setIsAddingKey] = useState(false);
@@ -98,7 +91,15 @@ export default function Settings() {
   const [validatingKeys, setValidatingKeys] = useState<Set<string>>(new Set());
   const [showApiKey, setShowApiKey] = useState(false);
 
-  // Fetch real user settings
+  // Password state
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
+
+  // Fetch user settings
   const { data: settings, isLoading: settingsLoading, error: settingsError } = useQuery<UserSettings>({
     queryKey: ["/api/user/settings"],
     queryFn: async () => {
@@ -138,17 +139,15 @@ export default function Settings() {
       if (!response.ok) throw new Error('Failed to fetch API key status');
       return response.json();
     },
-    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchInterval: 30000,
   });
 
-  // Update settings mutation (real API call)
+  // Update settings mutation
   const updateSettings = useMutation({
     mutationFn: async (newSettings: UserSettings) => {
       const response = await fetch("/api/user/settings", {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(newSettings)
       });
@@ -161,9 +160,7 @@ export default function Settings() {
       return response.json();
     },
     onSuccess: (updatedSettings) => {
-      // Update the query cache with the new settings
       queryClient.setQueryData(["/api/user/settings"], updatedSettings);
-      
       toast({
         title: "Settings Saved",
         description: "Your settings have been successfully updated.",
@@ -194,9 +191,7 @@ export default function Settings() {
       return response.json();
     },
     onSuccess: (result) => {
-      // Update the query cache with the default settings
       queryClient.setQueryData(["/api/user/settings"], result.settings);
-      
       toast({
         title: "Settings Reset",
         description: "Your settings have been reset to defaults.",
@@ -211,14 +206,12 @@ export default function Settings() {
     },
   });
 
-  // API key mutations (keeping existing)
+  // API key mutations
   const addApiKey = useMutation({
     mutationFn: async (keyData: ApiKeyFormData) => {
       const response = await fetch("/api/user/api-keys", {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(keyData)
       });
@@ -303,181 +296,35 @@ export default function Settings() {
     },
   });
 
-  // UPDATED: handleSave with sanitization
-  const handleSave = () => {
-    if (settings) {
-      // Sanitize settings before saving
-      const sanitizedSettings = {
-        profile: {
-          name: Sanitizer.sanitizeText(settings.profile.name),
-          email: settings.profile.email, // Already validated in updateSetting
-          company: Sanitizer.sanitizeText(settings.profile.company),
-          timezone: settings.profile.timezone, // From select, safe
-        },
-        notifications: settings.notifications, // All booleans, safe
-        automation: settings.automation, // All from selects or booleans, safe
-        security: {
-          twoFactorAuth: settings.security.twoFactorAuth,
-          sessionTimeout: Math.min(168, Math.max(1, settings.security.sessionTimeout)),
-          allowApiAccess: settings.security.allowApiAccess,
-        },
-      };
+  // Add website deletion mutation
+  const deleteWebsite = useMutation({
+    mutationFn: async (websiteId: string) => {
+      const response = await fetch(`/api/user/websites/${websiteId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
       
-      updateSettings.mutate(sanitizedSettings);
-    }
-  };
-
-  const handleReset = () => {
-    resetSettings.mutate();
-  };
-
-  // UPDATED: updateSetting with sanitization
-  const updateSetting = (section: keyof UserSettings, key: string, value: any) => {
-    if (!settings) return;
-    
-    let sanitizedValue = value;
-    
-    // Apply sanitization based on field type
-    if (section === 'profile') {
-      switch (key) {
-        case 'name':
-        case 'company':
-          // Sanitize text fields
-          sanitizedValue = Sanitizer.sanitizeText(value);
-          break;
-          
-        case 'email':
-          // Validate email
-          const emailValidation = Sanitizer.sanitizeEmail(value);
-          if (!emailValidation.isValid && value !== '') {
-            toast({
-              title: "Invalid Email",
-              description: emailValidation.error || "Please enter a valid email address",
-              variant: "destructive",
-            });
-            return;
-          }
-          sanitizedValue = emailValidation.sanitized;
-          break;
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to delete website');
       }
-    } else if (section === 'security' && key === 'sessionTimeout') {
-      // Sanitize number
-      const numValue = parseInt(value);
-      if (!isNaN(numValue)) {
-        sanitizedValue = Math.min(168, Math.max(1, numValue));
-      }
-    }
-    
-    queryClient.setQueryData(["/api/user/settings"], {
-      ...settings,
-      [section]: {
-        ...settings[section],
-        [key]: sanitizedValue,
-      },
-    });
-  };
-
-  // UPDATED: handleAddApiKey with sanitization
-  const handleAddApiKey = () => {
-    // Sanitize key name
-    const sanitizedKeyName = Sanitizer.sanitizeText(newKeyForm.keyName);
-    
-    if (!newKeyForm.provider || !sanitizedKeyName || !newKeyForm.apiKey) {
+    },
+    onSuccess: () => {
       toast({
-        title: "Missing Information",
-        description: "Please fill in all fields.",
+        title: "Website Disconnected",
+        description: "The website has been removed from your account.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/user/websites"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to Delete Website",
+        description: error.message,
         variant: "destructive",
       });
-      return;
-    }
-    
-    // Validate key name length
-    if (sanitizedKeyName.length < 2 || sanitizedKeyName.length > 100) {
-      toast({
-        title: "Invalid Key Name",
-        description: "Key name must be between 2 and 100 characters.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    // Basic API key format validation
-    const apiKey = newKeyForm.apiKey.trim();
-    if (newKeyForm.provider === 'openai' && !apiKey.startsWith('sk-')) {
-      toast({
-        title: "Invalid API Key Format",
-        description: "OpenAI API keys should start with 'sk-'",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (newKeyForm.provider === 'anthropic' && !apiKey.startsWith('sk-ant-')) {
-      toast({
-        title: "Invalid API Key Format",
-        description: "Anthropic API keys should start with 'sk-ant-'",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    addApiKey.mutate({
-      provider: newKeyForm.provider, // From select, safe
-      keyName: sanitizedKeyName,
-      apiKey: apiKey // Don't alter the API key itself
-    });
-  };
-
-  const handleValidateKey = (keyId: string) => {
-    setValidatingKeys(prev => new Set(prev).add(keyId));
-    validateApiKey.mutate(keyId, {
-      onFinally: () => {
-        setValidatingKeys(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(keyId);
-          return newSet;
-        });
-      }
-    });
-  };
-
-  const getStatusBadge = (status: string, provider: string) => {
-    const providerStatus = apiKeyStatus?.providers?.[provider as keyof typeof apiKeyStatus.providers];
-    
-    if (!providerStatus?.configured) {
-      return <Badge className="bg-gray-100 text-gray-800">Not Configured</Badge>;
-    }
-    
-    if (status === 'valid') {
-      return <Badge className="bg-green-100 text-green-800">✔ Active</Badge>;
-    } else if (status === 'invalid') {
-      return <Badge className="bg-red-100 text-red-800">✗ Invalid</Badge>;
-    } else {
-      return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>;
-    }
-  };
-
-  const getProviderIcon = (provider: string) => {
-    switch (provider) {
-      case 'openai':
-        return <Bot className="w-6 h-6 text-green-600" />;
-      case 'anthropic':
-        return <Bot className="w-6 h-6 text-blue-600" />;
-      case 'google_pagespeed':
-        return <Globe className="w-6 h-6 text-orange-600" />;
-      default:
-        return <Key className="w-6 h-6 text-gray-400" />;
-    }
-  };
-
-  const [passwordData, setPasswordData] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
+    },
   });
-  const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
 
-  // Add password change mutation
   const changePassword = useMutation({
     mutationFn: api.changePassword,
     onSuccess: () => {
@@ -501,7 +348,161 @@ export default function Settings() {
     },
   });
 
-  // UPDATED: validatePasswordForm with enhanced validation
+  // Delete confirmation handlers
+  const openDeleteConfirmation = (type: 'apiKey' | 'website', itemId: string, itemName: string) => {
+    setDeleteConfirmation({
+      isOpen: true,
+      type,
+      itemId,
+      itemName
+    });
+  };
+
+  const closeDeleteConfirmation = () => {
+    setDeleteConfirmation({
+      isOpen: false,
+      type: null,
+      itemId: '',
+      itemName: ''
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (deleteConfirmation.type === 'apiKey') {
+      deleteApiKey.mutate(deleteConfirmation.itemId);
+    } else if (deleteConfirmation.type === 'website') {
+      deleteWebsite.mutate(deleteConfirmation.itemId);
+    }
+    closeDeleteConfirmation();
+  };
+
+  const handleSave = () => {
+    if (settings) {
+      const sanitizedSettings = {
+        profile: {
+          name: Sanitizer.sanitizeText(settings.profile.name),
+          email: settings.profile.email,
+          company: Sanitizer.sanitizeText(settings.profile.company),
+          timezone: settings.profile.timezone,
+        },
+        notifications: settings.notifications,
+        automation: settings.automation,
+        security: {
+          twoFactorAuth: settings.security.twoFactorAuth,
+          sessionTimeout: Math.min(168, Math.max(1, settings.security.sessionTimeout)),
+          allowApiAccess: settings.security.allowApiAccess,
+        },
+      };
+      
+      updateSettings.mutate(sanitizedSettings);
+    }
+  };
+
+  const handleReset = () => {
+    resetSettings.mutate();
+  };
+
+  const updateSetting = (section: keyof UserSettings, key: string, value: any) => {
+    if (!settings) return;
+    
+    let sanitizedValue = value;
+    
+    if (section === 'profile') {
+      switch (key) {
+        case 'name':
+        case 'company':
+          sanitizedValue = Sanitizer.sanitizeText(value);
+          break;
+          
+        case 'email':
+          const emailValidation = Sanitizer.sanitizeEmail(value);
+          if (!emailValidation.isValid && value !== '') {
+            toast({
+              title: "Invalid Email",
+              description: emailValidation.error || "Please enter a valid email address",
+              variant: "destructive",
+            });
+            return;
+          }
+          sanitizedValue = emailValidation.sanitized;
+          break;
+      }
+    } else if (section === 'security' && key === 'sessionTimeout') {
+      const numValue = parseInt(value);
+      if (!isNaN(numValue)) {
+        sanitizedValue = Math.min(168, Math.max(1, numValue));
+      }
+    }
+    
+    queryClient.setQueryData(["/api/user/settings"], {
+      ...settings,
+      [section]: {
+        ...settings[section],
+        [key]: sanitizedValue,
+      },
+    });
+  };
+
+  const handleAddApiKey = () => {
+    const sanitizedKeyName = Sanitizer.sanitizeText(newKeyForm.keyName);
+    
+    if (!newKeyForm.provider || !sanitizedKeyName || !newKeyForm.apiKey) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (sanitizedKeyName.length < 2 || sanitizedKeyName.length > 100) {
+      toast({
+        title: "Invalid Key Name",
+        description: "Key name must be between 2 and 100 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const apiKey = newKeyForm.apiKey.trim();
+    if (newKeyForm.provider === 'openai' && !apiKey.startsWith('sk-')) {
+      toast({
+        title: "Invalid API Key Format",
+        description: "OpenAI API keys should start with 'sk-'",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (newKeyForm.provider === 'anthropic' && !apiKey.startsWith('sk-ant-')) {
+      toast({
+        title: "Invalid API Key Format",
+        description: "Anthropic API keys should start with 'sk-ant-'",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    addApiKey.mutate({
+      provider: newKeyForm.provider,
+      keyName: sanitizedKeyName,
+      apiKey: apiKey
+    });
+  };
+
+  const handleValidateKey = (keyId: string) => {
+    setValidatingKeys(prev => new Set(prev).add(keyId));
+    validateApiKey.mutate(keyId, {
+      onFinally: () => {
+        setValidatingKeys(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(keyId);
+          return newSet;
+        });
+      }
+    });
+  };
+
   const validatePasswordForm = (): boolean => {
     const errors: string[] = [];
     
@@ -517,7 +518,6 @@ export default function Settings() {
       errors.push('Password confirmation is required');
     }
     
-    // Check password length limits
     if (passwordData.newPassword && passwordData.newPassword.length > 200) {
       errors.push('Password is too long (maximum 200 characters)');
     }
@@ -536,7 +536,6 @@ export default function Settings() {
       errors.push('New password must be different from current password');
     }
     
-    // Check for common weak passwords
     const weakPasswords = ['password', '12345678', 'qwerty', 'abc12345', 'password123'];
     if (passwordData.newPassword && weakPasswords.includes(passwordData.newPassword.toLowerCase())) {
       errors.push('This password is too common. Please choose a stronger password');
@@ -546,7 +545,6 @@ export default function Settings() {
     return errors.length === 0;
   };
 
-  // Add form submit handler
   const handlePasswordChange = () => {
     if (!validatePasswordForm()) {
       toast({
@@ -558,6 +556,35 @@ export default function Settings() {
     }
     
     changePassword.mutate(passwordData);
+  };
+
+  const getStatusBadge = (status: string, provider: string) => {
+    const providerStatus = apiKeyStatus?.providers?.[provider as keyof typeof apiKeyStatus.providers];
+    
+    if (!providerStatus?.configured) {
+      return <Badge className="bg-gray-100 text-gray-800">Not Configured</Badge>;
+    }
+    
+    if (status === 'valid') {
+      return <Badge className="bg-green-100 text-green-800">✓ Active</Badge>;
+    } else if (status === 'invalid') {
+      return <Badge className="bg-red-100 text-red-800">✗ Invalid</Badge>;
+    } else {
+      return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>;
+    }
+  };
+
+  const getProviderIcon = (provider: string) => {
+    switch (provider) {
+      case 'openai':
+        return <Bot className="w-6 h-6 text-green-600" />;
+      case 'anthropic':
+        return <Bot className="w-6 h-6 text-blue-600" />;
+      case 'google_pagespeed':
+        return <Globe className="w-6 h-6 text-orange-600" />;
+      default:
+        return <Key className="w-6 h-6 text-gray-400" />;
+    }
   };
 
   const getProviderName = (provider: string) => {
@@ -573,7 +600,6 @@ export default function Settings() {
     }
   };
 
-  // Loading state
   if (settingsLoading) {
     return (
       <div className="py-6">
@@ -587,7 +613,6 @@ export default function Settings() {
     );
   }
 
-  // Error state
   if (settingsError || !settings) {
     return (
       <div className="py-6">
@@ -634,11 +659,10 @@ export default function Settings() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="integrations">API Keys</TabsTrigger>
             <TabsTrigger value="automation">Automation</TabsTrigger>
-            {/* <TabsTrigger value="notifications">Notifications</TabsTrigger> */}
             <TabsTrigger value="security">Security</TabsTrigger>
           </TabsList>
 
@@ -712,7 +736,7 @@ export default function Settings() {
             </Card>
           </TabsContent>
 
-          {/* API Keys (Integrations) - Complete Implementation */}
+          {/* API Keys (Integrations) */}
           <TabsContent value="integrations" className="space-y-6">
             <Card>
               <CardHeader>
@@ -764,7 +788,6 @@ export default function Settings() {
                           placeholder="e.g., My OpenAI Key"
                           value={newKeyForm.keyName}
                           onChange={(e) => {
-                            // Sanitize on input
                             const sanitized = Sanitizer.sanitizeText(e.target.value);
                             setNewKeyForm(prev => ({ ...prev, keyName: sanitized }));
                           }}
@@ -874,7 +897,7 @@ export default function Settings() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => deleteApiKey.mutate(apiKey.id)}
+                          onClick={() => openDeleteConfirmation('apiKey', apiKey.id, apiKey.keyName)}
                           disabled={deleteApiKey.isPending}
                         >
                           <Trash2 className="w-3 h-3" />
@@ -890,37 +913,6 @@ export default function Settings() {
                       <p className="text-sm">Add your first API key to get started with AI content generation.</p>
                     </div>
                   )}
-                </div>
-
-                {/* Provider Status Overview */}
-                <div className="mt-6 pt-6 border-t">
-                  <h4 className="font-medium mb-3">Service Status</h4>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center p-3 border rounded">
-                      <Bot className="w-8 h-8 mx-auto mb-2 text-green-600" />
-                      <p className="font-medium">OpenAI</p>
-                      {getStatusBadge(
-                        apiKeyStatus?.providers?.openai?.configured ? 'valid' : 'invalid',
-                        'openai'
-                      )}
-                    </div>
-                    <div className="text-center p-3 border rounded">
-                      <Bot className="w-8 h-8 mx-auto mb-2 text-blue-600" />
-                      <p className="font-medium">Anthropic</p>
-                      {getStatusBadge(
-                        apiKeyStatus?.providers?.anthropic?.configured ? 'valid' : 'invalid',
-                        'anthropic'
-                      )}
-                    </div>
-                    <div className="text-center p-3 border rounded">
-                      <Globe className="w-8 h-8 mx-auto mb-2 text-orange-600" />
-                      <p className="font-medium">PageSpeed</p>
-                      {getStatusBadge(
-                        apiKeyStatus?.providers?.google_pagespeed?.configured ? 'valid' : 'invalid',
-                        'google_pagespeed'
-                      )}
-                    </div>
-                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -951,12 +943,25 @@ export default function Settings() {
                         }>
                           {website.status}
                         </Badge>
-                        <Button size="sm" variant="outline">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => openDeleteConfirmation('website', website.id, website.name)}
+                          disabled={deleteWebsite.isPending}
+                        >
                           <Trash2 className="w-3 h-3" />
                         </Button>
                       </div>
                     </div>
                   ))}
+                  
+                  {(!websites || websites.length === 0) && (
+                    <div className="text-center py-8 text-gray-500">
+                      <Globe className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                      <p>No WordPress sites connected yet.</p>
+                      <p className="text-sm">Connect your first website to start generating content.</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1087,7 +1092,6 @@ export default function Settings() {
                     value={settings.security.sessionTimeout}
                     onChange={(e) => updateSetting("security", "sessionTimeout", parseInt(e.target.value))}
                     onBlur={(e) => {
-                      // Ensure value is within bounds on blur
                       const value = parseInt(e.target.value);
                       if (isNaN(value) || value < 1) {
                         updateSetting("security", "sessionTimeout", 1);
@@ -1143,7 +1147,7 @@ export default function Settings() {
                         value={passwordData.currentPassword}
                         onChange={(e) => setPasswordData(prev => ({ 
                           ...prev, 
-                          currentPassword: e.target.value // Don't sanitize passwords
+                          currentPassword: e.target.value
                         }))}
                         maxLength={200}
                         autoComplete="current-password"
@@ -1160,7 +1164,7 @@ export default function Settings() {
                         value={passwordData.newPassword}
                         onChange={(e) => setPasswordData(prev => ({ 
                           ...prev, 
-                          newPassword: e.target.value // Don't sanitize passwords
+                          newPassword: e.target.value
                         }))}
                         maxLength={200}
                         autoComplete="new-password"
@@ -1180,7 +1184,7 @@ export default function Settings() {
                         value={passwordData.confirmPassword}
                         onChange={(e) => setPasswordData(prev => ({ 
                           ...prev, 
-                          confirmPassword: e.target.value // Don't sanitize passwords
+                          confirmPassword: e.target.value
                         }))}
                         maxLength={200}
                         autoComplete="new-password"
@@ -1188,7 +1192,6 @@ export default function Settings() {
                       />
                     </div>
                     
-                    {/* Password strength indicator */}
                     {passwordData.newPassword && (
                       <div className="text-xs">
                         Password strength: 
@@ -1227,6 +1230,45 @@ export default function Settings() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteConfirmation.isOpen} onOpenChange={closeDeleteConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="w-5 h-5 text-red-500" />
+                <span>Confirm Deletion</span>
+              </div>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteConfirmation.type === 'apiKey' ? (
+                <>
+                  Are you sure you want to delete the API key <strong>"{deleteConfirmation.itemName}"</strong>?
+                  <br /><br />
+                  This action cannot be undone. You will need to add the key again if you want to use it in the future.
+                </>
+              ) : (
+                <>
+                  Are you sure you want to disconnect <strong>"{deleteConfirmation.itemName}"</strong>?
+                  <br /><br />
+                  This will remove the website from your account. You can reconnect it later, but you will need to re-enter your WordPress credentials.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmDelete}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+
