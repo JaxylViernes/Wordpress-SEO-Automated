@@ -397,15 +397,33 @@ updateContent: (id: string, data: {
     headers: {
       'Content-Type': 'application/json',
     },
-    credentials: 'include',  // Add this to ensure cookies are sent
+    credentials: 'include',
   });
   
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Failed to clear SEO history' }));
-    throw new Error(error.message || 'Failed to clear SEO history');
+    const contentType = response.headers.get("content-type");
+    let errorMessage = 'Failed to clear SEO history';
+    
+    if (contentType && contentType.includes("application/json")) {
+      try {
+        const error = await response.json();
+        errorMessage = error.message || errorMessage;
+      } catch {
+        // JSON parsing failed, use default message
+      }
+    } else {
+      errorMessage = `Server error: ${response.status} ${response.statusText}`;
+    }
+    
+    throw new Error(errorMessage);
   }
   
-  return response.json();
+  // Parse the success response to get details about what was deleted
+  if (response.status === 200) {
+    const result = await response.json();
+    console.log('SEO history cleared:', result);
+    return result;
+  }
 },
 
   getClientReports: (websiteId?: string) => {
@@ -441,22 +459,28 @@ generateClientReport: async (
   websiteId: string, 
   data: { 
     reportType: 'weekly' | 'monthly' | 'quarterly',
-    reportId?: string | number  // Add this optional parameter
+    reportId?: string | number
   }
 ) => {
-  const response = await fetch('/api/user/reports', {
+  console.log('🚀 Calling backend to generate report:', { websiteId, ...data });
+  
+  const response = await fetch(`/api/user/websites/${websiteId}/reports/generate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
+    credentials: 'include',
     body: JSON.stringify({ 
-      websiteId, 
-      ...data 
+      reportType: data.reportType,
+      reportId: data.reportId 
     }),
   });
   
   if (!response.ok) {
-    throw new Error('Failed to generate report');
+    const error = await response.json().catch(() => ({ 
+      message: 'Failed to generate report' 
+    }));
+    throw new Error(error.message || 'Failed to generate report');
   }
   
   return response.json();
@@ -729,36 +753,22 @@ getSchedulingDashboard: async () => {
 
 // In your api object, temporarily replace uploadImages:
 uploadImages: async (files, websiteId, contentId) => {
-  console.log("Mock upload - files:", files);
+  const formData = new FormData();
+  Array.from(files).forEach(file => formData.append('images', file));
+  formData.append('websiteId', websiteId);
+  if (contentId) formData.append('contentId', contentId);
   
-  // Simulate upload delay
-  await new Promise(resolve => setTimeout(resolve, 500));
+  const response = await fetch('/api/user/content/upload-images', {
+    method: 'POST',
+    body: formData
+  });
   
-  // Create mock response with data URLs for immediate display
-  const mockImages = await Promise.all(
-    Array.from(files).map(async (file, index) => {
-      // Read file as data URL for preview
-      const dataUrl = await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.readAsDataURL(file);
-      });
-      
-      return {
-        id: `temp_${Date.now()}_${index}`,
-        url: dataUrl,
-        altText: file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " "),
-        filename: file.name,
-        size: file.size
-      };
-    })
-  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Failed to upload images' }));
+    throw new Error(error.message || 'Failed to upload images');
+  }
   
-  return { 
-    success: true,
-    images: mockImages,
-    message: "Mock upload - implement backend endpoint"
-  };
+  return response.json();
 },
 
 getUserImages: (filters?: {

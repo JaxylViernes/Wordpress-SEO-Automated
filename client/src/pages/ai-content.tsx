@@ -267,18 +267,18 @@ const ImagePickerModal = ({ uploadedImages, onSelect, onClose, onUpload, isUploa
             <div className="mb-6">
               <label className="block">
                 <input
-                  type="file"
-                  multiple
-                  accept="image/*"
-                   onChange={(e) => {
+  type="file"
+  multiple
+  accept="image/*"
+  onChange={(e) => {
     console.log("File input changed!");
     console.log("Files selected:", e.target.files);
     console.log("Files length:", e.target.files?.length);
-    handleImageUpload(e.target.files);
+    onUpload(e.target.files);  // Changed from handleImageUpload to onUpload
   }}
   disabled={isUploadingImage}
   className="hidden"
-                />
+/>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-gray-400">
                   <Upload className="mx-auto h-12 w-12 text-gray-400" />
                   <p className="mt-2">Click or drag images to upload</p>

@@ -1,0 +1,208 @@
+// Replace these methods in your ai-fix-service.ts file
+
+private cleanAndValidateContent(content: string): string {
+    const invalidPatterns = [
+      /in this optimized version/gi,
+      /i've integrated.*keywords/gi,
+      /keywords naturally throughout/gi,
+      /ensuring.*readability.*structure/gi
+    ];
+    
+    let cleaned = content;
+    for (const pattern of invalidPatterns) {
+      cleaned = cleaned.replace(pattern, '');
+    }
+
+    const $ = cheerio.load(cleaned, {
+      xml: false,
+      decodeEntities: false
+    });
+    
+    // Extract body content if it exists
+    const bodyContent = $('body').html();
+    if (bodyContent) {
+      return bodyContent;
+    }
+    
+    // If no body tag, extract only the actual content elements
+    // Skip html, head, body wrapper tags
+    const actualContent = $.root()
+      .contents()
+      .filter(function() {
+        if (this.type === 'tag') {
+          const tagName = (this as any).name;
+          return tagName !== 'html' && tagName !== 'head' && tagName !== 'body';
+        }
+        return this.type === 'text' && this.data?.trim();
+      })
+      .map((_, el) => $.html(el))
+      .get()
+      .join('');
+    
+    return actualContent || cleaned;
+  }
+
+  private extractContentOnly(html: string): string {
+    if (!html) return '';
+    
+    // If it's already wrapped in full HTML structure
+    if (html.includes('<!DOCTYPE') || html.includes('<html') || html.includes('"html')) {
+      const $ = cheerio.load(html, {
+        xml: false,
+        decodeEntities: false
+      });
+      
+      // Try to get body content first
+      let content = $('body').html();
+      
+      if (!content) {
+        // Extract actual content nodes, skipping document structure
+        content = $.root()
+          .find('*')
+          .filter(function() {
+            const tagName = this.tagName;
+            return tagName !== 'html' && tagName !== 'head' && tagName !== 'body';
+          })
+          .parent()
+          .html();
+      }
+      
+      return content || html;
+    }
+    
+    // If it's not wrapped, return as-is
+    return html;
+  }
+
+  // Update the content extraction in fix methods
+  private getContentFromCheerio($: cheerio.CheerioAPI): string {
+    // First try to get body content
+    const bodyHtml = $('body').html();
+    if (bodyHtml) {
+      return bodyHtml;
+    }
+    
+    // If no body, get all top-level content elements
+    // This avoids returning wrapper tags
+    const content = $.root()
+      .contents()
+      .filter(function() {
+        if (this.type === 'tag') {
+          const tagName = (this as any).name;
+          // Only return actual content tags, not document structure
+          return tagName !== 'html' && tagName !== 'head' && tagName !== 'body';
+        }
+        // Include text nodes if they have content
+        return this.type === 'text' && this.data?.trim();
+      })
+      .map((_, el) => {
+        if (el.type === 'text') {
+          return el.data;
+        }
+        return $.html(el);
+      })
+      .get()
+      .join('');
+    
+    return content;
+  }
+
+  // Example of how to update fixHeadingStructure method
+  private async fixHeadingStructure(creds: WordPressCredentials, fixes: AIFix[], userId?: string) {
+    return this.fixWordPressContent(creds, fixes, async (content, fix) => {
+      const contentHtml = content.content?.rendered || content.content || "";
+      const $ = cheerio.load(contentHtml, {
+        xml: false,
+        decodeEntities: false
+      });
+      
+      const h1s = $("h1");
+      let updated = false;
+      const changes: string[] = [];
+      const hasProperStructure = h1s.length === 1;
+      const hasProperHierarchy = this.checkHeadingHierarchy($);
+      
+      if (hasProperStructure && hasProperHierarchy) {
+        return {
+          updated: false,
+          data: {},
+          description: "Heading structure already optimal"
+        };
+      }
+      
+      if (h1s.length > 1) {
+        h1s.each((index, el) => {
+          if (index > 0) {
+            $(el).replaceWith(`<h2>${$(el).text()}</h2>`);
+            changes.push(`Converted extra H1 to H2`);
+            updated = true;
+          }
+        });
+      }
+
+      if (h1s.length === 0) {
+        const title = content.title?.rendered || content.title || "Page Title";
+        // Add H1 to the beginning of content, not to body
+        const firstElement = $.root().children().first();
+        if (firstElement.length) {
+          firstElement.before(`<h1>${title}</h1>`);
+        } else {
+          $.root().prepend(`<h1>${title}</h1>`);
+        }
+        changes.push(`Added missing H1`);
+        updated = true;
+      }
+
+      // Use the new extraction method
+      const finalContent = this.getContentFromCheerio($);
+
+      return {
+        updated,
+        data: updated ? { content: finalContent } : {},
+        description: changes.length > 0 ? changes.join(", ") : "Heading structure already optimal"
+      };
+    }, userId);
+  }
+
+  // Similarly update fixImageAltText method
+  private async fixImageAltText(creds: WordPressCredentials, fixes: AIFix[], userId?: string) {
+    return this.fixWordPressContent(creds, fixes, async (content, fix) => {
+      const contentHtml = content.content?.rendered || content.content || "";
+      const $ = cheerio.load(contentHtml, {
+        xml: false,
+        decodeEntities: false
+      });
+      
+      const imagesWithoutAlt = $('img:not([alt]), img[alt=""]');
+      
+      if (imagesWithoutAlt.length === 0) {
+        return { 
+          updated: false, 
+          data: {}, 
+          description: "Images already have alt text" 
+        };
+      }
+
+      let updated = false;
+      imagesWithoutAlt.each((_, img) => {
+        const $img = $(img);
+        const src = $img.attr("src") || "";
+        if (src && !src.startsWith("data:")) {
+          const altText = this.generateFallbackAltText(src, content.title?.rendered || content.title || "");
+          $img.attr("alt", altText);
+          updated = true;
+        }
+      });
+
+      // Use the new extraction method
+      const finalContent = this.getContentFromCheerio($);
+
+      return {
+        updated,
+        data: updated ? { content: finalContent } : {},
+        description: updated 
+          ? `Added alt text to ${imagesWithoutAlt.length} images`
+          : "Images already have alt text"
+      };
+    }, userId);
+  }

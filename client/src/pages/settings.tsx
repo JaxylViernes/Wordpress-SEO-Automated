@@ -1001,7 +1001,7 @@ export default function Settings() {
                   </p>
                 </div>
 
-                <div>
+                {/* <div>
                   <Label htmlFor="frequency">Content Generation Frequency</Label>
                   <Select
                     value={settings.automation.contentGenerationFrequency}
@@ -1018,7 +1018,7 @@ export default function Settings() {
                       <SelectItem value="monthly">Monthly</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
+                </div> */}
 
                 <div>
                   <Label htmlFor="reports">Report Generation</Label>
@@ -1038,7 +1038,7 @@ export default function Settings() {
                   </Select>
                 </div>
 
-                <div className="flex items-center justify-between">
+                {/* <div className="flex items-center justify-between">
                   <div>
                     <Label htmlFor="autoFix">Auto-fix SEO Issues</Label>
                     <p className="text-sm text-gray-500">
@@ -1050,7 +1050,7 @@ export default function Settings() {
                     checked={settings.automation.autoFixSeoIssues}
                     onCheckedChange={(checked) => updateSetting("automation", "autoFixSeoIssues", checked)}
                   />
-                </div>
+                </div> */}
               </CardContent>
             </Card>
           </TabsContent>

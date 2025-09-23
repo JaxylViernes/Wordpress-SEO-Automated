@@ -2428,96 +2428,159 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = req.user!.id;
-      const contentId = req.params.id;
+      const { websiteId, contentId } = req.body;
+      const files = req.files as Express.Multer.File[];
       
-      const content = await storage.getContent(contentId);
-      if (!content || content.userId !== userId) {
-        res.status(404).json({ message: "Content not found or access denied" });
+      console.log(`🖼️ Uploading ${files?.length || 0} images for user ${userId}`);
+      
+      if (!files || files.length === 0) {
+        res.status(400).json({ 
+          error: 'No images provided',
+          message: 'Please select at least one image to upload' 
+        });
         return;
       }
-
-      const website = await storage.getUserWebsite(content.websiteId, userId);
-      if (!website) {
-        res.status(404).json({ message: "Website not found" });
-        return;
-      }
-
-      const images = await storage.getContentImages(contentId);
-      if (images.length === 0) {
-        res.status(400).json({ message: "No images to upload" });
-        return;
-      }
-
-      const wpCredentials = {
-        url: website.url,
-        username: website.wpUsername || 'your_username',
-        applicationPassword: website.wpApplicationPassword || 'your_app_password'
-      };
-
-      const uploadResults = [];
-      let successCount = 0;
-
-      for (const image of images) {
-        if (image.status === 'uploaded') {
-          uploadResults.push({ imageId: image.id, status: 'already_uploaded', wpUrl: image.wordpressUrl });
-          successCount++;
-          continue;
+      
+      // Verify access to website if specified
+      if (websiteId && websiteId !== 'undefined') {
+        const website = await storage.getUserWebsite(websiteId, userId);
+        if (!website) {
+          res.status(403).json({ 
+            error: 'Access denied',
+            message: 'Website not found or access denied' 
+          });
+          return;
         }
-
-        try {
-          const uploadResult = await imageService.uploadImageToWordPress(
-            image.originalUrl,
-            image.filename,
-            image.altText,
-            wpCredentials
-          );
-
-          await storage.updateContentImage(image.id, {
-            wordpressMediaId: uploadResult.id,
-            wordpressUrl: uploadResult.url,
-            status: 'uploaded'
+      }
+      
+      // Verify access to content if specified
+      if (contentId && contentId !== 'undefined') {
+        const content = await storage.getContent(contentId);
+        if (!content || content.userId !== userId) {
+          res.status(403).json({ 
+            error: 'Access denied',
+            message: 'Content not found or access denied' 
           });
-
-          uploadResults.push({
-            imageId: image.id,
-            status: 'uploaded',
-            wpMediaId: uploadResult.id,
-            wpUrl: uploadResult.url
-          });
-
-          successCount++;
-        } catch (uploadError) {
-          console.error(`Failed to upload image ${image.id}:`, uploadError);
+          return;
+        }
+      }
+      
+      // Check if Cloudinary is configured
+      if (!cloudinaryStorage.isConfigured()) {
+        console.warn('⚠️ Cloudinary not configured, falling back to data URLs');
+        // Fallback to data URLs if Cloudinary not configured
+        const uploadedImages = [];
+        for (const file of files) {
+          const base64 = file.buffer.toString('base64');
+          const dataUrl = `data:${file.mimetype};base64,${base64}`;
           
-          await storage.updateContentImage(image.id, {
-            status: 'failed',
-            uploadError: uploadError.message
-          });
-
-          uploadResults.push({
-            imageId: image.id,
-            status: 'failed',
-            error: uploadError.message
+          uploadedImages.push({
+            id: `upload_${Date.now()}_${uploadedImages.length}`,
+            url: dataUrl,
+            filename: file.originalname,
+            altText: file.originalname.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " "),
+            size: file.size,
+            mimetype: file.mimetype
           });
         }
+        
+        res.json({
+          success: true,
+          images: uploadedImages,
+          message: `Uploaded ${uploadedImages.length} image(s) (using data URLs - Cloudinary not configured)`,
+          warning: 'Cloudinary not configured. Images stored as data URLs which may impact performance.'
+        });
+        return;
       }
-
+      
+      // Upload to Cloudinary
+      const uploadedImages = [];
+      const effectiveWebsiteId = websiteId || 'user-uploads';
+      const effectiveContentId = contentId || `manual-${Date.now()}`;
+      
+      for (const file of files) {
+        try {
+          console.log(`📤 Uploading ${file.originalname} to Cloudinary...`);
+          
+          // Upload buffer to Cloudinary
+          const cloudinaryResult = await cloudinaryStorage.uploadFromBuffer(
+            file.buffer,
+            effectiveWebsiteId,
+            effectiveContentId,
+            file.originalname
+          );
+          
+          const imageData = {
+            id: `cloudinary_${Date.now()}_${uploadedImages.length}`,
+            url: cloudinaryResult.secureUrl,
+            cloudinaryUrl: cloudinaryResult.secureUrl,
+            cloudinaryPublicId: cloudinaryResult.publicId,
+            filename: file.originalname,
+            altText: file.originalname.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " "),
+            size: cloudinaryResult.bytes,
+            width: cloudinaryResult.width,
+            height: cloudinaryResult.height,
+            format: cloudinaryResult.format,
+            mimetype: file.mimetype
+          };
+          
+          uploadedImages.push(imageData);
+          
+          // Save to database if contentId is provided
+          if (contentId && storage.createContentImage) {
+            try {
+              await storage.createContentImage({
+                contentId,
+                userId,
+                websiteId: websiteId || '',
+                originalUrl: cloudinaryResult.secureUrl,
+                cloudinaryUrl: cloudinaryResult.secureUrl,
+                cloudinaryPublicId: cloudinaryResult.publicId,
+                filename: file.originalname,
+                altText: imageData.altText,
+                size: cloudinaryResult.bytes,
+                status: 'uploaded'
+              });
+              console.log(`✅ Saved image metadata to database: ${file.originalname}`);
+            } catch (dbError: any) {
+              console.warn(`Could not save to database: ${dbError.message}`);
+              // Continue anyway - image is still uploaded to Cloudinary
+            }
+          }
+          
+        } catch (uploadError: any) {
+          console.error(`Failed to upload ${file.originalname}:`, uploadError);
+          // Continue with other images even if one fails
+        }
+      }
+      
+      if (uploadedImages.length === 0) {
+        res.status(500).json({ 
+          error: 'Upload failed',
+          message: 'Failed to upload any images to Cloudinary' 
+        });
+        return;
+      }
+      
+      console.log(`✅ Successfully uploaded ${uploadedImages.length} images to Cloudinary`);
+      
       res.json({
-        success: successCount > 0,
-        message: `${successCount}/${images.length} images uploaded successfully`,
-        results: uploadResults,
-        successCount,
-        totalCount: images.length
+        success: true,
+        images: uploadedImages,
+        message: `Successfully uploaded ${uploadedImages.length} image(s) to Cloudinary`,
+        storage: 'cloudinary'
       });
-
-    } catch (error) {
-      console.error("Image upload error:", error);
+      
+    } catch (error: any) {
+      console.error('Image upload error:', error);
       res.status(500).json({ 
-        message: "Failed to upload images",
-        error: error.message 
+        error: 'Upload failed',
+        message: error.message || 'Failed to upload images' 
       });
     }
-  });
+  }
+);
+  
 
   // ===========================================================================
   // CONTENT SCHEDULING ROUTES
@@ -3110,6 +3173,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+
+  app.delete("/api/user/websites/:id/seo-reports", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const websiteId = req.params.id;
+    
+    // Verify ownership
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+    
+    console.log(`🗑️ Clearing SEO history (keeping latest) for website: ${website.name} (${websiteId})`);
+    
+    // Use the clearAllSeoData method which keeps the latest report
+    const result = await storage.clearAllSeoData(websiteId, userId);
+    
+    // Log the activity with details
+    await storage.createActivityLog({
+      userId,
+      websiteId,
+      type: "seo_history_cleared",
+      description: `SEO history cleared for ${website.name} (kept latest report)`,
+      metadata: { 
+        deletedReports: result.deletedReports,
+        deletedIssues: result.deletedIssues,
+        keptLatestReport: result.keptLatestReport,
+        preservedIssues: result.preservedIssues,
+        clearedAt: new Date().toISOString()
+      }
+    });
+    
+    console.log(`✅ SEO history cleared: deleted ${result.deletedReports} reports, ${result.deletedIssues} issues, kept latest report`);
+    
+    // Return the result so the frontend knows what happened
+    res.status(200).json({
+      success: true,
+      message: `Cleared ${result.deletedReports} old reports and ${result.deletedIssues} issues. Latest report preserved.`,
+      ...result
+    });
+  } catch (error) {
+    console.error("Failed to clear SEO history:", error);
+    res.status(500).json({ 
+      message: "Failed to clear SEO history",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+});
 
   // ===========================================================================
   // AI FIX ROUTES

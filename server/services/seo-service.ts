@@ -81,9 +81,6 @@ const AI_FIXABLE_ISSUE_TYPES = [
 
 const DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-// #endregion
-
-// #region Interfaces
 export interface EnhancedSEOAnalysisResult {
   score: number;
   issues: SEOIssue[];
@@ -185,20 +182,18 @@ export interface SEORecommendation {
 export interface AnalysisOptions {
   skipIssueTracking?: boolean;
 }
-// #endregion
+
 
 export class EnhancedSEOService {
   constructor() {
-    // Constructor no longer initializes AI clients - they're retrieved per-user
   }
 
-  // #region API Key Management
+  //API Key Management
   private async getAPIKey(
     userId: string | undefined,
     provider: string,
     envVarNames: string[]
   ): Promise<string | null> {
-    // Try user-specific key first if userId provided
     if (userId) {
       try {
         const userKey = await storage.getDecryptedApiKey(userId, provider);
@@ -213,8 +208,6 @@ export class EnhancedSEOService {
         );
       }
     }
-
-    // Fallback to environment variables
     for (const envVar of envVarNames) {
       if (process.env[envVar]) {
         if (userId) {
@@ -245,9 +238,8 @@ export class EnhancedSEOService {
   private async getUserGooglePageSpeedApiKey(userId: string): Promise<string | null> {
     return this.getAPIKey(userId, "google_pagespeed", ["GOOGLE_PAGESPEED_API_KEY"]);
   }
-  // #endregion
 
-  // #region Main Analysis Method
+
   async analyzeWebsite(
     url: string,
     targetKeywords?: string[],
@@ -259,21 +251,16 @@ export class EnhancedSEOService {
       this.logAnalysisStart(url, userId, websiteId, options);
       
       const normalizedUrl = this.normalizeUrl(url);
-
-      // Perform concurrent analyses
       const [pageContent, pageSpeedScore, technicalDetails] = await Promise.all([
         this.fetchPageContent(normalizedUrl),
         this.getPageSpeedScore(normalizedUrl, userId),
         this.performTechnicalAnalysis(normalizedUrl),
       ]);
 
-      // Extract content for AI analysis
       const textContent = this.extractTextContent(pageContent);
       const $ = cheerio.load(pageContent);
       const pageTitle = $("title").text();
       const metaDescription = $('meta[name="description"]').attr("content") || "";
-
-      // Perform AI-powered content analysis
       const contentAnalysis = await this.performAIContentAnalysis(
         textContent,
         pageTitle,
@@ -282,8 +269,6 @@ export class EnhancedSEOService {
         userId,
         websiteId
       );
-
-      // Generate analysis results
       const issues = this.analyzeForIssues(technicalDetails, pageContent, contentAnalysis);
       const recommendations = this.generateEnhancedRecommendations(
         issues,
@@ -297,7 +282,6 @@ export class EnhancedSEOService {
         contentAnalysis
       );
 
-      // Store results if applicable
       await this.storeAnalysisResults(
         userId,
         websiteId,
@@ -358,9 +342,7 @@ export class EnhancedSEOService {
       console.log("Skipping SEO report storage - missing userId or websiteId");
       return;
     }
-
     try {
-      // Validate website ownership
       const website = await storage.getUserWebsite(websiteId, userId);
       if (!website) {
         throw new Error(
@@ -368,7 +350,6 @@ export class EnhancedSEOService {
         );
       }
 
-      // Create SEO report
       const seoReport = await storage.createSeoReport({
         userId,
         websiteId,
@@ -388,14 +369,11 @@ export class EnhancedSEOService {
           timestamp: new Date().toISOString()
         },
       });
-
-      // Update website SEO score
       await storage.updateWebsite(websiteId, {
         seoScore: score,
         updatedAt: new Date(),
       });
 
-      // Conditionally track issues
       if (!options?.skipIssueTracking) {
         await this.storeTrackedIssues(issues, userId, websiteId, seoReport.id);
         console.log(`SEO report created with ID: ${seoReport.id} and issues tracked`);
@@ -419,9 +397,8 @@ export class EnhancedSEOService {
       autoFixAvailable: issue.autoFixAvailable,
     };
   }
-  // #endregion
 
-  // #region Issue Tracking
+  //Issue Tracking
   private async storeTrackedIssues(
     issues: SEOIssue[],
     userId: string,
@@ -434,8 +411,6 @@ export class EnhancedSEOService {
     }
 
     console.log(`Tracking ${issues.length} SEO issues for website ${websiteId}`);
-
-    // Get existing tracked issues
     const existingTrackedIssues = await storage.getTrackedSeoIssues(
       websiteId,
       userId,
@@ -444,7 +419,6 @@ export class EnhancedSEOService {
 
     const currentIssueTypes = new Set<string>();
 
-    // Process each current issue
     for (const issue of issues) {
       try {
         await this.processIndividualIssue(
@@ -459,8 +433,6 @@ export class EnhancedSEOService {
         console.error(`Failed to track issue "${issue.title}":`, error);
       }
     }
-
-    // Auto-resolve issues no longer detected
     await this.autoResolveIssues(existingTrackedIssues, currentIssueTypes);
 
     this.logIssueTrackingSummary(issues, existingTrackedIssues, currentIssueTypes);
@@ -719,9 +691,8 @@ export class EnhancedSEOService {
 
     return undefined;
   }
-  // #endregion
 
-  // #region Data Retrieval
+  //Data Retrieval
   async getDetailedSeoData(
     websiteId: string,
     userId: string
@@ -791,9 +762,8 @@ export class EnhancedSEOService {
       recentActivity: []
     };
   }
-  // #endregion
 
-  // #region AI Content Analysis
+  // AI Content Analysis
   private async performAIContentAnalysis(
     content: string,
     title: string,
@@ -918,7 +888,6 @@ Return ONLY valid JSON with the exact structure specified.`;
     const openai = await this.getUserOpenAI(userId);
     const anthropic = await this.getUserAnthropic(userId);
 
-    // Try OpenAI first
     if (openai) {
       try {
         const response = await openai.chat.completions.create({
@@ -942,11 +911,9 @@ Return ONLY valid JSON with the exact structure specified.`;
         };
       } catch (error) {
         console.error("OpenAI API error:", error);
-        // Fall through to try Anthropic
       }
     }
 
-    // Try Anthropic as fallback or primary
     if (anthropic) {
       try {
         const response = await anthropic.messages.create({
@@ -982,7 +949,6 @@ Return ONLY valid JSON with the exact structure specified.`;
       return JSON.parse(jsonMatch[0]);
     } catch (error) {
       console.error("Failed to parse AI response:", error);
-      // Try fallback parsing
       return this.tryExtractScoresFromText(response) || this.getDefaultContentAnalysisResult();
     }
   }
@@ -1087,9 +1053,8 @@ Return ONLY valid JSON with the exact structure specified.`;
       console.warn("Failed to track AI usage:", error.message);
     }
   }
-  // #endregion
 
-  // #region Technical Analysis
+  //Technical Analysis
   private normalizeUrl(url: string): string {
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
       return "https://" + url;
@@ -1149,7 +1114,6 @@ Return ONLY valid JSON with the exact structure specified.`;
         throw new Error("No valid PageSpeed data received");
       }
 
-      // Weight mobile more heavily (60/40 split)
       const finalScore = scores.mobile * 0.6 + scores.desktop * 0.4;
       console.log(
         `PageSpeed scores - Mobile: ${scores.mobile}, Desktop: ${scores.desktop}, Final: ${Math.round(finalScore)}`
@@ -1266,7 +1230,7 @@ Return ONLY valid JSON with the exact structure specified.`;
 
     for (let i = 1; i < headings.length; i++) {
       if (headings[i] > headings[i - 1] + 1) {
-        return false; // Skipped a level
+        return false;
       }
     }
     return true;
@@ -1344,10 +1308,8 @@ Return ONLY valid JSON with the exact structure specified.`;
   private extractTextContent(html: string): string {
     const $ = cheerio.load(html);
 
-    // Remove non-content elements
     $("script, style, nav, footer, header, aside, .menu, .sidebar, .ads").remove();
 
-    // Try to find main content
     const mainSelectors = [
       "main", "article", ".content", ".post",
       ".entry-content", ".main-content", "#content",
@@ -1360,12 +1322,10 @@ Return ONLY valid JSON with the exact structure specified.`;
       }
     }
 
-    // Fallback to body
     return $("body").text().replace(/\s+/g, " ").trim();
   }
-  // #endregion
 
-  // #region Issue Analysis
+  //Issue Analysis
   private analyzeForIssues(
     technicalDetails: TechnicalSEODetails,
     html: string,
@@ -1380,7 +1340,6 @@ Return ONLY valid JSON with the exact structure specified.`;
   }
 
   private analyzeTechnicalIssues(issues: SEOIssue[], technical: TechnicalSEODetails): void {
-    // Title issues
     if (!technical.metaTags.hasTitle) {
       issues.push(this.createIssue(
         "critical",
@@ -1407,7 +1366,6 @@ Return ONLY valid JSON with the exact structure specified.`;
       }
     }
 
-    // Description issues
     if (!technical.metaTags.hasDescription) {
       issues.push(this.createIssue(
         "critical",
@@ -1424,7 +1382,6 @@ Return ONLY valid JSON with the exact structure specified.`;
       ));
     }
 
-    // Heading issues
     if (technical.headings.h1Count === 0) {
       issues.push(this.createIssue(
         "critical",
@@ -1450,7 +1407,6 @@ Return ONLY valid JSON with the exact structure specified.`;
       ));
     }
 
-    // Image issues
     if (technical.images.withoutAlt > 0) {
       issues.push(this.createIssue(
         "warning",
@@ -1460,7 +1416,6 @@ Return ONLY valid JSON with the exact structure specified.`;
       ));
     }
 
-    // Mobile issues
     if (!technical.mobile.viewportMeta) {
       issues.push(this.createIssue(
         "critical",
@@ -1479,7 +1434,6 @@ Return ONLY valid JSON with the exact structure specified.`;
       ));
     }
 
-    // Schema and social
     if (!technical.schema?.hasStructuredData) {
       issues.push(this.createIssue(
         "warning",
@@ -1598,9 +1552,8 @@ Return ONLY valid JSON with the exact structure specified.`;
       autoFixAvailable,
     };
   }
-  // #endregion
 
-  // #region Recommendations
+  //Recommendations
   private generateEnhancedRecommendations(
     issues: SEOIssue[],
     technicalDetails: TechnicalSEODetails,
@@ -1749,16 +1702,14 @@ Return ONLY valid JSON with the exact structure specified.`;
       });
     }
   }
-  // #endregion
 
-  // #region Score Calculation
+  //Score Calculation
   private calculateEnhancedScore(
     issues: SEOIssue[],
     pageSpeedScore: number,
     technicalDetails: TechnicalSEODetails,
     contentAnalysis: ContentAnalysisResult
   ): number {
-    // Calculate base score from issues
     let baseScore = 100;
     const issueImpact = { critical: 12, warning: 6, info: 2 };
     
@@ -1766,13 +1717,8 @@ Return ONLY valid JSON with the exact structure specified.`;
       baseScore -= issueImpact[issue.type];
     }
 
-    // Calculate content score
     const contentScore = this.calculateContentScore(contentAnalysis);
-
-    // Calculate technical score
     const technicalScore = this.calculateTechnicalScore(baseScore, technicalDetails);
-
-    // Apply weights and combine
     const weights = SEO_CONSTANTS.WEIGHTS;
     const finalScore = 
       contentScore * weights.CONTENT +
