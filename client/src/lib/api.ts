@@ -400,17 +400,6 @@ updateContent: (id: string, data: {
       return data;
     });
   },
-
-
-
-
-
-
-  
-
-
-
-//nadagdag
 // Modify your existing api.generateClientReport function:
 generateClientReport: async (
   websiteId: string, 

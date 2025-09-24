@@ -1,4 +1,3 @@
-
 //shared/schema.ts
 import { sql } from "drizzle-orm";
 import {
@@ -10,10 +9,16 @@ import {
   boolean,
   jsonb,
   index,
+  uniqueIndex,
   numeric
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+
+// ============================================================================
+// CORE USER TABLES
+// ============================================================================
 
 export const users = pgTable("users", {
   id: varchar("id")
@@ -21,7 +26,69 @@ export const users = pgTable("users", {
     .default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  email: text("email").notNull().unique(),
+  name: text("name"), 
 });
+
+export interface ResetTokenMetadata {
+  type: 'verification_code';
+  attempts: number;
+  verified: boolean;
+  verifiedAt?: string;
+  codeLength: number;
+  lastAttemptAt?: string;
+  invalidatedReason?: string;
+  completedAt?: string;
+  resent?: boolean;
+}
+
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    email: text("email").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    used: boolean("used").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    usedAt: timestamp("used_at"),
+    metadata: jsonb("metadata").default({}), // ADD THIS LINE
+  },
+  (table) => [
+    index("idx_password_reset_tokens_user_id").on(table.userId),
+    index("idx_password_reset_tokens_token").on(table.token),
+    index("idx_password_reset_tokens_expires_at").on(table.expiresAt),
+  ]
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // Session storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
@@ -35,6 +102,83 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)]
 );
 
+export const userSettings = pgTable(
+  "user_settings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    // Profile settings
+    profileName: text("profile_name"),
+    profileEmail: text("profile_email"),
+    profileCompany: text("profile_company"),
+    profileTimezone: text("profile_timezone").default("America/New_York"),
+
+    // Notification preferences
+    notificationEmailReports: boolean("notification_email_reports").default(true),
+    notificationContentGenerated: boolean("notification_content_generated").default(true),
+    notificationSeoIssues: boolean("notification_seo_issues").default(true),
+    notificationSystemAlerts: boolean("notification_system_alerts").default(false),
+
+    // Automation preferences
+    automationDefaultAiModel: text("automation_default_ai_model").default("gpt-4o"),
+    automationAutoFixSeoIssues: boolean("automation_auto_fix_seo_issues").default(true),
+    automationContentGenerationFrequency: text("automation_content_generation_frequency").default("twice-weekly"),
+    automationReportGeneration: text("automation_report_generation").default("weekly"),
+
+    // Security settings
+    securityTwoFactorAuth: boolean("security_two_factor_auth").default(false),
+    securitySessionTimeout: integer("security_session_timeout").default(24),
+    securityAllowApiAccess: boolean("security_allow_api_access").default(true),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_user_settings_user_id").on(table.userId)]
+);
+
+export const userApiKeys = pgTable(
+  "user_api_keys",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    provider: text("provider").notNull(), // 'openai', 'anthropic', 'google_pagespeed'
+    keyName: text("key_name").notNull(),
+    encryptedApiKey: text("encrypted_api_key").notNull(), // Encrypted API key
+    maskedKey: text("masked_key").notNull(), // For display (e.g., "sk-...xyz123")
+
+    isActive: boolean("is_active").notNull().default(true),
+    validationStatus: text("validation_status").notNull().default("pending"), // 'valid', 'invalid', 'pending'
+    lastValidated: timestamp("last_validated"),
+    validationError: text("validation_error"),
+
+    // Usage tracking
+    usageCount: integer("usage_count").notNull().default(0),
+    lastUsed: timestamp("last_used"),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_user_api_keys_user_id").on(table.userId),
+    index("idx_user_api_keys_provider").on(table.provider),
+  ]
+);
+
+// ============================================================================
+// WEBSITE TABLES
+// ============================================================================
+
 export const websites = pgTable(
   "websites",
   {
@@ -43,9 +187,10 @@ export const websites = pgTable(
       .default(sql`gen_random_uuid()`),
     userId: varchar("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
+      .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     url: text("url").notNull(),
+    
     // Secure WordPress Application Password authentication
     wpApplicationName: text("wp_application_name").notNull(),
     wpApplicationPassword: text("wp_application_password").notNull(), // Encrypted
@@ -74,10 +219,13 @@ export const websites = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
-    // Add index for efficient user-website lookups
     index("idx_websites_user_id").on(table.userId),
   ]
 );
+
+// ============================================================================
+// CONTENT TABLES
+// ============================================================================
 
 export const content = pgTable(
   "content",
@@ -115,18 +263,18 @@ export const content = pgTable(
     factCheckStatus: text("fact_check_status").default("pending"),
     eatCompliance: boolean("eat_compliance").default(false),
 
-    // NEW FIELDS - Add these to save AI results properly
+    // Token and cost tracking
     tokensUsed: integer("tokens_used").default(0),
     costUsd: integer("cost_usd").default(0), // Store as cents (multiply by 100)
 
     // Scheduling and publishing
     publishDate: timestamp("publish_date"),
     wordpressPostId: integer("wordpress_post_id"),
-
     wordpressUrl: text("wordpress_url"),
     publishError: text("publish_error"),
 
-     images: jsonb("images").default([]),
+    // Image data
+    images: jsonb("images").default([]),
     cloudinaryData: jsonb("cloudinary_data").default({}),
     featuredImageUrl: text("featured_image_url"),
     featuredImageCloudinaryId: text("featured_image_cloudinary_id"),
@@ -141,344 +289,6 @@ export const content = pgTable(
     index("idx_content_website_user").on(table.websiteId, table.userId),
   ]
 );
-
-export const seoReports = pgTable(
-  "seo_reports",
-  {
-    id: varchar("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    userId: varchar("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
-    websiteId: varchar("website_id")
-      .notNull()
-      .references(() => websites.id),
-    score: integer("score").notNull(),
-    issues: jsonb("issues").notNull().default([]),
-    recommendations: jsonb("recommendations").notNull().default([]),
-    pageSpeedScore: integer("page_speed_score"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-     hasTrackedIssues: boolean("has_tracked_issues").default(false),
-    fixableIssuesCount: integer("fixable_issues_count").default(0),
-    criticalIssuesCount: integer("critical_issues_count").default(0),
-  },
-  (table) => [index("idx_seo_reports_user_id").on(table.userId)]
-);
-
-export const activityLogs = pgTable(
-  "activity_logs",
-  {
-    id: varchar("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    userId: varchar("user_id").references(() => users.id, {
-      onDelete: "cascade",
-    }), // ADD THIS LINE (nullable for system logs)
-    websiteId: varchar("website_id").references(() => websites.id),
-    type: text("type").notNull(), // content_generated, seo_analysis, issue_detected, etc.
-    description: text("description").notNull(),
-    metadata: jsonb("metadata").notNull().default({}),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (table) => [index("idx_activity_logs_user_id").on(table.userId)]
-);
-
-export const clientReports = pgTable(
-  "client_reports",
-  {
-    id: varchar("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    userId: varchar("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
-    websiteId: varchar("website_id")
-      .notNull()
-      .references(() => websites.id),
-    reportType: text("report_type").notNull(), // weekly, monthly, quarterly
-    period: text("period").notNull(),
-    data: jsonb("data").notNull(),
-    insights: jsonb("insights").notNull().default([]),
-    roiData: jsonb("roi_data").notNull().default({}),
-    whiteLabelConfig: jsonb("white_label_config").default({}),
-    generatedAt: timestamp("generated_at").notNull().defaultNow(),
-  },
-  (table) => [index("idx_client_reports_user_id").on(table.userId)]
-);
-
-// New tables for enhanced functionality
-export const contentApprovals = pgTable(
-  "content_approvals",
-  {
-    id: varchar("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    userId: varchar("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
-    contentId: varchar("content_id")
-      .notNull()
-      .references(() => content.id),
-    reviewerId: varchar("reviewer_id")
-      .notNull()
-      .references(() => users.id),
-    status: text("status").notNull(), // approved, rejected, needs_revision
-    feedback: text("feedback"),
-    qualityScore: integer("quality_score"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (table) => [index("idx_content_approvals_user_id").on(table.userId)]
-);
-
-export const securityAudits = pgTable(
-  "security_audits",
-  {
-    id: varchar("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    userId: varchar("user_id").references(() => users.id, {
-      onDelete: "cascade",
-    }), // ADD THIS LINE
-    websiteId: varchar("website_id").references(() => websites.id),
-    action: text("action").notNull(), // login, content_publish, seo_change, etc.
-    ipAddress: text("ip_address"),
-    userAgent: text("user_agent"),
-    success: boolean("success").notNull(),
-    metadata: jsonb("metadata").notNull().default({}),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (table) => [index("idx_security_audits_user_id").on(table.userId)]
-);
-
-export const aiUsageTracking = pgTable(
-  "ai_usage_tracking",
-  {
-    id: varchar("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    userId: varchar("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
-    websiteId: varchar("website_id")
-      .notNull()
-      .references(() => websites.id),
-    model: text("model").notNull(),
-    tokensUsed: integer("tokens_used").notNull(),
-    costUsd: integer("cost_usd").notNull(), // Store as cents
-    operation: text("operation").notNull(), // content_generation, seo_analysis, etc.
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (table) => [index("idx_ai_usage_user_id").on(table.userId)]
-);
-
-export const seoAudits = pgTable(
-  "seo_audits",
-  {
-    id: varchar("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    userId: varchar("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
-    websiteId: varchar("website_id")
-      .notNull()
-      .references(() => websites.id),
-    url: text("url").notNull(),
-    auditType: text("audit_type").notNull(), // technical, content, performance
-    findings: jsonb("findings").notNull().default([]),
-    autoFixApplied: boolean("auto_fix_applied").default(false),
-    autoFixResults: jsonb("auto_fix_results").default([]),
-    coreWebVitals: jsonb("core_web_vitals").default({}),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (table) => [index("idx_seo_audits_user_id").on(table.userId)]
-);
-
-export const contentSchedule = pgTable(
-  "content_schedule",
-  {
-    id: varchar("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    userId: varchar("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
-    websiteId: varchar("website_id")
-      .notNull()
-      .references(() => websites.id),
-    scheduledDate: timestamp("scheduled_date").notNull(),
-    topic: text("topic").notNull(),
-    keywords: text("keywords").array().notNull().default([]),
-    status: text("status").notNull().default("planned"), // planned, generating, ready, published
-    contentId: varchar("content_id").references(() => content.id),
-
-
-     hasImages: boolean("has_images").default(false),
-    imageCount: integer("image_count").default(0),
-    cloudinaryImageIds: text("cloudinary_image_ids").array().default([]),
-
-
-    abTestVariant: text("ab_test_variant"), // A, B, or null
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (table) => [index("idx_content_schedule_user_id").on(table.userId)]
-);
-
-export const backups = pgTable(
-  "backups",
-  {
-    id: varchar("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    userId: varchar("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }), // ADD THIS LINE
-    websiteId: varchar("website_id")
-      .notNull()
-      .references(() => websites.id),
-    backupType: text("backup_type").notNull(), // content, settings, full
-    data: jsonb("data").notNull(),
-    wordpressBackupId: text("wordpress_backup_id"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-  },
-  (table) => [index("idx_backups_user_id").on(table.userId)]
-);
-
-// Insert schemas - UPDATED to include userId
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-});
-
-export const insertWebsiteSchema = createInsertSchema(websites).pick({
-  name: true,
-  url: true,
-  wpApplicationName: true,
-  wpApplicationPassword: true,
-  wpUsername: true,
-  aiModel: true,
-  autoPosting: true,
-  requireApproval: true,
-  brandVoice: true,
-  contentGuidelines: true,
-  targetAudience: true,
-  // userId will be added automatically in the backend
-});
-
-
-
-export const insertContentSchema = createInsertSchema(content).pick({
-  websiteId: true,
-  title: true,
-  body: true,
-  excerpt: true,
-  metaDescription: true,
-  metaTitle: true,
-  aiModel: true,
-  seoKeywords: true,
-  publishDate: true,
-  seoScore: true,
-  readabilityScore: true,
-  brandVoiceScore: true,
-  tokensUsed: true,
-  costUsd: true,
-  eatCompliance: true,
-  // userId will be added automatically in the backend
-});
-
-export const insertSeoReportSchema = createInsertSchema(seoReports).pick({
-  websiteId: true,
-  score: true,
-  issues: true,
-  recommendations: true,
-  pageSpeedScore: true,
-  // userId will be added automatically in the backend
-});
-
-export const insertActivityLogSchema = createInsertSchema(activityLogs).pick({
-  websiteId: true,
-  type: true,
-  description: true,
-  metadata: true,
-  // userId will be added automatically in the backend
-});
-
-export const insertClientReportSchema = createInsertSchema(clientReports).pick({
-  websiteId: true,
-  reportType: true,
-  period: true,
-  data: true,
-  insights: true,
-  roiData: true,
-  whiteLabelConfig: true,
-  // userId will be added automatically in the backend
-});
-
-// New insert schemas for enhanced tables - UPDATED
-export const insertContentApprovalSchema = createInsertSchema(
-  contentApprovals
-).pick({
-  contentId: true,
-  reviewerId: true,
-  status: true,
-  feedback: true,
-  qualityScore: true,
-  // userId will be added automatically in the backend
-});
-
-export const insertSecurityAuditSchema = createInsertSchema(
-  securityAudits
-).pick({
-  websiteId: true,
-  action: true,
-  ipAddress: true,
-  userAgent: true,
-  success: true,
-  metadata: true,
-  // userId will be added automatically in the backend
-});
-
-export const insertAiUsageTrackingSchema = createInsertSchema(
-  aiUsageTracking
-).pick({
-  websiteId: true,
-  model: true,
-  tokensUsed: true,
-  costUsd: true,
-  operation: true,
-  // userId will be added automatically in the backend
-});
-
-export const insertSeoAuditSchema = createInsertSchema(seoAudits).pick({
-  websiteId: true,
-  url: true,
-  auditType: true,
-  findings: true,
-  autoFixApplied: true,
-  autoFixResults: true,
-  coreWebVitals: true,
-  // userId will be added automatically in the backend
-});
-
-export const insertContentScheduleSchema = createInsertSchema(
-  contentSchedule
-).pick({
-  websiteId: true,
-  scheduledDate: true,
-  topic: true,
-  keywords: true,
-  abTestVariant: true,
-  // userId will be added automatically in the backend
-});
-
-export const insertBackupSchema = createInsertSchema(backups).pick({
-  websiteId: true,
-  backupType: true,
-  data: true,
-  wordpressBackupId: true,
-  // userId will be added automatically in the backend
-});
 
 export const contentImages = pgTable(
   "content_images",
@@ -505,7 +315,7 @@ export const contentImages = pgTable(
     imageStyle: text("image_style").notNull(),
     size: text("size").notNull().default("1024x1024"),
 
-    // Cloudinary storage fields (NEW)
+    // Cloudinary storage fields
     cloudinaryUrl: text("cloudinary_url"),
     cloudinarySecureUrl: text("cloudinary_secure_url"),
     cloudinaryPublicId: text("cloudinary_public_id"),
@@ -518,7 +328,7 @@ export const contentImages = pgTable(
     cloudinaryOptimizedUrl: text("cloudinary_optimized_url"),
     cloudinaryUploadedAt: timestamp("cloudinary_uploaded_at"),
     
-    // Image ordering and featuring (NEW)
+    // Image ordering and featuring
     imageOrder: integer("image_order").default(0),
     isFeatured: boolean("is_featured").default(false),
 
@@ -539,43 +349,8 @@ export const contentImages = pgTable(
   ]
 );
 
-// 2. ADD new cloudinaryUsage table
-export const cloudinaryUsage = pgTable(
-  "cloudinary_usage",
-  {
-    id: varchar("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    userId: varchar("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    websiteId: varchar("website_id")
-      .references(() => websites.id, { onDelete: "cascade" }),
-    
-    // Usage metrics
-    month: timestamp("month").notNull(),
-    imagesUploaded: integer("images_uploaded").default(0),
-    totalBytesStored: integer("total_bytes_stored").default(0),
-    bandwidthUsed: integer("bandwidth_used").default(0),
-    creditsUsed: integer("credits_used").default(0),
-    transformationsCount: integer("transformations_count").default(0),
-    
-    // Cost tracking (in cents)
-    estimatedCostCents: integer("estimated_cost_cents").default(0),
-    
-    // Timestamps
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  },
-  (table) => [
-    index("idx_cloudinary_usage_user_website").on(table.userId, table.websiteId),
-    index("idx_cloudinary_usage_month").on(table.month),
-  ]
-);
-
-// 3. ADD new failedImageUploads table
-export const failedImageUploads = pgTable(
-  "failed_image_uploads",
+export const contentApprovals = pgTable(
+  "content_approvals",
   {
     id: varchar("id")
       .primaryKey()
@@ -584,175 +359,53 @@ export const failedImageUploads = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     contentId: varchar("content_id")
-      .references(() => content.id, { onDelete: "cascade" }),
+      .notNull()
+      .references(() => content.id),
+    reviewerId: varchar("reviewer_id")
+      .notNull()
+      .references(() => users.id),
+    status: text("status").notNull(), // approved, rejected, needs_revision
+    feedback: text("feedback"),
+    qualityScore: integer("quality_score"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_content_approvals_user_id").on(table.userId)]
+);
+
+export const contentSchedule = pgTable(
+  "content_schedule",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     websiteId: varchar("website_id")
-      .references(() => websites.id, { onDelete: "cascade" }),
-    
-    // Original request data
-    dalleUrl: text("dalle_url"),
-    cloudinaryError: text("cloudinary_error"),
-    filename: varchar("filename", { length: 255 }),
-    altText: text("alt_text"),
-    prompt: text("prompt"),
-    
-    // Error tracking
-    errorMessage: text("error_message"),
-    errorCode: varchar("error_code", { length: 50 }),
-    retryCount: integer("retry_count").default(0),
-    maxRetries: integer("max_retries").default(3),
-    
-    // Status
-    status: text("status").default("pending_retry"), // pending_retry, retrying, resolved, abandoned
-    
-    // Timestamps
-    failedAt: timestamp("failed_at").notNull().defaultNow(),
-    lastRetryAt: timestamp("last_retry_at"),
-    resolvedAt: timestamp("resolved_at"),
-  },
-  (table) => [
-    index("idx_failed_uploads_status").on(table.status),
-    index("idx_failed_uploads_content").on(table.contentId),
-  ]
-);
-
-
-export const insertCloudinaryUsageSchema = createInsertSchema(cloudinaryUsage).pick({
-  websiteId: true,
-  month: true,
-  imagesUploaded: true,
-  totalBytesStored: true,
-  bandwidthUsed: true,
-  creditsUsed: true,
-  transformationsCount: true,
-  estimatedCostCents: true,
-  // userId will be added automatically in the backend
-});
-
-export const insertFailedImageUploadSchema = createInsertSchema(failedImageUploads).pick({
-  contentId: true,
-  websiteId: true,
-  dalleUrl: true,
-  cloudinaryError: true,
-  filename: true,
-  altText: true,
-  prompt: true,
-  errorMessage: true,
-  errorCode: true,
-  retryCount: true,
-  maxRetries: true,
-  status: true,
-  // userId will be added automatically in the backend
-});
-
-// Add insert schema
-export const insertContentImageSchema = createInsertSchema(contentImages).pick({
-  contentId: true,
-  websiteId: true,
-  originalUrl: true,
-  filename: true,
-  altText: true,
-  generationPrompt: true,
-  costCents: true,
-  imageStyle: true,
-  size: true,
-  
-  // Cloudinary fields (NEW)
-  cloudinaryUrl: true,
-  cloudinarySecureUrl: true,
-  cloudinaryPublicId: true,
-  cloudinaryFormat: true,
-  cloudinaryWidth: true,
-  cloudinaryHeight: true,
-  cloudinaryBytes: true,
-  cloudinaryVersion: true,
-  cloudinaryThumbnailUrl: true,
-  cloudinaryOptimizedUrl: true,
-  cloudinaryUploadedAt: true,
-  imageOrder: true,
-  isFeatured: true,
-  
-  // WordPress fields
-  wordpressMediaId: true,
-  wordpressUrl: true,
-  status: true,
-  uploadError: true,
-});
-
-export const userSettings = pgTable(
-  "user_settings",
-  {
-    id: varchar("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    userId: varchar("user_id")
       .notNull()
-      .unique()
-      .references(() => users.id, { onDelete: "cascade" }),
+      .references(() => websites.id),
+    scheduledDate: timestamp("scheduled_date").notNull(),
+    topic: text("topic").notNull(),
+    keywords: text("keywords").array().notNull().default([]),
+    status: text("status").notNull().default("planned"), // planned, generating, ready, published
+    contentId: varchar("content_id").references(() => content.id),
 
-    // Profile settings
-    profileName: text("profile_name"),
-    profileEmail: text("profile_email"),
-    profileCompany: text("profile_company"),
-    profileTimezone: text("profile_timezone").default("America/New_York"),
+    hasImages: boolean("has_images").default(false),
+    imageCount: integer("image_count").default(0),
+    cloudinaryImageIds: text("cloudinary_image_ids").array().default([]),
 
-    // Notification preferences
-    notificationEmailReports: boolean("notification_email_reports").default(
-      true
-    ),
-    notificationContentGenerated: boolean(
-      "notification_content_generated"
-    ).default(true),
-    notificationSeoIssues: boolean("notification_seo_issues").default(true),
-    notificationSystemAlerts: boolean("notification_system_alerts").default(
-      false
-    ),
-
-    // Automation preferences
-    automationDefaultAiModel: text("automation_default_ai_model").default(
-      "gpt-4o"
-    ),
-    automationAutoFixSeoIssues: boolean(
-      "automation_auto_fix_seo_issues"
-    ).default(true),
-    automationContentGenerationFrequency: text(
-      "automation_content_generation_frequency"
-    ).default("twice-weekly"),
-    automationReportGeneration: text("automation_report_generation").default(
-      "weekly"
-    ),
-
-    // Security settings
-    securityTwoFactorAuth: boolean("security_two_factor_auth").default(false),
-    securitySessionTimeout: integer("security_session_timeout").default(24),
-    securityAllowApiAccess: boolean("security_allow_api_access").default(true),
-
+    abTestVariant: text("ab_test_variant"), // A, B, or null
     createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (table) => [index("idx_user_settings_user_id").on(table.userId)]
+  (table) => [index("idx_content_schedule_user_id").on(table.userId)]
 );
 
-// Add insert schema for user settings
-export const insertUserSettingsSchema = createInsertSchema(userSettings).pick({
-  profileName: true,
-  profileEmail: true,
-  profileCompany: true,
-  profileTimezone: true,
-  notificationEmailReports: true,
-  notificationContentGenerated: true,
-  notificationSeoIssues: true,
-  notificationSystemAlerts: true,
-  automationDefaultAiModel: true,
-  automationAutoFixSeoIssues: true,
-  automationContentGenerationFrequency: true,
-  automationReportGeneration: true,
-  securityTwoFactorAuth: true,
-  securitySessionTimeout: true,
-  securityAllowApiAccess: true,
-});
+// ============================================================================
+// SEO TABLES
+// ============================================================================
 
-export const userApiKeys = pgTable(
-  "user_api_keys",
+export const seoReports = pgTable(
+  "seo_reports",
   {
     id: varchar("id")
       .primaryKey()
@@ -760,82 +413,42 @@ export const userApiKeys = pgTable(
     userId: varchar("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-
-    provider: text("provider").notNull(), // 'openai', 'anthropic', 'google_pagespeed'
-    keyName: text("key_name").notNull(),
-    encryptedApiKey: text("encrypted_api_key").notNull(), // Encrypted API key
-    maskedKey: text("masked_key").notNull(), // For display (e.g., "sk-...xyz123")
-
-    isActive: boolean("is_active").notNull().default(true),
-    validationStatus: text("validation_status").notNull().default("pending"), // 'valid', 'invalid', 'pending'
-    lastValidated: timestamp("last_validated"),
-    validationError: text("validation_error"),
-
-    // Usage tracking
-    usageCount: integer("usage_count").notNull().default(0),
-    lastUsed: timestamp("last_used"),
-
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id),
+    score: integer("score").notNull(),
+    issues: jsonb("issues").notNull().default([]),
+    recommendations: jsonb("recommendations").notNull().default([]),
+    pageSpeedScore: integer("page_speed_score"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    hasTrackedIssues: boolean("has_tracked_issues").default(false),
+    fixableIssuesCount: integer("fixable_issues_count").default(0),
+    criticalIssuesCount: integer("critical_issues_count").default(0),
   },
-  (table) => [
-    index("idx_user_api_keys_user_id").on(table.userId),
-    index("idx_user_api_keys_provider").on(table.provider),
-  ]
+  (table) => [index("idx_seo_reports_user_id").on(table.userId)]
 );
 
-// Add insert schema for user API keys
-export const insertUserApiKeySchema = createInsertSchema(userApiKeys).pick({
-  provider: true,
-  keyName: true,
-  encryptedApiKey: true,
-  maskedKey: true,
-  isActive: true,
-  validationStatus: true,
-  lastValidated: true,
-  validationError: true,
-  usageCount: true,
-  lastUsed: true,
-});
-
-export const appliedFixes = pgTable(
-  "applied_fixes",
+export const seoAudits = pgTable(
+  "seo_audits",
   {
-    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
-    
-    // Issue identification
-    issueType: text("issue_type").notNull(), // missing_alt_text, poor_title_tag, etc.
-    issueTitle: text("issue_title").notNull(),
-    issueDescription: text("issue_description"),
-    issueHash: text("issue_hash").notNull(), // Unique identifier for this specific issue
-    
-    // Fix details
-    fixType: text("fix_type").notNull(),
-    fixDescription: text("fix_description").notNull(),
-    fixSuccess: boolean("fix_success").notNull(),
-    fixError: text("fix_error"),
-    
-    // Content affected
-    wordpressPostId: integer("wordpress_post_id"),
-    elementPath: text("element_path"), // CSS selector or similar
-    beforeValue: text("before_value"),
-    afterValue: text("after_value"),
-    
-    // Fix context
-    fixBatchId: varchar("fix_batch_id"), // Groups fixes from the same AI fix run
-    aiModel: text("ai_model"),
-    scoreBefore: integer("score_before"),
-    scoreAfter: integer("score_after"),
-    
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id),
+    url: text("url").notNull(),
+    auditType: text("audit_type").notNull(), // technical, content, performance
+    findings: jsonb("findings").notNull().default([]),
+    autoFixApplied: boolean("auto_fix_applied").default(false),
+    autoFixResults: jsonb("auto_fix_results").default([]),
+    coreWebVitals: jsonb("core_web_vitals").default({}),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (table) => [
-    index("idx_applied_fixes_user_website").on(table.userId, table.websiteId),
-    index("idx_applied_fixes_issue_hash").on(table.issueHash),
-    index("idx_applied_fixes_batch").on(table.fixBatchId),
-  ]
+  (table) => [index("idx_seo_audits_user_id").on(table.userId)]
 );
 
 export const seoIssueStatuses = pgTable(
@@ -846,15 +459,15 @@ export const seoIssueStatuses = pgTable(
     websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
     
     // Issue identification
-    issueHash: text("issue_hash").notNull().unique(), // Consistent hash for the same issue
-    issueType: text("issue_type").notNull(), // missing_alt_text, poor_title_tag, etc.
+    issueHash: text("issue_hash").notNull().unique(),
+    issueType: text("issue_type").notNull(),
     issueTitle: text("issue_title").notNull(),
     issueDescription: text("issue_description"),
     issueSeverity: text("issue_severity").notNull(), // critical, warning, info
     
     // Status tracking
     status: text("status").notNull().default("open"), // open, in_progress, fixed, ignored, cannot_fix
-    statusReason: text("status_reason"), // Why it's ignored/cannot be fixed
+    statusReason: text("status_reason"),
     
     // Fix attempts
     fixAttempts: integer("fix_attempts").notNull().default(0),
@@ -887,138 +500,6 @@ export const seoIssueStatuses = pgTable(
     index("idx_seo_issue_statuses_type").on(table.issueType),
   ]
 );
-
-// Add insert schema
-export const insertSeoIssueStatusSchema = createInsertSchema(seoIssueStatuses).pick({
-  websiteId: true,
-  issueHash: true,
-  issueType: true,
-  issueTitle: true,
-  issueDescription: true,
-  issueSeverity: true,
-  status: true,
-  statusReason: true,
-  fixAttempts: true,
-  lastFixAttempt: true,
-  lastFixError: true,
-  resolvedAt: true,
-  resolvedBy: true,
-  resolutionNotes: true,
-  firstDetected: true,
-  lastDetected: true,
-  detectionCount: true,
-  wordpressPostId: true,
-  elementPath: true,
-  currentValue: true,
-  recommendedValue: true,
-});
-
-
-export type InsertSeoIssueStatus = z.infer<typeof insertSeoIssueStatusSchema>;
-export type SeoIssueStatus = typeof seoIssueStatuses.$inferSelect;
-
-
-// Add this at the bottom of your schema.ts file
-// Make sure you have imported 'numeric' from "drizzle-orm/pg-core" at the top
-
-//nadagdag
-// Auto-Schedules table for automated content generation
-export const autoSchedules = pgTable("auto_schedules", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
-  
-  // Schedule configuration
-  name: text("name").notNull(),
-  frequency: text("frequency").notNull(), // 'daily', 'twice_weekly', 'weekly', 'biweekly', 'monthly', 'custom'
-  timeOfDay: text("time_of_day").notNull(), // Format: 'HH:MM'
-  customDays: text("custom_days").array().default([]), // For custom frequency
-  
-  // Content generation settings
-  topics: text("topics").array().default([]),
-  keywords: text("keywords"),
-  tone: text("tone"),
-  wordCount: integer("word_count").default(1000),
-  brandVoice: text("brand_voice"),
-  targetAudience: text("target_audience"),
-  eatCompliance: boolean("eat_compliance").default(false),
-  
-  // AI and image settings
-  aiProvider: text("ai_provider").default("openai"),
-  includeImages: boolean("include_images").default(false),
-  imageCount: integer("image_count").default(1),
-  imageStyle: text("image_style"),
-  seoOptimized: boolean("seo_optimized").default(true),
-  
-  // Publishing settings
-  autoPublish: boolean("auto_publish").default(false),
-  publishDelay: integer("publish_delay").default(0), // Hours to wait before publishing
-  
-  // Topic rotation settings
-  topicRotation: text("topic_rotation").default("sequential"), // 'sequential' or 'random'
-  nextTopicIndex: integer("next_topic_index").default(0),
-  
-  // Cost and limit controls - FIXED: Using numeric instead of real
-  maxDailyCost: numeric("max_daily_cost", { precision: 10, scale: 2 }).default("10.00"),
-  maxMonthlyPosts: integer("max_monthly_posts").default(30),
-  costToday: numeric("cost_today", { precision: 10, scale: 2 }).default("0.00"),
-  postsThisMonth: integer("posts_this_month").default(0),
-  
-  // Tracking
-  lastRun: timestamp("last_run"),
-  isActive: boolean("is_active").default(true),
-  
-  // Timestamps
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  deletedAt: timestamp("deleted_at"),
-}, (table) => [
-  index("idx_auto_schedules_user_id").on(table.userId),
-  index("idx_auto_schedules_website_id").on(table.websiteId),
-  index("idx_auto_schedules_active").on(table.isActive),
-  index("idx_auto_schedules_last_run").on(table.lastRun),
-]);
-
-// Insert schema for auto schedules
-export const insertAutoScheduleSchema = createInsertSchema(autoSchedules).pick({
-  websiteId: true,
-  name: true,
-  frequency: true,
-  timeOfDay: true,
-  customDays: true,
-  topics: true,
-  keywords: true,
-  tone: true,
-  wordCount: true,
-  brandVoice: true,
-  targetAudience: true,
-  eatCompliance: true,
-  aiProvider: true,
-  includeImages: true,
-  imageCount: true,
-  imageStyle: true,
-  seoOptimized: true,
-  autoPublish: true,
-  publishDelay: true,
-  topicRotation: true,
-  maxDailyCost: true,
-  maxMonthlyPosts: true,
-  // userId will be added automatically in the backend
-});
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 export const seoIssueTracking = pgTable(
   "seo_issue_tracking",
@@ -1083,40 +564,294 @@ export const seoIssueTracking = pgTable(
   ]
 );
 
+export const appliedFixes = pgTable(
+  "applied_fixes",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Issue identification
+    issueType: text("issue_type").notNull(),
+    issueTitle: text("issue_title").notNull(),
+    issueDescription: text("issue_description"),
+    issueHash: text("issue_hash").notNull(),
+    
+    // Fix details
+    fixType: text("fix_type").notNull(),
+    fixDescription: text("fix_description").notNull(),
+    fixSuccess: boolean("fix_success").notNull(),
+    fixError: text("fix_error"),
+    
+    // Content affected
+    wordpressPostId: integer("wordpress_post_id"),
+    elementPath: text("element_path"),
+    beforeValue: text("before_value"),
+    afterValue: text("after_value"),
+    
+    // Fix context
+    fixBatchId: varchar("fix_batch_id"),
+    aiModel: text("ai_model"),
+    scoreBefore: integer("score_before"),
+    scoreAfter: integer("score_after"),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_applied_fixes_user_website").on(table.userId, table.websiteId),
+    index("idx_applied_fixes_issue_hash").on(table.issueHash),
+    index("idx_applied_fixes_batch").on(table.fixBatchId),
+  ]
+);
 
+// ============================================================================
+// AI & AUTOMATION TABLES
+// ============================================================================
 
+export const aiUsageTracking = pgTable(
+  "ai_usage_tracking",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id),
+    model: text("model").notNull(),
+    tokensUsed: integer("tokens_used").notNull(),
+    costUsd: integer("cost_usd").notNull(), // Store as cents
+    operation: text("operation").notNull(), // content_generation, seo_analysis, etc.
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_ai_usage_user_id").on(table.userId)]
+);
 
-// Add insert schema
-export const insertSeoIssueTrackingSchema = createInsertSchema(seoIssueTracking).pick({
-  websiteId: true,
-  issueType: true,
-  issueTitle: true,
-  issueDescription: true,
-  severity: true,
-  status: true,
-  autoFixAvailable: true,
-  detectedAt: true,
-  fixedAt: true,
-  resolvedAt: true,
-  lastSeenAt: true,
-  fixMethod: true,
-  fixSessionId: true,
-  fixBefore: true,
-  fixAfter: true,
-  aiModel: true,
-  tokensUsed: true,
-  elementPath: true,
-  currentValue: true,
-  recommendedValue: true,
-  resolvedBy: true,
-  resolutionNotes: true,
-  metadata: true,
-});
+export const autoSchedules = pgTable("auto_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
+  
+  // Schedule configuration
+  name: text("name").notNull(),
+  frequency: text("frequency").notNull(), // 'daily', 'twice_weekly', 'weekly', 'biweekly', 'monthly', 'custom'
+  timeOfDay: text("time_of_day").notNull(), // Format: 'HH:MM'
+  customDays: text("custom_days").array().default([]),
+  
+  // Content generation settings
+  topics: text("topics").array().default([]),
+  keywords: text("keywords"),
+  tone: text("tone"),
+  wordCount: integer("word_count").default(1000),
+  brandVoice: text("brand_voice"),
+  targetAudience: text("target_audience"),
+  eatCompliance: boolean("eat_compliance").default(false),
+  
+  // AI and image settings
+  aiProvider: text("ai_provider").default("openai"),
+  includeImages: boolean("include_images").default(false),
+  imageCount: integer("image_count").default(1),
+  imageStyle: text("image_style"),
+  seoOptimized: boolean("seo_optimized").default(true),
+  
+  // Publishing settings
+  autoPublish: boolean("auto_publish").default(false),
+  publishDelay: integer("publish_delay").default(0), // Hours to wait before publishing
+  
+  // Topic rotation settings
+  topicRotation: text("topic_rotation").default("sequential"), // 'sequential' or 'random'
+  nextTopicIndex: integer("next_topic_index").default(0),
+  
+  // Cost and limit controls
+  maxDailyCost: numeric("max_daily_cost", { precision: 10, scale: 2 }).default("10.00"),
+  maxMonthlyPosts: integer("max_monthly_posts").default(30),
+  costToday: numeric("cost_today", { precision: 10, scale: 2 }).default("0.00"),
+  postsThisMonth: integer("posts_this_month").default(0),
+  
+  // Tracking
+  lastRun: timestamp("last_run"),
+  isActive: boolean("is_active").default(true),
+  
+  // Timestamps
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+}, (table) => [
+  index("idx_auto_schedules_user_id").on(table.userId),
+  index("idx_auto_schedules_website_id").on(table.websiteId),
+  index("idx_auto_schedules_active").on(table.isActive),
+  index("idx_auto_schedules_last_run").on(table.lastRun),
+]);
 
+// ============================================================================
+// ACTIVITY & LOGGING TABLES
+// ============================================================================
 
+export const activityLogs = pgTable(
+  "activity_logs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }), // nullable for system logs
+    websiteId: varchar("website_id").references(() => websites.id),
+    type: text("type").notNull(), // content_generated, seo_analysis, issue_detected, etc.
+    description: text("description").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_activity_logs_user_id").on(table.userId)]
+);
 
+export const securityAudits = pgTable(
+  "security_audits",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    websiteId: varchar("website_id").references(() => websites.id),
+    action: text("action").notNull(), // login, content_publish, seo_change, etc.
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    success: boolean("success").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_security_audits_user_id").on(table.userId)]
+);
 
-//=================GOOGLE SEARCH CONSOLE++++++++++++++++++++++++//
+export const clientReports = pgTable(
+  "client_reports",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id),
+    reportType: text("report_type").notNull(), // weekly, monthly, quarterly
+    period: text("period").notNull(),
+    data: jsonb("data").notNull(),
+    insights: jsonb("insights").notNull().default([]),
+    roiData: jsonb("roi_data").notNull().default({}),
+    whiteLabelConfig: jsonb("white_label_config").default({}),
+    generatedAt: timestamp("generated_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_client_reports_user_id").on(table.userId)]
+);
+
+export const backups = pgTable(
+  "backups",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id),
+    backupType: text("backup_type").notNull(), // content, settings, full
+    data: jsonb("data").notNull(),
+    wordpressBackupId: text("wordpress_backup_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_backups_user_id").on(table.userId)]
+);
+
+// ============================================================================
+// CLOUDINARY & IMAGE TABLES
+// ============================================================================
+
+export const cloudinaryUsage = pgTable(
+  "cloudinary_usage",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Usage metrics
+    month: timestamp("month").notNull(),
+    imagesUploaded: integer("images_uploaded").default(0),
+    totalBytesStored: integer("total_bytes_stored").default(0),
+    bandwidthUsed: integer("bandwidth_used").default(0),
+    creditsUsed: integer("credits_used").default(0),
+    transformationsCount: integer("transformations_count").default(0),
+    
+    // Cost tracking (in cents)
+    estimatedCostCents: integer("estimated_cost_cents").default(0),
+    
+    // Timestamps
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_cloudinary_usage_user_website").on(table.userId, table.websiteId),
+    index("idx_cloudinary_usage_month").on(table.month),
+  ]
+);
+
+export const failedImageUploads = pgTable(
+  "failed_image_uploads",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    contentId: varchar("content_id")
+      .references(() => content.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Original request data
+    dalleUrl: text("dalle_url"),
+    cloudinaryError: text("cloudinary_error"),
+    filename: varchar("filename", { length: 255 }),
+    altText: text("alt_text"),
+    prompt: text("prompt"),
+    
+    // Error tracking
+    errorMessage: text("error_message"),
+    errorCode: varchar("error_code", { length: 50 }),
+    retryCount: integer("retry_count").default(0),
+    maxRetries: integer("max_retries").default(3),
+    
+    // Status
+    status: text("status").default("pending_retry"), // pending_retry, retrying, resolved, abandoned
+    
+    // Timestamps
+    failedAt: timestamp("failed_at").notNull().defaultNow(),
+    lastRetryAt: timestamp("last_retry_at"),
+    resolvedAt: timestamp("resolved_at"),
+  },
+  (table) => [
+    index("idx_failed_uploads_status").on(table.status),
+    index("idx_failed_uploads_content").on(table.contentId),
+  ]
+);
+
+// ============================================================================
+// GOOGLE SEARCH CONSOLE TABLES
+// ============================================================================
+
 export const gscConfigurations = pgTable(
   "gsc_configurations",
   {
@@ -1142,10 +877,13 @@ export const gscConfigurations = pgTable(
 export const gscAccounts = pgTable(
   "gsc_accounts",
   {
-    id: varchar("id").primaryKey(), // Google account ID
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),  // Auto-generated UUID
     userId: varchar("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    accountId: varchar("account_id").notNull(),  // Google account ID stored here
     
     email: text("email").notNull(),
     name: text("name").notNull(),
@@ -1160,7 +898,9 @@ export const gscAccounts = pgTable(
   },
   (table) => [
     index("idx_gsc_accounts_user_id").on(table.userId),
+    index("idx_gsc_accounts_account_id").on(table.accountId),
     index("idx_gsc_accounts_email").on(table.email),
+    uniqueIndex("ux_gsc_accounts_user_id_account_id").on(table.userId, table.accountId),
   ]
 );
 
@@ -1173,9 +913,8 @@ export const gscProperties = pgTable(
     userId: varchar("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    accountId: varchar("account_id")
-      .notNull()
-      .references(() => gscAccounts.id, { onDelete: "cascade" }),
+    accountId: varchar("account_id")  // References account_id, not id
+      .notNull(),
     websiteId: varchar("website_id")
       .references(() => websites.id, { onDelete: "set null" }),
     
@@ -1203,9 +942,8 @@ export const gscIndexingRequests = pgTable(
     userId: varchar("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    accountId: varchar("account_id")
-      .notNull()
-      .references(() => gscAccounts.id, { onDelete: "cascade" }),
+    accountId: varchar("account_id")  // References account_id, not id
+      .notNull(),
     propertyId: varchar("property_id")
       .notNull()
       .references(() => gscProperties.id, { onDelete: "cascade" }),
@@ -1224,27 +962,435 @@ export const gscIndexingRequests = pgTable(
   ]
 );
 
+// FIXED: Updated gscQuotaUsage with unique constraint
 export const gscQuotaUsage = pgTable(
   "gsc_quota_usage",
   {
     id: varchar("id")
       .primaryKey()
       .default(sql`gen_random_uuid()`),
-    accountId: varchar("account_id")
-      .references(() => gscAccounts.id, { onDelete: "cascade" }),
+    accountId: varchar("account_id").notNull(),  // References account_id
     
     date: timestamp("date").notNull(),
     count: integer("count").notNull().default(0),
-    limit: integer("limit").notNull().default(200),
+    limit_count: integer("limit_count").notNull().default(200),  // FIXED: Named as limit_count to match the code
     
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
     index("idx_gsc_quota_account_date").on(table.accountId, table.date),
+    // ADDED: Unique constraint that was missing
+    uniqueIndex("unique_account_date").on(table.accountId, table.date),
   ]
 );
 
-// Add insert schemas and types
+// NEW: Missing GSC tables that were causing errors
+export const gscUrlInspections = pgTable(
+  "gsc_url_inspections",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    propertyId: varchar("property_id")
+      .notNull()
+      .references(() => gscProperties.id, { onDelete: "cascade" }),
+    
+    url: text("url").notNull(),
+    indexStatus: varchar("index_status", { length: 50 }),
+    lastCrawlTime: timestamp("last_crawl_time"),
+    pageFetchState: varchar("page_fetch_state", { length: 100 }),
+    googleCanonical: text("google_canonical"),
+    userCanonical: text("user_canonical"),
+    mobileUsability: varchar("mobile_usability", { length: 50 }),
+    richResultsStatus: varchar("rich_results_status", { length: 50 }),
+    fullResult: jsonb("full_result"),
+    inspectedAt: timestamp("inspected_at").defaultNow(),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_gsc_url_inspections_property_id").on(table.propertyId),
+    index("idx_gsc_url_inspections_url").on(table.url),
+  ]
+);
+
+export const gscSitemaps = pgTable(
+  "gsc_sitemaps",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    propertyId: varchar("property_id")
+      .notNull()
+      .references(() => gscProperties.id, { onDelete: "cascade" }),
+    
+    sitemapUrl: text("sitemap_url").notNull(),
+    status: varchar("status", { length: 50 }).default("submitted"),
+    lastSubmitted: timestamp("last_submitted").defaultNow(),
+    lastDownloaded: timestamp("last_downloaded"),
+    errors: integer("errors").default(0),
+    warnings: integer("warnings").default(0),
+    validUrls: integer("valid_urls").default(0),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_gsc_sitemaps_property_id").on(table.propertyId),
+  ]
+);
+
+export const gscPerformanceData = pgTable(
+  "gsc_performance_data",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    propertyId: varchar("property_id")
+      .notNull()
+      .references(() => gscProperties.id, { onDelete: "cascade" }),
+    
+    date: timestamp("date").notNull(),
+    clicks: integer("clicks").default(0),
+    impressions: integer("impressions").default(0),
+    ctr: numeric("ctr", { precision: 5, scale: 4 }).default("0"),
+    position: numeric("position", { precision: 6, scale: 2 }).default("0"),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_gsc_performance_data_property_id").on(table.propertyId),
+    index("idx_gsc_performance_data_date").on(table.date),
+  ]
+);
+
+// ============================================================================
+// INSERT SCHEMAS - CORE USER
+// ============================================================================
+
+export const insertUserSchema = createInsertSchema(users).pick({
+  username: true,
+  password: true,
+  email: true,
+  name: true,
+});
+
+export const insertUserSettingsSchema = createInsertSchema(userSettings).pick({
+  profileName: true,
+  profileEmail: true,
+  profileCompany: true,
+  profileTimezone: true,
+  notificationEmailReports: true,
+  notificationContentGenerated: true,
+  notificationSeoIssues: true,
+  notificationSystemAlerts: true,
+  automationDefaultAiModel: true,
+  automationAutoFixSeoIssues: true,
+  automationContentGenerationFrequency: true,
+  automationReportGeneration: true,
+  securityTwoFactorAuth: true,
+  securitySessionTimeout: true,
+  securityAllowApiAccess: true,
+});
+
+export const insertUserApiKeySchema = createInsertSchema(userApiKeys).pick({
+  provider: true,
+  keyName: true,
+  encryptedApiKey: true,
+  maskedKey: true,
+  isActive: true,
+  validationStatus: true,
+  lastValidated: true,
+  validationError: true,
+  usageCount: true,
+  lastUsed: true,
+});
+
+// ============================================================================
+// INSERT SCHEMAS - WEBSITES
+// ============================================================================
+
+export const insertWebsiteSchema = createInsertSchema(websites).pick({
+  name: true,
+  url: true,
+  wpApplicationName: true,
+  wpApplicationPassword: true,
+  wpUsername: true,
+  aiModel: true,
+  autoPosting: true,
+  requireApproval: true,
+  brandVoice: true,
+  contentGuidelines: true,
+  targetAudience: true,
+  // userId will be added automatically in the backend
+});
+
+// ============================================================================
+// INSERT SCHEMAS - CONTENT
+// ============================================================================
+
+export const insertContentSchema = createInsertSchema(content).pick({
+  websiteId: true,
+  title: true,
+  body: true,
+  excerpt: true,
+  metaDescription: true,
+  metaTitle: true,
+  aiModel: true,
+  seoKeywords: true,
+  publishDate: true,
+  seoScore: true,
+  readabilityScore: true,
+  brandVoiceScore: true,
+  tokensUsed: true,
+  costUsd: true,
+  eatCompliance: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertContentImageSchema = createInsertSchema(contentImages).pick({
+  contentId: true,
+  websiteId: true,
+  originalUrl: true,
+  filename: true,
+  altText: true,
+  generationPrompt: true,
+  costCents: true,
+  imageStyle: true,
+  size: true,
+  
+  // Cloudinary fields
+  cloudinaryUrl: true,
+  cloudinarySecureUrl: true,
+  cloudinaryPublicId: true,
+  cloudinaryFormat: true,
+  cloudinaryWidth: true,
+  cloudinaryHeight: true,
+  cloudinaryBytes: true,
+  cloudinaryVersion: true,
+  cloudinaryThumbnailUrl: true,
+  cloudinaryOptimizedUrl: true,
+  cloudinaryUploadedAt: true,
+  imageOrder: true,
+  isFeatured: true,
+  
+  // WordPress fields
+  wordpressMediaId: true,
+  wordpressUrl: true,
+  status: true,
+  uploadError: true,
+});
+
+export const insertContentApprovalSchema = createInsertSchema(contentApprovals).pick({
+  contentId: true,
+  reviewerId: true,
+  status: true,
+  feedback: true,
+  qualityScore: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertContentScheduleSchema = createInsertSchema(contentSchedule).pick({
+  websiteId: true,
+  scheduledDate: true,
+  topic: true,
+  keywords: true,
+  abTestVariant: true,
+  // userId will be added automatically in the backend
+});
+
+// ============================================================================
+// INSERT SCHEMAS - SEO
+// ============================================================================
+
+export const insertSeoReportSchema = createInsertSchema(seoReports).pick({
+  websiteId: true,
+  score: true,
+  issues: true,
+  recommendations: true,
+  pageSpeedScore: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertSeoAuditSchema = createInsertSchema(seoAudits).pick({
+  websiteId: true,
+  url: true,
+  auditType: true,
+  findings: true,
+  autoFixApplied: true,
+  autoFixResults: true,
+  coreWebVitals: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertSeoIssueStatusSchema = createInsertSchema(seoIssueStatuses).pick({
+  websiteId: true,
+  issueHash: true,
+  issueType: true,
+  issueTitle: true,
+  issueDescription: true,
+  issueSeverity: true,
+  status: true,
+  statusReason: true,
+  fixAttempts: true,
+  lastFixAttempt: true,
+  lastFixError: true,
+  resolvedAt: true,
+  resolvedBy: true,
+  resolutionNotes: true,
+  firstDetected: true,
+  lastDetected: true,
+  detectionCount: true,
+  wordpressPostId: true,
+  elementPath: true,
+  currentValue: true,
+  recommendedValue: true,
+});
+
+export const insertSeoIssueTrackingSchema = createInsertSchema(seoIssueTracking).pick({
+  websiteId: true,
+  issueType: true,
+  issueTitle: true,
+  issueDescription: true,
+  severity: true,
+  status: true,
+  autoFixAvailable: true,
+  detectedAt: true,
+  fixedAt: true,
+  resolvedAt: true,
+  lastSeenAt: true,
+  fixMethod: true,
+  fixSessionId: true,
+  fixBefore: true,
+  fixAfter: true,
+  aiModel: true,
+  tokensUsed: true,
+  elementPath: true,
+  currentValue: true,
+  recommendedValue: true,
+  resolvedBy: true,
+  resolutionNotes: true,
+  metadata: true,
+});
+
+// ============================================================================
+// INSERT SCHEMAS - AI & AUTOMATION
+// ============================================================================
+
+export const insertAiUsageTrackingSchema = createInsertSchema(aiUsageTracking).pick({
+  websiteId: true,
+  model: true,
+  tokensUsed: true,
+  costUsd: true,
+  operation: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertAutoScheduleSchema = createInsertSchema(autoSchedules).pick({
+  websiteId: true,
+  name: true,
+  frequency: true,
+  timeOfDay: true,
+  customDays: true,
+  topics: true,
+  keywords: true,
+  tone: true,
+  wordCount: true,
+  brandVoice: true,
+  targetAudience: true,
+  eatCompliance: true,
+  aiProvider: true,
+  includeImages: true,
+  imageCount: true,
+  imageStyle: true,
+  seoOptimized: true,
+  autoPublish: true,
+  publishDelay: true,
+  topicRotation: true,
+  maxDailyCost: true,
+  maxMonthlyPosts: true,
+  // userId will be added automatically in the backend
+});
+
+// ============================================================================
+// INSERT SCHEMAS - ACTIVITY & LOGGING
+// ============================================================================
+
+export const insertActivityLogSchema = createInsertSchema(activityLogs).pick({
+  websiteId: true,
+  type: true,
+  description: true,
+  metadata: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertSecurityAuditSchema = createInsertSchema(securityAudits).pick({
+  websiteId: true,
+  action: true,
+  ipAddress: true,
+  userAgent: true,
+  success: true,
+  metadata: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertClientReportSchema = createInsertSchema(clientReports).pick({
+  websiteId: true,
+  reportType: true,
+  period: true,
+  data: true,
+  insights: true,
+  roiData: true,
+  whiteLabelConfig: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertBackupSchema = createInsertSchema(backups).pick({
+  websiteId: true,
+  backupType: true,
+  data: true,
+  wordpressBackupId: true,
+  // userId will be added automatically in the backend
+});
+
+// ============================================================================
+// INSERT SCHEMAS - CLOUDINARY & IMAGES
+// ============================================================================
+
+export const insertCloudinaryUsageSchema = createInsertSchema(cloudinaryUsage).pick({
+  websiteId: true,
+  month: true,
+  imagesUploaded: true,
+  totalBytesStored: true,
+  bandwidthUsed: true,
+  creditsUsed: true,
+  transformationsCount: true,
+  estimatedCostCents: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertFailedImageUploadSchema = createInsertSchema(failedImageUploads).pick({
+  contentId: true,
+  websiteId: true,
+  dalleUrl: true,
+  cloudinaryError: true,
+  filename: true,
+  altText: true,
+  prompt: true,
+  errorMessage: true,
+  errorCode: true,
+  retryCount: true,
+  maxRetries: true,
+  status: true,
+  // userId will be added automatically in the backend
+});
+
+// ============================================================================
+// INSERT SCHEMAS - GOOGLE SEARCH CONSOLE
+// ============================================================================
+
 export const insertGscConfigurationSchema = createInsertSchema(gscConfigurations).pick({
   clientId: true,
   clientSecret: true,
@@ -1261,65 +1407,48 @@ export const insertGscAccountSchema = createInsertSchema(gscAccounts).pick({
   tokenExpiry: true,
 });
 
+// NEW: Insert schemas for the missing GSC tables
+export const insertGscUrlInspectionSchema = createInsertSchema(gscUrlInspections).pick({
+  propertyId: true,
+  url: true,
+  indexStatus: true,
+  lastCrawlTime: true,
+  pageFetchState: true,
+  googleCanonical: true,
+  userCanonical: true,
+  mobileUsability: true,
+  richResultsStatus: true,
+  fullResult: true,
+  inspectedAt: true,
+});
 
+export const insertGscSitemapSchema = createInsertSchema(gscSitemaps).pick({
+  propertyId: true,
+  sitemapUrl: true,
+  status: true,
+  lastSubmitted: true,
+  lastDownloaded: true,
+  errors: true,
+  warnings: true,
+  validUrls: true,
+});
 
-// Add type definitions
-export type InsertSeoIssueTracking = z.infer<typeof insertSeoIssueTrackingSchema>;
-export type SeoIssueTracking = typeof seoIssueTracking.$inferSelect;
+export const insertGscPerformanceDataSchema = createInsertSchema(gscPerformanceData).pick({
+  propertyId: true,
+  date: true,
+  clicks: true,
+  impressions: true,
+  ctr: true,
+  position: true,
+});
 
+// ============================================================================
+// TYPE EXPORTS - CORE USER
+// ============================================================================
 
-
-// Types for auto schedules
-export type InsertAutoSchedule = z.infer<typeof insertAutoScheduleSchema>;
-export type AutoSchedule = typeof autoSchedules.$inferSelect;
-// Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
-
-export type InsertWebsite = z.infer<typeof insertWebsiteSchema>;
-export type Website = typeof websites.$inferSelect;
-
-export type InsertContent = z.infer<typeof insertContentSchema>;
-export type Content = typeof content.$inferSelect;
-
-export type InsertSeoReport = z.infer<typeof insertSeoReportSchema>;
-export type SeoReport = typeof seoReports.$inferSelect;
-
-export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
-export type ActivityLog = typeof activityLogs.$inferSelect;
-
-export type InsertClientReport = z.infer<typeof insertClientReportSchema>;
-export type ClientReport = typeof clientReports.$inferSelect;
-
-// Enhanced types
-export type InsertContentApproval = z.infer<typeof insertContentApprovalSchema>;
-export type ContentApproval = typeof contentApprovals.$inferSelect;
-
-export type InsertSecurityAudit = z.infer<typeof insertSecurityAuditSchema>;
-export type SecurityAudit = typeof securityAudits.$inferSelect;
-
-export type InsertAiUsageTracking = z.infer<typeof insertAiUsageTrackingSchema>;
-export type AiUsageTracking = typeof aiUsageTracking.$inferSelect;
-
-export type InsertSeoAudit = z.infer<typeof insertSeoAuditSchema>;
-export type SeoAudit = typeof seoAudits.$inferSelect;
-
-export type InsertContentSchedule = z.infer<typeof insertContentScheduleSchema>;
-export type ContentSchedule = typeof contentSchedule.$inferSelect;
-
-export type InsertBackup = z.infer<typeof insertBackupSchema>;
-export type Backup = typeof backups.$inferSelect;
-
-// User session type for Replit Auth compatibility
 export type UpsertUser = typeof users.$inferInsert;
-
-export type InsertContentImage = z.infer<typeof insertContentImageSchema>;
-export type InsertCloudinaryUsage = z.infer<typeof insertCloudinaryUsageSchema>;
-export type CloudinaryUsage = typeof cloudinaryUsage.$inferSelect;
-
-export type InsertFailedImageUpload = z.infer<typeof insertFailedImageUploadSchema>;
-export type FailedImageUpload = typeof failedImageUploads.$inferSelect;
-export type ContentImage = typeof contentImages.$inferSelect;
 
 export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;
 export type UserSettings = typeof userSettings.$inferSelect;
@@ -1327,10 +1456,104 @@ export type UserSettings = typeof userSettings.$inferSelect;
 export type InsertUserApiKey = z.infer<typeof insertUserApiKeySchema>;
 export type UserApiKey = typeof userApiKeys.$inferSelect;
 
+// ============================================================================
+// TYPE EXPORTS - WEBSITES
+// ============================================================================
 
+export type InsertWebsite = z.infer<typeof insertWebsiteSchema>;
+export type Website = typeof websites.$inferSelect;
 
-//nadagdag
+// ============================================================================
+// TYPE EXPORTS - CONTENT
+// ============================================================================
+
+export type InsertContent = z.infer<typeof insertContentSchema>;
+export type Content = typeof content.$inferSelect;
+
+export type InsertContentImage = z.infer<typeof insertContentImageSchema>;
+export type ContentImage = typeof contentImages.$inferSelect;
+
+export type InsertContentApproval = z.infer<typeof insertContentApprovalSchema>;
+export type ContentApproval = typeof contentApprovals.$inferSelect;
+
+export type InsertContentSchedule = z.infer<typeof insertContentScheduleSchema>;
+export type ContentSchedule = typeof contentSchedule.$inferSelect;
+
+// ============================================================================
+// TYPE EXPORTS - SEO
+// ============================================================================
+
+export type InsertSeoReport = z.infer<typeof insertSeoReportSchema>;
+export type SeoReport = typeof seoReports.$inferSelect;
+
+export type InsertSeoAudit = z.infer<typeof insertSeoAuditSchema>;
+export type SeoAudit = typeof seoAudits.$inferSelect;
+
+export type InsertSeoIssueStatus = z.infer<typeof insertSeoIssueStatusSchema>;
+export type SeoIssueStatus = typeof seoIssueStatuses.$inferSelect;
+
+export type InsertSeoIssueTracking = z.infer<typeof insertSeoIssueTrackingSchema>;
+export type SeoIssueTracking = typeof seoIssueTracking.$inferSelect;
+
+// ============================================================================
+// TYPE EXPORTS - AI & AUTOMATION
+// ============================================================================
+
+export type InsertAiUsageTracking = z.infer<typeof insertAiUsageTrackingSchema>;
+export type AiUsageTracking = typeof aiUsageTracking.$inferSelect;
+
+export type InsertAutoSchedule = z.infer<typeof insertAutoScheduleSchema>;
+export type AutoSchedule = typeof autoSchedules.$inferSelect;
+
+// ============================================================================
+// TYPE EXPORTS - ACTIVITY & LOGGING
+// ============================================================================
+
+export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type ActivityLog = typeof activityLogs.$inferSelect;
+
+export type InsertSecurityAudit = z.infer<typeof insertSecurityAuditSchema>;
+export type SecurityAudit = typeof securityAudits.$inferSelect;
+
+export type InsertClientReport = z.infer<typeof insertClientReportSchema>;
+export type ClientReport = typeof clientReports.$inferSelect;
+
+export type InsertBackup = z.infer<typeof insertBackupSchema>;
+export type Backup = typeof backups.$inferSelect;
+
+// ============================================================================
+// TYPE EXPORTS - CLOUDINARY & IMAGES
+// ============================================================================
+
+export type InsertCloudinaryUsage = z.infer<typeof insertCloudinaryUsageSchema>;
+export type CloudinaryUsage = typeof cloudinaryUsage.$inferSelect;
+
+export type InsertFailedImageUpload = z.infer<typeof insertFailedImageUploadSchema>;
+export type FailedImageUpload = typeof failedImageUploads.$inferSelect;
+
+// ============================================================================
+// TYPE EXPORTS - GOOGLE SEARCH CONSOLE
+// ============================================================================
+
 export type GscConfiguration = typeof gscConfigurations.$inferSelect;
 export type InsertGscConfiguration = z.infer<typeof insertGscConfigurationSchema>;
 export type GscAccount = typeof gscAccounts.$inferSelect;
 export type InsertGscAccount = z.infer<typeof insertGscAccountSchema>;
+
+// NEW: Type exports for the missing GSC tables
+export type GscUrlInspection = typeof gscUrlInspections.$inferSelect;
+export type InsertGscUrlInspection = z.infer<typeof insertGscUrlInspectionSchema>;
+
+export type GscSitemap = typeof gscSitemaps.$inferSelect;
+export type InsertGscSitemap = z.infer<typeof insertGscSitemapSchema>;
+
+export type GscPerformanceData = typeof gscPerformanceData.$inferSelect;
+export type InsertGscPerformanceData = z.infer<typeof insertGscPerformanceDataSchema>;
+
+
+// ============================================================================
+// TYPE EXPORTS
+// ============================================================================
+
+export type InsertPasswordResetToken = typeof passwordResetTokens.$inferInsert;
+export type SelectPasswordResetToken = typeof passwordResetTokens.$inferSelect;
