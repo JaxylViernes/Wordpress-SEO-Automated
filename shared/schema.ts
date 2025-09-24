@@ -25,7 +25,69 @@ export const users = pgTable("users", {
     .default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  email: text("email").notNull().unique(),
+  name: text("name"), 
 });
+
+export interface ResetTokenMetadata {
+  type: 'verification_code';
+  attempts: number;
+  verified: boolean;
+  verifiedAt?: string;
+  codeLength: number;
+  lastAttemptAt?: string;
+  invalidatedReason?: string;
+  completedAt?: string;
+  resent?: boolean;
+}
+
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    email: text("email").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    used: boolean("used").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    usedAt: timestamp("used_at"),
+    metadata: jsonb("metadata").default({}), // ADD THIS LINE
+  },
+  (table) => [
+    index("idx_password_reset_tokens_user_id").on(table.userId),
+    index("idx_password_reset_tokens_token").on(table.token),
+    index("idx_password_reset_tokens_expires_at").on(table.expiresAt),
+  ]
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // Session storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
@@ -562,6 +624,7 @@ export const aiUsageTracking = pgTable(
     costUsd: integer("cost_usd").notNull(), // Store as cents
     operation: text("operation").notNull(), // content_generation, seo_analysis, etc.
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [index("idx_ai_usage_user_id").on(table.userId)]
 );
@@ -622,6 +685,7 @@ export const autoSchedules = pgTable("auto_schedules", {
   index("idx_auto_schedules_last_run").on(table.lastRun),
 ]);
 
+
 // ============================================================================
 // ACTIVITY & LOGGING TABLES
 // ============================================================================
@@ -663,6 +727,7 @@ export const securityAudits = pgTable(
   },
   (table) => [index("idx_security_audits_user_id").on(table.userId)]
 );
+
 
 export const clientReports = pgTable(
   "client_reports",
@@ -1010,6 +1075,8 @@ export const gscPerformanceData = pgTable(
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
+  email: true,
+  name: true,
 });
 
 export const insertUserSettingsSchema = createInsertSchema(userSettings).pick({
@@ -1484,3 +1551,11 @@ export type InsertGscSitemap = z.infer<typeof insertGscSitemapSchema>;
 
 export type GscPerformanceData = typeof gscPerformanceData.$inferSelect;
 export type InsertGscPerformanceData = z.infer<typeof insertGscPerformanceDataSchema>;
+
+
+// ============================================================================
+// TYPE EXPORTS
+// ============================================================================
+
+export type InsertPasswordResetToken = typeof passwordResetTokens.$inferInsert;
+export type SelectPasswordResetToken = typeof passwordResetTokens.$inferSelect;

@@ -12,6 +12,7 @@ import { schedulerService } from './services/scheduler-service';
 import autoSchedulesRouter from "./api/user/auto-schedules";
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
 
 // =============================================================================
 // TYPE DECLARATIONS (moved to top)

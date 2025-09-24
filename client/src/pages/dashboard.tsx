@@ -120,6 +120,13 @@ export default function Dashboard() {
     }
   }, [stats, seoScoreChange]);
 
+  // Add debug logging
+  useEffect(() => {
+    if (statsError) {
+      console.error('Stats query error:', statsError);
+    }
+  }, [statsError]);
+
   if (isLoading) return <div>Loading...</div>;
   if (!isAuthenticated) return <div>Please log in</div>;
 

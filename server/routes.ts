@@ -4381,41 +4381,172 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // DASHBOARD & ACTIVITY ROUTES
   // ===========================================================================
   
-  app.get("/api/user/dashboard/stats", requireAuth, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = req.user!.id;
-      const stats = await storage.getUserDashboardStats(userId);
-      res.json(stats);
-    } catch (error) {
-      console.error("Failed to fetch dashboard stats:", error);
-      res.status(500).json({ message: "Failed to fetch dashboard stats" });
+ app.get("/api/user/dashboard/stats", requireAuth, async (req: Request, res: Response): Promise<void> => { try { const userId = req.user!.id; const websiteId = req.query.websiteId as string | undefined; if (websiteId) { 
+  // Verify ownership first 
+  const website = await storage.getUserWebsite(websiteId, userId); 
+  if (!website) { res.status(404).json({ message: "Website not found or access denied" }); return; } 
+  // Pass userId to ensure we only get this user's reports 
+  const reports = await storage.getSeoReportsByWebsite(websiteId, userId);
+  const sortedReports = reports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() ); 
+  // Get content for this website (also filtered by user) 
+  const contents = await storage.getUserContent(userId, websiteId);
+   const scheduledCount = contents.filter((c: any) => c.status === 'scheduled' || c.scheduledAt ).length; 
+   const currentScore = sortedReports.length > 0 ? (sortedReports[0].score || 0) : 0; 
+   const previousScore = sortedReports.length > 1 ? (sortedReports[1].score || null) : null; 
+   res.json({ websiteCount: 1, contentCount: contents.length, avgSeoScore: currentScore, previousAvgSeoScore: previousScore, scheduledPosts: scheduledCount, reportCount: reports.length }); 
+  } 
+  else 
+    { 
+      // Get overall stats 
+      const stats = await storage.getUserDashboardStats(userId); res.json(stats);
+     } 
+    } 
+    catch (error) 
+    { console.error("Failed to fetch dashboard stats:", error); 
+      res.status(500).json({ message: "Failed to fetch dashboard stats" }); 
+    } 
+  }); 
+  
+  
+ app.get("/api/user/dashboard/performance", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
     }
-  });
 
-  app.get("/api/user/dashboard/performance", requireAuth, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const days = 7;
-      const data = [];
-      const baseScore = 75;
+    // Get user's websites
+    const websites = await storage.getUserWebsites(userId);
+    
+    if (websites.length === 0) {
+      res.json({
+        data: [],
+        websites: [],
+        hasData: false,
+        totalReports: 0,
+        lastFetch: new Date().toISOString(),
+      });
+      return;
+    }
+
+    const allDataPoints = [];
+    const websiteInfo = [];
+    const LINE_COLORS = [
+      "#3b82f6", "#10b981", "#f59e0b", "#ef4444", 
+      "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"
+    ];
+    
+    let totalReports = 0;
+
+    // Process each website
+    for (let i = 0; i < websites.length; i++) {
+      const website = websites[i];
       
-      for (let i = days - 1; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        const variation = Math.random() * 10 - 5;
-        const score = Math.max(70, Math.min(100, baseScore + variation + (i * 2)));
+      try {
+        // Get SEO reports for this website
+        const reports = await storage.getSeoReportsByWebsite(website.id, userId);
         
-        data.push({
-          date: date.toISOString().split('T')[0],
-          score: Math.round(score)
+        if (reports && reports.length > 0) {
+          totalReports += reports.length;
+
+          // Sort reports chronologically
+          const sortedReports = [...reports].sort(
+            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+          );
+
+          const latestReport = sortedReports[sortedReports.length - 1];
+          
+          // Add website info for legend
+          websiteInfo.push({
+            id: website.id,
+            name: website.name,
+            color: LINE_COLORS[i % LINE_COLORS.length],
+            latestScore: latestReport?.score || 0,
+            reportCount: reports.length,
+          });
+
+          // Create data points for each report
+          for (const report of sortedReports) {
+            const ts = new Date(report.createdAt).getTime();
+            
+            // Find existing data point or create new one
+            let dataPoint = allDataPoints.find(dp => dp.ts === ts);
+            
+            if (!dataPoint) {
+              dataPoint = {
+                ts,
+                label: new Intl.DateTimeFormat("en-US", {
+                  timeZone: "Asia/Manila",
+                  month: "short",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                }).format(new Date(report.createdAt)),
+                reportId: report.id,
+                metadata: {}
+              };
+              allDataPoints.push(dataPoint);
+            }
+            
+            // Add the score for this website
+            const score = report.score || 0;
+            dataPoint[website.name] = score;
+            
+            // Add metadata for tooltip
+            if (!dataPoint.metadata) dataPoint.metadata = {};
+            dataPoint.metadata[website.name] = {
+              score,
+              pageSpeedScore: report.pageSpeedScore,
+              issuesCount: report.fixableIssuesCount || 0,
+              criticalIssues: report.criticalIssuesCount || 0,
+              reportId: report.id,
+              createdAt: report.createdAt,
+            };
+          }
+        } else {
+          // Website with no reports
+          websiteInfo.push({
+            id: website.id,
+            name: website.name,
+            color: LINE_COLORS[i % LINE_COLORS.length],
+            latestScore: 0,
+            reportCount: 0,
+          });
+        }
+      } catch (error) {
+        console.error(`Error processing website ${website.id}:`, error);
+        websiteInfo.push({
+          id: website.id,
+          name: website.name,
+          color: LINE_COLORS[i % LINE_COLORS.length],
+          latestScore: 0,
+          reportCount: 0,
+          error: true,
         });
       }
-
-      res.json(data);
-    } catch (error) {
-      console.error("Failed to fetch performance data:", error);
-      res.status(500).json({ message: "Failed to fetch performance data" });
     }
-  });
+
+    // Sort data points by timestamp
+    const sortedData = allDataPoints.sort((a, b) => a.ts - b.ts);
+    
+    // Keep recent data points (last 100)
+    const recentData = sortedData.slice(-100);
+
+    res.json({
+      data: recentData,
+      websites: websiteInfo,
+      hasData: recentData.length > 0,
+      totalReports,
+      lastFetch: new Date().toISOString(),
+    });
+
+  } catch (error) {
+    console.error("Failed to fetch performance data:", error);
+    res.status(500).json({ message: "Failed to fetch performance data" });
+  }
+});
 
   app.get("/api/user/activity-logs", requireAuth, async (req: Request, res: Response): Promise<void> => {
     try {

@@ -1,4306 +1,10289 @@
-// import React, { useState, useEffect, useCallback, useRef } from 'react';
-// import {
-//   Globe,
-//   Plus,
-//   RefreshCw,
-//   Send,
-//   CheckCircle,
-//   AlertCircle,
-//   ExternalLink,
-//   User,
-//   Trash2,
-//   FileText,
-//   Link,
-//   TrendingUp,
-//   Clock,
-//   Search,
-//   BarChart,
-//   LogOut,
-//   Settings,
-//   Shield,
-//   X,
-//   ChevronDown,
-//   ChevronRight,
-//   Loader2,
-//   Info,
-//   Copy,
-//   Check,
-//   AlertTriangle,
-//   Key,
-//   Eye,
-//   EyeOff,
-//   Save,
-//   Edit,
-//   Activity,
-//   Map
-// } from 'lucide-react';
+// ===============================
+// IMPORTS
+// ===============================
+import { 
+  users,
+  websites,
+  content,
+  seoReports,
+  activityLogs,
+  clientReports,
+  contentApprovals,
+  securityAudits,
+  aiUsageTracking,
+  seoAudits,
+  contentSchedule,
+  backups,
+  userSettings,
+  seoIssueTracking,
+  contentImages,
+  userApiKeys,
+  autoSchedules,
+  gscConfigurations,
+  gscAccounts,
+  gscProperties,
+  gscIndexingRequests,
+  gscQuotaUsage,
+  // Types
+  type User, 
+  type UpsertUser,
+  type InsertUser, 
+  type Website, 
+  type InsertWebsite,
+  type Content,
+  type InsertContent,
+  type SeoReport,
+  type InsertSeoReport,
+  type ActivityLog,
+  type InsertActivityLog,
+  type ClientReport,
+  type InsertClientReport,
+  type ContentApproval,
+  type InsertContentApproval,
+  type SecurityAudit,
+  type InsertSecurityAudit,
+  type AiUsageTracking,
+  type InsertAiUsageTracking,
+  type SeoAudit,
+  type InsertSeoAudit,
+  type ContentSchedule,
+  type InsertContentSchedule,
+  type Backup,
+  type InsertBackup,
+  type UserSettings,
+  type InsertUserSettings,
+  type SeoIssueTracking as SeoIssueTrackingType,
+  type InsertSeoIssueTracking,
+  type ContentImage,
+  type InsertContentImage,
+  type UserApiKey,
+  type InsertUserApiKey,
+  type AutoSchedule,
+  type InsertAutoSchedule,
+  type GscConfiguration,
+  type InsertGscConfiguration,
+  type GscAccount,
+  type InsertGscAccount,
+} from "@shared/schema";
 
-// // Types
-// interface GscConfiguration {
-//   id?: string;
-//   clientId: string;
-//   clientSecret: string;
-//   redirectUri: string;
-//   isConfigured: boolean;
-// }
+import { db } from "./db";
+import { lte, gte, count, eq, desc, and, or, isNull, inArray, sql, not } from "drizzle-orm";
+import { apiKeyEncryptionService } from "./services/api-key-encryption";
+import { wordPressAuthService } from "./services/wordpress-auth";
+import { gscStorage } from "./services/gsc-storage";
+import { randomUUID, createHash } from 'crypto';
 
-// interface GoogleAccount {
-//   id: string;
-//   email: string;
-//   name: string;
-//   picture?: string;
-//   accessToken: string;
-//   refreshToken: string;
-//   tokenExpiry: number;
-//   isActive: boolean;
-// }
+// ===============================
+// CUSTOM INTERFACES
+// ===============================
 
-// interface SearchConsoleProperty {
-//   siteUrl: string;
-//   permissionLevel: string;
-//   siteType: 'SITE' | 'DOMAIN';
-//   verified: boolean;
-//   accountId: string;
-// }
+export interface SeoIssueTracking {
+  id: string;
+  websiteId: string;
+  userId: string;
+  issueType: string;
+  issueTitle: string;
+  issueDescription?: string;
+  severity: 'critical' | 'warning' | 'info';
+  status: 'detected' | 'fixing' | 'fixed' | 'resolved' | 'reappeared';
+  autoFixAvailable: boolean;
+  detectedAt: Date;
+  fixedAt?: Date;
+  resolvedAt?: Date;
+  lastSeenAt: Date;
+  fixMethod?: 'ai_automatic' | 'manual';
+  fixSessionId?: string;
+  fixBefore?: string;
+  fixAfter?: string;
+  aiModel?: string;
+  tokensUsed?: number;
+  metadata?: any;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
-// interface IndexingRequest {
-//   url: string;
-//   type: 'URL_UPDATED' | 'URL_DELETED';
-//   notifyTime?: string;
-//   status?: 'pending' | 'success' | 'error';
-//   message?: string;
-// }
+// ===============================
+// STORAGE INTERFACE
+// ===============================
 
-// // API Service Class
-// class SearchConsoleAPI {
-//   private static baseURL = '/api/gsc';
-  
-//   private static async fetchWithAuth(url: string, options: RequestInit = {}) {
-//     const response = await fetch(url, {
-//       ...options,
-//       credentials: 'include',
-//       headers: {
-//         'Content-Type': 'application/json',
-//         ...options.headers,
-//       },
-//     });
+export interface IStorage {
+  // User Management
+  getUser(id: string): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  upsertUser(user: UpsertUser): Promise<User>;
+  createUser(user: InsertUser): Promise<User>;
+
+  // Website Management
+  getUserWebsites(userId: string): Promise<Website[]>;
+  getUserWebsite(id: string, userId: string): Promise<Website | undefined>;
+  createWebsite(website: InsertWebsite & { userId: string }): Promise<Website>;
+  updateWebsite(id: string, website: Partial<Website>): Promise<Website | undefined>;
+  deleteWebsite(id: string): Promise<boolean>;
+  validateWebsiteOwnership(websiteId: string, userId: string): Promise<boolean>;
+
+  // Content Management
+  getUserContent(userId: string, websiteId?: string): Promise<Content[]>;
+  getContentByWebsite(websiteId: string): Promise<Content[]>;
+  getContent(id: string): Promise<Content | undefined>;
+  createContent(content: InsertContent & { userId: string }): Promise<Content>;
+  updateContent(id: string, content: Partial<Content>): Promise<Content | undefined>;
+  getPendingApprovalContent(): Promise<Content[]>;
+  getUserPendingApprovalContent(userId: string): Promise<Content[]>;
+
+  // SEO Reports
+  getUserSeoReports(userId: string, websiteId?: string): Promise<SeoReport[]>;
+  getSeoReportsByWebsite(websiteId: string): Promise<SeoReport[]>;
+  getLatestSeoReport(websiteId: string): Promise<SeoReport | undefined>;
+  createSeoReport(report: InsertSeoReport & { userId: string }): Promise<SeoReport>;
+
+  // Activity Logs
+  getUserActivityLogs(userId: string, websiteId?: string): Promise<ActivityLog[]>;
+  getActivityLogs(websiteId?: string): Promise<ActivityLog[]>;
+  createActivityLog(log: InsertActivityLog & { userId: string }): Promise<ActivityLog>;
+
+  // Client Reports
+  getClientReports(websiteId: string): Promise<ClientReport[]>;
+  createClientReport(report: InsertClientReport & { userId: string }): Promise<ClientReport>;
+
+  // Enhanced Features
+  createContentApproval(approval: InsertContentApproval & { userId: string }): Promise<ContentApproval>;
+  createSecurityAudit(audit: InsertSecurityAudit & { userId?: string }): Promise<SecurityAudit>;
+  trackAiUsage(usage: InsertAiUsageTracking & { userId: string }): Promise<AiUsageTracking>;
+  createSeoAudit(audit: InsertSeoAudit & { userId: string }): Promise<SeoAudit>;
+  getContentSchedule(websiteId: string): Promise<ContentSchedule[]>;
+  createContentSchedule(schedule: InsertContentSchedule & { userId: string }): Promise<ContentSchedule>;
+  createBackup(backup: InsertBackup & { userId: string }): Promise<Backup>;
+
+  // Dashboard Stats
+  getUserDashboardStats(userId: string): Promise<{
+    websiteCount: number;
+    contentCount: number;
+    avgSeoScore: number;
+    recentActivity: number;
+    scheduledPosts: number;
+  }>;
+
+  // User Settings
+  getUserSettings(userId: string): Promise<UserSettings | undefined>;
+  createUserSettings(userId: string, settings: Partial<InsertUserSettings>): Promise<UserSettings>;
+  updateUserSettings(userId: string, settings: Partial<InsertUserSettings>): Promise<UserSettings | undefined>;
+  deleteUserSettings(userId: string): Promise<boolean>;
+  getOrCreateUserSettings(userId: string): Promise<UserSettings>;
+
+  // API Key Management
+  getUserApiKeys(userId: string): Promise<UserApiKey[]>;
+  getUserApiKey(userId: string, keyId: string): Promise<UserApiKey | undefined>;
+  createUserApiKey(userId: string, data: {
+    provider: string;
+    keyName: string;
+    apiKey: string;
+  }): Promise<UserApiKey>;
+  updateUserApiKey(userId: string, keyId: string, updates: Partial<{
+    keyName: string;
+    isActive: boolean;
+    validationStatus: string;
+    lastValidated: Date;
+    validationError: string;
+    usageCount: number;
+    lastUsed: Date;
+  }>): Promise<UserApiKey | undefined>;
+  deleteUserApiKey(userId: string, keyId: string): Promise<boolean>;
+  getDecryptedApiKey(userId: string, keyId: string): Promise<string | null>;
+  validateUserApiKey(userId: string, keyId: string): Promise<{ valid: boolean; error?: string }>;
+
+  // SEO Issue Tracking
+  createOrUpdateSeoIssue(issue: any): Promise<SeoIssueTracking>;
+  getTrackedSeoIssues(websiteId: string, userId: string, options?: any): Promise<SeoIssueTracking[]>;
+  updateSeoIssueStatus(issueId: string, status: string, updates?: any): Promise<SeoIssueTracking | null>;
+  bulkUpdateSeoIssueStatuses(issueIds: string[], status: string, fixSessionId?: string): Promise<number>;
+  getSeoIssueTrackingSummary(websiteId: string, userId: string): Promise<any>;
+  markIssuesAsResolved(websiteId: string, userId: string, currentIssueTypes: string[]): Promise<number>;
+
+  // Google Search Console
+  saveGscConfiguration(userId: string, config: InsertGscConfiguration): Promise<GscConfiguration>;
+  getGscConfiguration(userId: string): Promise<GscConfiguration | undefined>;
+  updateGscConfiguration(userId: string, updates: Partial<InsertGscConfiguration>): Promise<GscConfiguration | undefined>;
+  deleteGscConfiguration(userId: string): Promise<boolean>;
+  saveGscAccount(userId: string, account: InsertGscAccount): Promise<GscAccount>;
+  getGscAccounts(userId: string): Promise<GscAccount[]>;
+  getGscAccount(userId: string, accountId: string): Promise<GscAccount | undefined>;
+  updateGscAccount(userId: string, accountId: string, updates: Partial<GscAccount>): Promise<GscAccount | undefined>;
+  removeGscAccount(userId: string, accountId: string): Promise<boolean>;
+  getGscQuotaUsage(accountId: string, date?: Date): Promise<{ used: number; limit: number }>;
+  incrementGscQuotaUsage(accountId: string): Promise<void>;
+}
+
+// ===============================
+// DATABASE STORAGE IMPLEMENTATION
+// ===============================
+
+export class DatabaseStorage implements IStorage {
+  constructor() {
+    this.initializeSampleData();
+  }
+
+  private async initializeSampleData() {
+    try {
+      const existingWebsites = await db.select().from(websites).limit(1);
+      if (existingWebsites.length > 0) return;
+      console.log('No existing websites found, sample data initialization skipped');
+    } catch (error) {
+      console.error('Failed to initialize sample data:', error);
+    }
+  }
+
+  // ===============================
+  // USER MANAGEMENT
+  // ===============================
+
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: userData,
+      })
+      .returning();
+    return user;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
+    return user;
+  }
+
+  // ===============================
+  // WEBSITE MANAGEMENT
+  // ===============================
+
+  async getUserWebsites(userId: string): Promise<Website[]> {
+    return await db
+      .select()
+      .from(websites)
+      .where(eq(websites.userId, userId))
+      .orderBy(desc(websites.updatedAt));
+  }
+
+  async getUserWebsite(id: string, userId: string): Promise<Website | undefined> {
+    const [website] = await db
+      .select()
+      .from(websites)
+      .where(and(eq(websites.id, id), eq(websites.userId, userId)));
+    return website;
+  }
+
+  async createWebsite(insertWebsite: InsertWebsite & { userId: string }): Promise<Website> {
+    console.log("Creating website in database:", insertWebsite);
     
-//     if (!response.ok) {
-//       const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-//       throw new Error(error.error || error.message || `Request failed with status ${response.status}`);
-//     }
+    const encryptedPassword = wordPressAuthService.encryptCredentials({
+      applicationName: insertWebsite.wpApplicationName,
+      applicationPassword: insertWebsite.wpApplicationPassword,
+      username: insertWebsite.wpUsername || 'admin'
+    });
+
+    const [website] = await db
+      .insert(websites)
+      .values({
+        ...insertWebsite,
+        wpApplicationPassword: insertWebsite.wpApplicationPassword,
+        status: "active",
+        seoScore: 0,
+        contentCount: 0,
+        userId: insertWebsite.userId
+      })
+      .returning();
     
-//     return response.json();
-//   }
+    console.log("Website created successfully:", website);
 
-//   static async saveConfiguration(config: {
-//     clientId: string;
-//     clientSecret: string;
-//     redirectUri: string;
-//   }): Promise<GscConfiguration> {
-//     return this.fetchWithAuth(`${this.baseURL}/configuration`, {
-//       method: 'POST',
-//       body: JSON.stringify(config)
-//     });
-//   }
+    await this.createActivityLog({
+      userId: insertWebsite.userId,
+      websiteId: website.id,
+      type: "website_connected",
+      description: `Website connected: ${website.name}`,
+      metadata: { url: website.url, secure: true },
+    });
 
-//   static async getConfiguration(): Promise<GscConfiguration | null> {
-//     try {
-//       return await this.fetchWithAuth(`${this.baseURL}/configuration`);
-//     } catch (error) {
-//       return null;
-//     }
-//   }
+    await this.createSecurityAudit({
+      userId: insertWebsite.userId,
+      websiteId: website.id,
+      action: "website_connection",
+      success: true,
+      metadata: { 
+        authType: "application_password", 
+        applicationName: insertWebsite.wpApplicationName 
+      },
+    });
 
-//   static async deleteConfiguration(): Promise<void> {
-//     await this.fetchWithAuth(`${this.baseURL}/configuration`, {
-//       method: 'DELETE'
-//     });
-//   }
+    return website;
+  }
 
-//   static async testConfiguration(config: {
-//     clientId: string;
-//     clientSecret: string;
-//     redirectUri: string;
-//   }): Promise<{ valid: boolean; error?: string }> {
-//     return this.fetchWithAuth(`${this.baseURL}/configuration/test`, {
-//       method: 'POST',
-//       body: JSON.stringify(config)
-//     });
-//   }
+  async updateWebsite(id: string, updates: Partial<Website>): Promise<Website | undefined> {
+    const [website] = await db
+      .update(websites)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(websites.id, id))
+      .returning();
+    return website;
+  }
 
-//   static async getAuthUrl(): Promise<string> {
-//     const data = await this.fetchWithAuth(`${this.baseURL}/auth-url`);
-//     return data.authUrl;
-//   }
+  async deleteWebsite(id: string): Promise<boolean> {
+    const result = await db.delete(websites).where(eq(websites.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
 
-//   static async authenticateAccount(code: string): Promise<GoogleAccount> {
-//     const data = await this.fetchWithAuth(`${this.baseURL}/auth`, {
-//       method: 'POST',
-//       body: JSON.stringify({ code })
-//     });
-//     return data.account;
-//   }
+  async validateWebsiteOwnership(websiteId: string, userId: string): Promise<boolean> {
+    const website = await this.getUserWebsite(websiteId, userId);
+    return !!website;
+  }
 
-//   static async getProperties(accountId: string): Promise<SearchConsoleProperty[]> {
-//     return this.fetchWithAuth(`${this.baseURL}/properties?accountId=${accountId}`);
-//   }
+  // ===============================
+  // CONTENT MANAGEMENT
+  // ===============================
 
-//   static async requestIndexing(accountId: string, request: IndexingRequest): Promise<any> {
-//     return this.fetchWithAuth(`${this.baseURL}/index`, {
-//       method: 'POST',
-//       body: JSON.stringify({ accountId, ...request })
-//     });
-//   }
-
-//   static async inspectURL(accountId: string, siteUrl: string, inspectionUrl: string): Promise<any> {
-//     return this.fetchWithAuth(`${this.baseURL}/inspect`, {
-//       method: 'POST',
-//       body: JSON.stringify({ accountId, siteUrl, inspectionUrl })
-//     });
-//   }
-
-//   static async submitSitemap(accountId: string, siteUrl: string, sitemapUrl: string): Promise<any> {
-//     return this.fetchWithAuth(`${this.baseURL}/sitemap`, {
-//       method: 'POST',
-//       body: JSON.stringify({ accountId, siteUrl, sitemapUrl })
-//     });
-//   }
-
-//   static async getPerformance(accountId: string, siteUrl: string, days: number = 28): Promise<any[]> {
-//     return this.fetchWithAuth(
-//       `${this.baseURL}/performance?accountId=${accountId}&siteUrl=${encodeURIComponent(siteUrl)}&days=${days}`
-//     );
-//   }
-
-//   static async refreshToken(accountId: string, refreshToken: string): Promise<any> {
-//     return this.fetchWithAuth(`${this.baseURL}/refresh-token`, {
-//       method: 'POST',
-//       body: JSON.stringify({ accountId, refreshToken })
-//     });
-//   }
-// }
-
-// // Configuration Modal Component
-// const ConfigurationModal: React.FC<{
-//   isOpen: boolean;
-//   onClose: () => void;
-//   onSave: (config: GscConfiguration) => void;
-//   initialConfig?: GscConfiguration | null;
-// }> = ({ isOpen, onClose, onSave, initialConfig }) => {
-//   const [clientId, setClientId] = useState(initialConfig?.clientId || '');
-//   const [clientSecret, setClientSecret] = useState('');
-//   const [redirectUri, setRedirectUri] = useState(initialConfig?.redirectUri || '');
-//   const [showSecret, setShowSecret] = useState(false);
-//   const [testing, setTesting] = useState(false);
-//   const [testResult, setTestResult] = useState<{ valid: boolean; error?: string } | null>(null);
-//   const [saving, setSaving] = useState(false);
-//   const [showInstructions, setShowInstructions] = useState(false);
-
-//   useEffect(() => {
-//     if (isOpen && initialConfig) {
-//       setClientId(initialConfig.clientId || '');
-//       setRedirectUri(initialConfig.redirectUri || window.location.origin + '/api/gsc/oauth-callback');
-//     }
-//   }, [isOpen, initialConfig]);
-
-//   const handleTest = async () => {
-//     if (!clientId || !clientSecret) {
-//       setTestResult({ valid: false, error: 'Client ID and Secret are required' });
-//       return;
-//     }
-
-//     setTesting(true);
-//     try {
-//       const result = await SearchConsoleAPI.testConfiguration({
-//         clientId,
-//         clientSecret,
-//         redirectUri: redirectUri || window.location.origin + '/api/gsc/oauth-callback'
-//       });
-//       setTestResult(result);
-//     } catch (error: any) {
-//       setTestResult({ valid: false, error: error.message });
-//     } finally {
-//       setTesting(false);
-//     }
-//   };
-
-//   const handleSave = async () => {
-//     if (!clientId || !clientSecret) {
-//       setTestResult({ valid: false, error: 'Client ID and Secret are required' });
-//       return;
-//     }
-
-//     setSaving(true);
-//     try {
-//       const config = await SearchConsoleAPI.saveConfiguration({
-//         clientId,
-//         clientSecret,
-//         redirectUri: redirectUri || window.location.origin + '/api/gsc/oauth-callback'
-//       });
-//       onSave(config);
-//       onClose();
-//     } catch (error: any) {
-//       setTestResult({ valid: false, error: error.message });
-//     } finally {
-//       setSaving(false);
-//     }
-//   };
-
-//   if (!isOpen) return null;
-
-//   return (
-//     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-//       <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-//         <div className="p-5 border-b border-gray-200">
-//           <div className="flex items-center justify-between">
-//             <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-//               <Key className="w-5 h-5 mr-2 text-blue-600" />
-//               OAuth Configuration
-//             </h2>
-//             <button
-//               onClick={onClose}
-//               className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-//             >
-//               <X className="w-4 h-4" />
-//             </button>
-//           </div>
-//         </div>
-
-//         <div className="p-5 space-y-4">
-//           {/* Collapsible Instructions */}
-//           <div className="bg-blue-50 border border-blue-200 rounded-lg overflow-hidden">
-//             <button
-//               onClick={() => setShowInstructions(!showInstructions)}
-//               className="w-full px-4 py-3 flex items-center justify-between hover:bg-blue-100 transition-colors"
-//             >
-//               <div className="flex items-center space-x-2">
-//                 <Info className="w-4 h-4 text-blue-600" />
-//                 <span className="text-sm font-medium text-blue-900">Setup Instructions</span>
-//               </div>
-//               {showInstructions ? (
-//                 <ChevronDown className="w-4 h-4 text-blue-600" />
-//               ) : (
-//                 <ChevronRight className="w-4 h-4 text-blue-600" />
-//               )}
-//             </button>
-//             {showInstructions && (
-//               <div className="px-4 pb-3 text-xs text-blue-900 space-y-1">
-//                 <ol className="list-decimal list-inside space-y-1">
-//                   <li>Visit Google Cloud Console</li>
-//                   <li>Enable Search Console & Indexing APIs</li>
-//                   <li>Create OAuth 2.0 credentials</li>
-//                   <li>Add redirect URI: <code className="bg-blue-100 px-1 rounded">{window.location.origin}/api/gsc/oauth-callback</code></li>
-//                 </ol>
-//               </div>
-//             )}
-//           </div>
-
-//           {/* Client ID */}
-//           <div>
-//             <label className="block text-sm font-medium text-gray-700 mb-1.5">
-//               Client ID
-//             </label>
-//             <input
-//               type="text"
-//               value={clientId}
-//               onChange={(e) => setClientId(e.target.value)}
-//               placeholder="Your OAuth Client ID"
-//               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-//             />
-//           </div>
-
-//           {/* Client Secret */}
-//           <div>
-//             <label className="block text-sm font-medium text-gray-700 mb-1.5">
-//               Client Secret
-//             </label>
-//             <div className="relative">
-//               <input
-//                 type={showSecret ? "text" : "password"}
-//                 value={clientSecret}
-//                 onChange={(e) => setClientSecret(e.target.value)}
-//                 placeholder="Your OAuth Client Secret"
-//                 className="w-full px-3 py-2 pr-10 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-//               />
-//               <button
-//                 type="button"
-//                 onClick={() => setShowSecret(!showSecret)}
-//                 className="absolute inset-y-0 right-0 pr-3 flex items-center"
-//               >
-//                 {showSecret ? (
-//                   <EyeOff className="w-4 h-4 text-gray-400" />
-//                 ) : (
-//                   <Eye className="w-4 h-4 text-gray-400" />
-//                 )}
-//               </button>
-//             </div>
-//           </div>
-
-//           {/* Test Result */}
-//           {testResult && (
-//             <div className={`p-3 rounded-lg text-sm ${
-//               testResult.valid 
-//                 ? 'bg-green-50 border border-green-200 text-green-800' 
-//                 : 'bg-red-50 border border-red-200 text-red-800'
-//             }`}>
-//               <div className="flex items-center space-x-2">
-//                 {testResult.valid ? (
-//                   <CheckCircle className="w-4 h-4" />
-//                 ) : (
-//                   <AlertCircle className="w-4 h-4" />
-//                 )}
-//                 <span className="font-medium">
-//                   {testResult.valid ? 'Configuration valid' : testResult.error}
-//                 </span>
-//               </div>
-//             </div>
-//           )}
-//         </div>
-
-//         <div className="p-5 border-t border-gray-200 flex justify-between">
-//           <button
-//             onClick={handleTest}
-//             disabled={testing || !clientId || !clientSecret}
-//             className="px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 flex items-center space-x-2"
-//           >
-//             {testing ? (
-//               <Loader2 className="w-4 h-4 animate-spin" />
-//             ) : (
-//               <CheckCircle className="w-4 h-4" />
-//             )}
-//             <span>Test</span>
-//           </button>
-          
-//           <div className="flex space-x-2">
-//             <button
-//               onClick={onClose}
-//               className="px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-//             >
-//               Cancel
-//             </button>
-//             <button
-//               onClick={handleSave}
-//               disabled={saving || !clientId || !clientSecret}
-//               className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 flex items-center space-x-2"
-//             >
-//               {saving ? (
-//                 <Loader2 className="w-4 h-4 animate-spin" />
-//               ) : (
-//                 <Save className="w-4 h-4" />
-//               )}
-//               <span>Save</span>
-//             </button>
-//           </div>
-//         </div>
-//       </div>
-//     </div>
-//   );
-// };
-
-// // Main Component
-// export default function GoogleSearchConsole() {
-//   const [configuration, setConfiguration] = useState<GscConfiguration | null>(null);
-//   const [configModalOpen, setConfigModalOpen] = useState(false);
-//   const [accounts, setAccounts] = useState<GoogleAccount[]>([]);
-//   const [properties, setProperties] = useState<SearchConsoleProperty[]>([]);
-//   const [selectedAccount, setSelectedAccount] = useState<GoogleAccount | null>(null);
-//   const [selectedProperty, setSelectedProperty] = useState<SearchConsoleProperty | null>(null);
-//   const [indexingQueue, setIndexingQueue] = useState<IndexingRequest[]>([]);
-//   const [loading, setLoading] = useState<boolean>(false);
-//   const [activeTab, setActiveTab] = useState<'index' | 'inspect' | 'sitemap' | 'performance'>('index');
-//   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info' | 'warning'; message: string } | null>(null);
-  
-//   // Form states
-//   const [urlToIndex, setUrlToIndex] = useState<string>('');
-//   const [indexType, setIndexType] = useState<'URL_UPDATED' | 'URL_DELETED'>('URL_UPDATED');
-//   const [urlToInspect, setUrlToInspect] = useState<string>('');
-//   const [sitemapUrl, setSitemapUrl] = useState<string>('');
-//   const [bulkUrls, setBulkUrls] = useState<string>('');
-//   const [inspectionResult, setInspectionResult] = useState<any | null>(null);
-//   const [performanceData, setPerformanceData] = useState<any[]>([]);
-//   const [performanceDays, setPerformanceDays] = useState<number>(28);
-//   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
-//   const [quotaUsage, setQuotaUsage] = useState<{ used: number; limit: number }>({ used: 0, limit: 200 });
-//   const [accountDropdownOpen, setAccountDropdownOpen] = useState<boolean>(false);
-//   const [sitemapList, setSitemapList] = useState<any[]>([]);
-  
-//   // Refs for OAuth window handling
-//   const authWindowRef = useRef<Window | null>(null);
-//   const messageHandlerRef = useRef<((event: MessageEvent) => void) | null>(null);
-  
-//   // Load initial data
-//   useEffect(() => {
-//     const loadInitialData = async () => {
-//       // Load configuration
-//       try {
-//         const config = await SearchConsoleAPI.getConfiguration();
-//         setConfiguration(config);
-//       } catch (error) {
-//         console.error('Failed to load configuration:', error);
-//       }
-
-//       // Load saved accounts from localStorage
-//       const savedAccounts = localStorage.getItem('gsc_accounts');
-//       if (savedAccounts) {
-//         try {
-//           const parsed = JSON.parse(savedAccounts);
-//           setAccounts(parsed);
-//           if (parsed.length > 0 && !selectedAccount) {
-//             setSelectedAccount(parsed[0]);
-//           }
-//         } catch (error) {
-//           console.error('Failed to parse saved accounts:', error);
-//         }
-//       }
-//     };
+  async getUserContent(userId: string, websiteId?: string): Promise<Content[]> {
+    if (websiteId) {
+      const website = await this.getUserWebsite(websiteId, userId);
+      if (!website) {
+        return [];
+      }
+      return await this.getContentByWebsite(websiteId);
+    }
     
-//     loadInitialData();
+    return await db
+      .select()
+      .from(content)
+      .where(eq(content.userId, userId))
+      .orderBy(desc(content.createdAt));
+  }
+
+  async getContentByWebsite(websiteId: string): Promise<Content[]> {
+    return await db
+      .select()
+      .from(content)
+      .where(eq(content.websiteId, websiteId))
+      .orderBy(desc(content.createdAt));
+  }
+
+  async getContent(id: string): Promise<Content | undefined> {
+    const [contentItem] = await db.select().from(content).where(eq(content.id, id));
+    return contentItem;
+  }
+
+  async getPendingApprovalContent(): Promise<Content[]> {
+    return await db
+      .select()
+      .from(content)
+      .where(eq(content.status, "pending_approval"))
+      .orderBy(desc(content.createdAt));
+  }
+
+  async getUserPendingApprovalContent(userId: string): Promise<Content[]> {
+    return await db
+      .select()
+      .from(content)
+      .where(
+        and(
+          eq(content.status, "pending_approval"),
+          eq(content.userId, userId)
+        )
+      )
+      .orderBy(desc(content.createdAt));
+  }
+
+  async createContent(insertContent: InsertContent & { userId: string }): Promise<Content> {
+    const [contentItem] = await db
+      .insert(content)
+      .values({
+        ...insertContent,
+        status: "pending_approval",
+        userId: insertContent.userId
+      })
+      .returning();
+    return contentItem;
+  }
+
+  async updateContent(id: string, updates: Partial<Content>): Promise<Content | undefined> {
+    const [contentItem] = await db
+      .update(content)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(content.id, id))
+      .returning();
+    return contentItem;
+  }
+
+  async getAvailableContentForScheduling(websiteId: string, userId: string): Promise<Content[]> {
+    const website = await this.getUserWebsite(websiteId, userId);
+    if (!website) {
+      return [];
+    }
     
-//     // Check for OAuth callback in URL
-//     const urlParams = new URLSearchParams(window.location.search);
-//     const code = urlParams.get('code');
-//     if (code) {
-//       handleOAuthCallback(code);
-//       window.history.replaceState({}, document.title, window.location.pathname);
-//     }
-//   }, []);
-
-//   // Load properties when account changes
-//   useEffect(() => {
-//     if (selectedAccount) {
-//       loadProperties(selectedAccount.id);
-//       loadQuotaUsage(selectedAccount.id);
-//     }
-//   }, [selectedAccount]);
-
-//   // Load performance data when property or tab changes
-//   useEffect(() => {
-//     if (selectedProperty && activeTab === 'performance') {
-//       loadPerformanceData();
-//     }
-//   }, [selectedProperty, activeTab, performanceDays]);
-
-//   const showNotification = (type: 'success' | 'error' | 'info' | 'warning', message: string) => {
-//     setNotification({ type, message });
-//     setTimeout(() => setNotification(null), 5000);
-//   };
-
-//   const handleOAuthCallback = async (code: string) => {
-//     if (isAuthenticating) return;
+    const availableContent = await db
+      .select({
+        id: content.id,
+        userId: content.userId,
+        websiteId: content.websiteId,
+        title: content.title,
+        body: content.body,
+        excerpt: content.excerpt,
+        metaDescription: content.metaDescription,
+        metaTitle: content.metaTitle,
+        status: content.status,
+        approvedBy: content.approvedBy,
+        approvedAt: content.approvedAt,
+        rejectionReason: content.rejectionReason,
+        aiModel: content.aiModel,
+        seoKeywords: content.seoKeywords,
+        seoScore: content.seoScore,
+        readabilityScore: content.readabilityScore,
+        plagiarismScore: content.plagiarismScore,
+        brandVoiceScore: content.brandVoiceScore,
+        factCheckStatus: content.factCheckStatus,
+        eatCompliance: content.eatCompliance,
+        tokensUsed: content.tokensUsed,
+        costUsd: content.costUsd,
+        publishDate: content.publishDate,
+        wordpressPostId: content.wordpressPostId,
+        wordpressUrl: content.wordpressUrl,
+        publishError: content.publishError,
+        createdAt: content.createdAt,
+        updatedAt: content.updatedAt,
+        hasImages: content.hasImages,
+        imageCount: content.imageCount,
+        imageCostCents: content.imageCostCents
+      })
+      .from(content)
+      .leftJoin(contentSchedule, eq(content.id, contentSchedule.contentId))
+      .where(
+        and(
+          eq(content.websiteId, websiteId),
+          eq(content.userId, userId),
+          or(
+            eq(content.status, 'ready'),
+            eq(content.status, 'pending_approval')
+          ),
+          isNull(contentSchedule.id)
+        )
+      )
+      .orderBy(desc(content.createdAt));
     
-//     setIsAuthenticating(true);
-//     try {
-//       const account = await SearchConsoleAPI.authenticateAccount(code);
-      
-//       const existingIndex = accounts.findIndex(acc => acc.id === account.id);
-//       let updatedAccounts;
-      
-//       if (existingIndex >= 0) {
-//         updatedAccounts = [...accounts];
-//         updatedAccounts[existingIndex] = account;
-//         showNotification('success', `Account ${account.email} re-authenticated`);
-//       } else {
-//         updatedAccounts = [...accounts, account];
-//         showNotification('success', `Account ${account.email} connected successfully`);
-//       }
-      
-//       setAccounts(updatedAccounts);
-//       setSelectedAccount(account);
-      
-//       // Save to localStorage
-//       localStorage.setItem('gsc_accounts', JSON.stringify(updatedAccounts));
-//     } catch (error: any) {
-//       showNotification('error', error.message || 'Failed to authenticate account');
-//     } finally {
-//       setIsAuthenticating(false);
-//     }
-//   };
+    return availableContent;
+  }
 
-//   const loadProperties = async (accountId: string) => {
-//     setLoading(true);
-//     try {
-//       const props = await SearchConsoleAPI.getProperties(accountId);
-//       setProperties(props);
-//       if (props.length > 0 && !selectedProperty) {
-//         setSelectedProperty(props[0]);
-//       }
-//     } catch (error: any) {
-//       showNotification('error', error.message || 'Failed to load properties');
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
+  async getUnpublishedContent(websiteId: string): Promise<Content[]> {
+    return await db
+      .select()
+      .from(content)
+      .where(
+        and(
+          eq(content.websiteId, websiteId),
+          or(
+            eq(content.status, 'ready'),
+            eq(content.status, 'pending_approval')
+          )
+        )
+      )
+      .orderBy(desc(content.createdAt));
+  }
 
-//   const loadQuotaUsage = (accountId: string) => {
-//     const today = new Date().toDateString();
-//     const quotaKey = `gsc_quota_${accountId}_${today}`;
-//     const used = parseInt(localStorage.getItem(quotaKey) || '0', 10);
-//     setQuotaUsage({ used, limit: 200 });
-//   };
+  // ===============================
+  // CONTENT IMAGES MANAGEMENT
+  // ===============================
 
-//   const updateQuotaUsage = (accountId: string, increment: number = 1) => {
-//     const today = new Date().toDateString();
-//     const quotaKey = `gsc_quota_${accountId}_${today}`;
-//     const currentUsage = parseInt(localStorage.getItem(quotaKey) || '0', 10);
-//     const newUsage = currentUsage + increment;
-//     localStorage.setItem(quotaKey, newUsage.toString());
-//     setQuotaUsage({ used: newUsage, limit: 200 });
-//   };
+  async getContentImages(contentId: string): Promise<ContentImage[]> {
+    return db
+      .select()
+      .from(contentImages)
+      .where(eq(contentImages.contentId, contentId))
+      .orderBy(contentImages.createdAt);
+  }
 
-//   const loadPerformanceData = async () => {
-//     if (!selectedAccount || !selectedProperty) return;
+  async updateContentImage(imageId: string, updates: Partial<{
+    wordpressMediaId: number;
+    wordpressUrl: string;
+    status: string;
+    uploadError: string;
+  }>): Promise<ContentImage | null> {
+    const [updated] = await db
+      .update(contentImages)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(contentImages.id, imageId))
+      .returning();
     
-//     setLoading(true);
-//     try {
-//       const data = await SearchConsoleAPI.getPerformance(
-//         selectedAccount.id,
-//         selectedProperty.siteUrl,
-//         performanceDays
-//       );
-//       setPerformanceData(data);
-//     } catch (error: any) {
-//       showNotification('error', 'Failed to load performance data');
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
+    return updated || null;
+  }
 
-//   const handleRemoveAccount = (accountId: string) => {
-//     const updatedAccounts = accounts.filter(acc => acc.id !== accountId);
-//     setAccounts(updatedAccounts);
-    
-//     // Update localStorage
-//     if (updatedAccounts.length === 0) {
-//       localStorage.removeItem('gsc_accounts');
-//     } else {
-//       localStorage.setItem('gsc_accounts', JSON.stringify(updatedAccounts));
-//     }
-    
-//     if (selectedAccount?.id === accountId) {
-//       setSelectedAccount(updatedAccounts[0] || null);
-//       setProperties([]);
-//       setSelectedProperty(null);
-//     }
-    
-//     showNotification('info', 'Account removed');
-//   };
+  async deleteContentImages(contentId: string): Promise<void> {
+    await db.delete(contentImages).where(eq(contentImages.contentId, contentId));
+  }
 
-//   const handleAddAccount = async () => {
-//     if (!configuration || !configuration.isConfigured) {
-//       showNotification('warning', 'Please configure your Google OAuth credentials first');
-//       setConfigModalOpen(true);
-//       return;
-//     }
+  async getUserImageStats(userId: string): Promise<{
+    totalImages: number;
+    totalCostCents: number;
+    imagesThisMonth: number;
+    costThisMonthCents: number;
+  }> {
+    const thisMonth = new Date();
+    thisMonth.setDate(1);
+    thisMonth.setHours(0, 0, 0, 0);
 
-//     if (isAuthenticating) {
-//       showNotification('info', 'Authentication already in progress');
-//       return;
-//     }
+    const [allTimeStats] = await db
+      .select({
+        totalImages: count(),
+        totalCostCents: sum(contentImages.costCents)
+      })
+      .from(contentImages)
+      .where(eq(contentImages.userId, userId));
+
+    const [monthlyStats] = await db
+      .select({
+        imagesThisMonth: count(),
+        costThisMonthCents: sum(contentImages.costCents)
+      })
+      .from(contentImages)
+      .where(
+        and(
+          eq(contentImages.userId, userId),
+          gte(contentImages.createdAt, thisMonth)
+        )
+      );
+
+    return {
+      totalImages: Number(allTimeStats.totalImages) || 0,
+      totalCostCents: Number(allTimeStats.totalCostCents) || 0,
+      imagesThisMonth: Number(monthlyStats.imagesThisMonth) || 0,
+      costThisMonthCents: Number(monthlyStats.costThisMonthCents) || 0
+    };
+  }
+
+  async getUserContentImages(userId: string, filters?: {
+    websiteId?: string;
+    contentId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ContentImage[]> {
+    let query = db
+      .select()
+      .from(contentImages)
+      .where(eq(contentImages.userId, userId));
     
-//     try {
-//       setIsAuthenticating(true);
+    if (filters?.websiteId) {
+      query = query.where(eq(contentImages.websiteId, filters.websiteId));
+    }
+    
+    if (filters?.contentId) {
+      query = query.where(eq(contentImages.contentId, filters.contentId));
+    }
+    
+    return query
+      .orderBy(desc(contentImages.createdAt))
+      .limit(filters?.limit || 50)
+      .offset(filters?.offset || 0);
+  }
+
+  async createContentImage(data: InsertContentImage & { userId: string }): Promise<ContentImage> {
+    const imageRecord = {
+      id: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      ...data,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    
+    const [image] = await db.insert(contentImages).values(imageRecord).returning();
+    return image;
+  }
+
+  // ===============================
+  // SEO REPORTS MANAGEMENT
+  // ===============================
+
+  async getUserSeoReports(userId: string, websiteId?: string): Promise<SeoReport[]> {
+    if (websiteId) {
+      const website = await this.getUserWebsite(websiteId, userId);
+      if (!website) {
+        return [];
+      }
+      return await this.getSeoReportsByWebsite(websiteId);
+    }
+    
+    return await db
+      .select()
+      .from(seoReports)
+      .where(eq(seoReports.userId, userId))
+      .orderBy(desc(seoReports.createdAt));
+  }
+
+  async getSeoReportsByWebsite(websiteId: string): Promise<SeoReport[]> {
+    return await db
+      .select()
+      .from(seoReports)
+      .where(eq(seoReports.websiteId, websiteId))
+      .orderBy(desc(seoReports.createdAt));
+  }
+
+  async getLatestSeoReport(websiteId: string): Promise<SeoReport | undefined> {
+    const [report] = await db
+      .select()
+      .from(seoReports)
+      .where(eq(seoReports.websiteId, websiteId))
+      .orderBy(desc(seoReports.createdAt))
+      .limit(1);
+    return report;
+  }
+
+  async createSeoReport(insertReport: InsertSeoReport & { userId: string }): Promise<SeoReport> {
+    const [report] = await db
+      .insert(seoReports)
+      .values({
+        ...insertReport,
+        userId: insertReport.userId
+      })
+      .returning();
+    return report;
+  }
+
+  async deleteSeoReportsByWebsite(websiteId: string, userId: string): Promise<void> {
+    try {
+      await db
+        .delete(seoReports)
+        .where(
+          and(
+            eq(seoReports.websiteId, websiteId),
+            eq(seoReports.userId, userId)
+          )
+        );
       
-//       // Close any existing auth window
-//       if (authWindowRef.current && !authWindowRef.current.closed) {
-//         authWindowRef.current.close();
-//       }
+      console.log(`Deleted SEO reports for website: ${websiteId}`);
+    } catch (error) {
+      console.error('Error deleting SEO reports:', error);
+      throw error;
+    }
+  }
+
+  async clearAllSeoData(websiteId: string, userId: string): Promise<{
+    deletedReports: number;
+    deletedIssues: number;
+    keptLatestReport: boolean;
+  }> {
+    try {
+      const website = await this.getUserWebsite(websiteId, userId);
+      if (!website) {
+        throw new Error('Website not found or access denied');
+      }
       
-//       // Remove existing message handler
-//       if (messageHandlerRef.current) {
-//         window.removeEventListener('message', messageHandlerRef.current);
-//       }
+      const [latestReport] = await db
+        .select()
+        .from(seoReports)
+        .where(
+          and(
+            eq(seoReports.websiteId, websiteId),
+            eq(seoReports.userId, userId)
+          )
+        )
+        .orderBy(desc(seoReports.createdAt))
+        .limit(1);
       
-//       const authUrl = await SearchConsoleAPI.getAuthUrl();
+      let deletedReportsCount = 0;
       
-//       const width = 500;
-//       const height = 600;
-//       const left = window.screen.width / 2 - width / 2;
-//       const top = window.screen.height / 2 - height / 2;
-      
-//       authWindowRef.current = window.open(
-//         authUrl,
-//         'google-auth',
-//         `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`
-//       );
-      
-//       const handleMessage = async (event: MessageEvent) => {
-//         if (event.origin !== window.location.origin) return;
+      if (latestReport) {
+        const deleteResult = await db
+          .delete(seoReports)
+          .where(
+            and(
+              eq(seoReports.websiteId, websiteId),
+              eq(seoReports.userId, userId),
+              not(eq(seoReports.id, latestReport.id))
+            )
+          );
         
-//         if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
-//           const { code } = event.data;
-          
-//           window.removeEventListener('message', handleMessage);
-//           messageHandlerRef.current = null;
-          
-//           if (authWindowRef.current && !authWindowRef.current.closed) {
-//             authWindowRef.current.close();
-//           }
-//           authWindowRef.current = null;
-          
-//           await handleOAuthCallback(code);
-//           setIsAuthenticating(false);
-//         } else if (event.data.type === 'GOOGLE_AUTH_ERROR') {
-//           window.removeEventListener('message', handleMessage);
-//           messageHandlerRef.current = null;
-          
-//           if (authWindowRef.current && !authWindowRef.current.closed) {
-//             authWindowRef.current.close();
-//           }
-//           authWindowRef.current = null;
-          
-//           showNotification('error', event.data.error || 'Authentication failed');
-//           setIsAuthenticating(false);
-//         }
-//       };
+        deletedReportsCount = deleteResult.rowCount ?? 0;
+        console.log(`Deleted ${deletedReportsCount} old SEO reports, kept latest report ${latestReport.id}`);
+      }
       
-//       messageHandlerRef.current = handleMessage;
-//       window.addEventListener('message', handleMessage);
+      let deletedIssuesCount = 0;
       
-//       // Check if window was closed
-//       const checkWindow = setInterval(() => {
-//         if (authWindowRef.current && authWindowRef.current.closed) {
-//           clearInterval(checkWindow);
-//           if (messageHandlerRef.current) {
-//             window.removeEventListener('message', messageHandlerRef.current);
-//             messageHandlerRef.current = null;
-//           }
-//           setIsAuthenticating(false);
-//         }
-//       }, 1000);
+      if (latestReport?.createdAt) {
+        const deleteIssuesResult = await db
+          .delete(seoIssueTracking)
+          .where(
+            and(
+              eq(seoIssueTracking.websiteId, websiteId),
+              eq(seoIssueTracking.userId, userId),
+              lte(seoIssueTracking.lastSeenAt, latestReport.createdAt)
+            )
+          );
+        
+        deletedIssuesCount = deleteIssuesResult.rowCount ?? 0;
+      } else {
+        const deleteIssuesResult = await db
+          .delete(seoIssueTracking)
+          .where(
+            and(
+              eq(seoIssueTracking.websiteId, websiteId),
+              eq(seoIssueTracking.userId, userId)
+            )
+          );
+        
+        deletedIssuesCount = deleteIssuesResult.rowCount ?? 0;
+      }
       
-//     } catch (error: any) {
-//       showNotification('error', error.message || 'Failed to initiate authentication');
-//       setIsAuthenticating(false);
-//     }
-//   };
-
-//   const handleIndexUrl = async () => {
-//     if (!urlToIndex || !selectedAccount || !selectedProperty) return;
-    
-//     if (quotaUsage.used >= quotaUsage.limit) {
-//       showNotification('error', 'Daily quota exceeded (200 URLs/day)');
-//       return;
-//     }
-    
-//     const request: IndexingRequest = {
-//       url: urlToIndex,
-//       type: indexType,
-//       status: 'pending'
-//     };
-    
-//     setIndexingQueue([...indexingQueue, request]);
-//     setLoading(true);
-    
-//     try {
-//       const result = await SearchConsoleAPI.requestIndexing(selectedAccount.id, request);
+      console.log(`Cleared SEO data for website ${websiteId}: ${deletedReportsCount} reports, ${deletedIssuesCount} issues`);
       
-//       setIndexingQueue(queue => 
-//         queue.map(item => 
-//           item.url === urlToIndex 
-//             ? { ...item, status: 'success', notifyTime: result.notifyTime }
-//             : item
-//         )
-//       );
+      return {
+        deletedReports: deletedReportsCount,
+        deletedIssues: deletedIssuesCount,
+        keptLatestReport: !!latestReport
+      };
+    } catch (error) {
+      console.error('Error clearing SEO data:', error);
+      throw error;
+    }
+  }
+
+  // ===============================
+  // ACTIVITY LOGS MANAGEMENT
+  // ===============================
+
+  async getUserActivityLogs(userId: string, websiteId?: string): Promise<ActivityLog[]> {
+    if (websiteId) {
+      const website = await this.getUserWebsite(websiteId, userId);
+      if (!website) {
+        return [];
+      }
       
-//       updateQuotaUsage(selectedAccount.id, 1);
-//       showNotification('success', `URL submitted for ${indexType === 'URL_UPDATED' ? 'indexing' : 'removal'}`);
-//       setUrlToIndex('');
-//     } catch (error: any) {
-//       setIndexingQueue(queue => 
-//         queue.map(item => 
-//           item.url === urlToIndex 
-//             ? { ...item, status: 'error', message: error.message }
-//             : item
-//         )
-//       );
-//       showNotification('error', 'Failed to submit URL');
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
+      return await db
+        .select()
+        .from(activityLogs)
+        .where(eq(activityLogs.websiteId, websiteId))
+        .orderBy(desc(activityLogs.createdAt));
+    }
+    
+    return await db
+      .select()
+      .from(activityLogs)
+      .where(
+        or(
+          eq(activityLogs.userId, userId),
+          isNull(activityLogs.userId)
+        )
+      )
+      .orderBy(desc(activityLogs.createdAt));
+  }
 
-//   const handleBulkIndex = async () => {
-//     if (!bulkUrls || !selectedAccount || !selectedProperty) return;
+  async getActivityLogs(websiteId?: string): Promise<ActivityLog[]> {
+    if (websiteId) {
+      return await db
+        .select()
+        .from(activityLogs)
+        .where(eq(activityLogs.websiteId, websiteId))
+        .orderBy(desc(activityLogs.createdAt));
+    }
     
-//     const urls = bulkUrls.split('\n').filter(url => url.trim());
-//     if (urls.length === 0) {
-//       showNotification('error', 'No valid URLs found');
-//       return;
-//     }
+    return await db
+      .select()
+      .from(activityLogs)
+      .orderBy(desc(activityLogs.createdAt));
+  }
+
+  async createActivityLog(insertLog: InsertActivityLog & { userId: string }): Promise<ActivityLog> {
+    const [log] = await db
+      .insert(activityLogs)
+      .values({
+        ...insertLog,
+        userId: insertLog.userId
+      })
+      .returning();
+    return log;
+  }
+
+  // ===============================
+  // CLIENT REPORTS MANAGEMENT
+  // ===============================
+
+  async getClientReports(websiteId: string): Promise<ClientReport[]> {
+    return await db
+      .select()
+      .from(clientReports)
+      .where(eq(clientReports.websiteId, websiteId))
+      .orderBy(desc(clientReports.generatedAt));
+  }
+
+  async createClientReport(insertReport: InsertClientReport & { userId: string }): Promise<ClientReport> {
+    const [report] = await db
+      .insert(clientReports)
+      .values({
+        ...insertReport,
+        userId: insertReport.userId
+      })
+      .returning();
+    return report;
+  }
+
+  async updateClientReport(id: string, updates: Partial<{
+    data: any;
+    insights: any[];
+    roiData: any;
+    generatedAt: Date;
+  }>): Promise<ClientReport | undefined> {
+    const [report] = await db
+      .update(clientReports)
+      .set({ ...updates })
+      .where(eq(clientReports.id, id))
+      .returning();
+    return report;
+  }
+
+  // ===============================
+  // ENHANCED FEATURES MANAGEMENT
+  // ===============================
+
+  async createContentApproval(approval: InsertContentApproval & { userId: string }): Promise<ContentApproval> {
+    const [approvalRecord] = await db
+      .insert(contentApprovals)
+      .values({
+        ...approval,
+        userId: approval.userId
+      })
+      .returning();
+    return approvalRecord;
+  }
+
+  async createSecurityAudit(audit: InsertSecurityAudit & { userId?: string }): Promise<SecurityAudit> {
+    const [auditRecord] = await db
+      .insert(securityAudits)
+      .values({
+        ...audit,
+        userId: audit.userId || null
+      })
+      .returning();
+    return auditRecord;
+  }
+
+  async trackAiUsage(usage: InsertAiUsageTracking & { userId: string }): Promise<AiUsageTracking> {
+    const [usageRecord] = await db
+      .insert(aiUsageTracking)
+      .values({
+        ...usage,
+        userId: usage.userId
+      })
+      .returning();
+    return usageRecord;
+  }
+
+  async createSeoAudit(audit: InsertSeoAudit & { userId: string }): Promise<SeoAudit> {
+    const [auditRecord] = await db
+      .insert(seoAudits)
+      .values({
+        ...audit,
+        userId: audit.userId
+      })
+      .returning();
+    return auditRecord;
+  }
+
+  async createBackup(backup: InsertBackup & { userId: string }): Promise<Backup> {
+    const [backupRecord] = await db
+      .insert(backups)
+      .values({
+        ...backup,
+        userId: backup.userId
+      })
+      .returning();
+    return backupRecord;
+  }
+
+  // ===============================
+  // CONTENT SCHEDULING MANAGEMENT
+  // ===============================
+
+  async getContentSchedule(websiteId: string): Promise<ContentSchedule[]> {
+    return await db
+      .select()
+      .from(contentSchedule)
+      .where(eq(contentSchedule.websiteId, websiteId))
+      .orderBy(desc(contentSchedule.scheduledDate));
+  }
+
+  async createContentSchedule(data: {
+    contentId?: string;
+    content_id?: string;
+    userId?: string;
+    user_id?: string;
+    websiteId?: string;
+    website_id?: string;
+    scheduled_date?: Date | string | null;
+    scheduledDate?: Date | string | null;
+    scheduledFor?: Date | string | null;
+    status?: string;
+    title?: string | null;
+    topic?: string | null; 
+    metadata?: any;
+  }) {
+    const contentId = data.contentId || data.content_id;
+    const userId = data.userId || data.user_id;
+    const websiteId = data.websiteId || data.website_id;
+    let scheduledDate: Date;
     
-//     if (quotaUsage.used + urls.length > quotaUsage.limit) {
-//       showNotification('error', `Cannot submit ${urls.length} URLs. ${quotaUsage.limit - quotaUsage.used} remaining today.`);
-//       return;
-//     }
+    const possibleDate = data.scheduled_date || data.scheduledDate || data.scheduledFor;
     
-//     setLoading(true);
-//     let successCount = 0;
+    if (possibleDate instanceof Date) {
+      scheduledDate = possibleDate;
+    } else if (possibleDate && typeof possibleDate === 'string') {
+      const parsed = new Date(possibleDate);
+      if (!isNaN(parsed.getTime())) {
+        scheduledDate = parsed;
+      } else {
+        console.warn('⚠️ Invalid date string provided:', possibleDate);
+        scheduledDate = new Date();
+      }
+    } else {
+      console.warn('⚠️ No valid scheduled_date provided, using current time');
+      scheduledDate = new Date();
+    }
     
-//     for (const url of urls) {
-//       const request: IndexingRequest = {
-//         url: url.trim(),
-//         type: 'URL_UPDATED',
-//         status: 'pending'
-//       };
+    let title = data.title;
+    if (!title || title.trim() === '') {
+      title = `Content scheduled on ${scheduledDate.toLocaleDateString()}`;
+      console.warn('⚠️ No title provided, using default:', title);
+    }
+    
+    let topic = data.topic || data.metadata?.topic;
+    if (!topic || topic.trim() === '') {
+      topic = 'General Content';
+      console.warn('⚠️ No topic provided, using default:', topic);
+    }
+
+    if (!contentId) {
+      throw new Error('contentId is required for createContentSchedule');
+    }
+    if (!userId) {
+      throw new Error('userId is required for createContentSchedule');
+    }
+    if (!websiteId) {
+      throw new Error('websiteId is required for createContentSchedule');
+    }
+    
+    console.log('📋 Creating content_schedule entry:', {
+      contentId: contentId,
+      userId: userId,
+      websiteId: websiteId,
+      scheduled_date: scheduledDate.toISOString(),
+      title: title,
+      topic: topic,
+      status: data.status || 'scheduled',
+    });
+    
+    try {
+      const [schedule] = await db
+        .insert(contentSchedule)
+        .values({
+          contentId: contentId,      
+          userId: userId,            
+          websiteId: websiteId,      
+          scheduledDate: scheduledDate,  
+          title: title,
+          topic: topic,
+          status: data.status || 'scheduled',
+          metadata: data.metadata || {},
+          publishedAt: null,
+        })
+        .returning();
       
-//       setIndexingQueue(prev => [...prev, request]);
+      console.log('✅ Content schedule created successfully:', {
+        id: schedule.id,
+        scheduledDate: schedule.scheduledDate || schedule.scheduled_date,
+        title: schedule.title,
+        topic: schedule.topic,
+      });
       
-//       try {
-//         await SearchConsoleAPI.requestIndexing(selectedAccount.id, request);
-//         successCount++;
-//         setIndexingQueue(queue => 
-//           queue.map(item => 
-//             item.url === url.trim() 
-//               ? { ...item, status: 'success', notifyTime: new Date().toISOString() }
-//               : item
-//           )
-//         );
-//       } catch (error) {
-//         setIndexingQueue(queue => 
-//           queue.map(item => 
-//             item.url === url.trim() 
-//               ? { ...item, status: 'error' }
-//               : item
-//           )
-//         );
-//       }
-//     }
+      return schedule;
+      
+    } catch (error: any) {
+      console.error('❌ Database error in createContentSchedule:', error);
+      console.error('Failed data:', {
+        contentId,
+        userId,
+        websiteId,
+        scheduled_date: scheduledDate?.toISOString(),
+        title,
+        topic,
+        status: data.status,
+      });
+      
+      if (error.message?.includes('null value in column')) {
+        const columnMatch = error.message.match(/column "([^"]+)"/);
+        if (columnMatch) {
+          console.error(`📌 Required field '${columnMatch[1]}' is null or missing`);
+        }
+      }
+      
+      throw error;
+    }
+  }
+
+  async getContentScheduleByContentId(contentId: string): Promise<ContentSchedule | undefined> {
+    const [schedule] = await db
+      .select()
+      .from(contentSchedule)
+      .where(eq(contentSchedule.contentId, contentId));
+    return schedule;
+  }
+
+  async getContentScheduleWithDetails(websiteId: string): Promise<Array<ContentSchedule & {
+    contentTitle: string;
+    contentExcerpt: string | null;
+    seoKeywords: string[];
+  }>> {
+    const schedules = await db
+      .select({
+        id: contentSchedule.id,
+        userId: contentSchedule.userId,
+        websiteId: contentSchedule.websiteId,
+        scheduledDate: contentSchedule.scheduledDate,
+        status: contentSchedule.status,
+        contentId: contentSchedule.contentId,
+        abTestVariant: contentSchedule.abTestVariant,
+        createdAt: contentSchedule.createdAt,
+        contentTitle: content.title,
+        contentExcerpt: content.excerpt,
+        seoKeywords: content.seoKeywords
+      })
+      .from(contentSchedule)
+      .innerJoin(content, eq(contentSchedule.contentId, content.id))
+      .where(eq(contentSchedule.websiteId, websiteId))
+      .orderBy(desc(contentSchedule.scheduledDate));
+
+    return schedules.map(row => ({
+      id: row.id,
+      userId: row.userId,
+      websiteId: row.websiteId,
+      scheduledDate: row.scheduledDate,
+      status: row.status,
+      contentId: row.contentId,
+      abTestVariant: row.abTestVariant,
+      createdAt: row.createdAt,
+      contentTitle: row.contentTitle,
+      contentExcerpt: row.contentExcerpt,
+      seoKeywords: row.seoKeywords || []
+    }));
+  }
+
+  async updateContentSchedule(id: string, updates: Partial<{
+    scheduledDate: Date;
+    status: string;
+    contentId: string;
+    abTestVariant: string | null;
+  }>): Promise<ContentSchedule | undefined> {
+    const [schedule] = await db
+      .update(contentSchedule)
+      .set({ ...updates })
+      .where(eq(contentSchedule.id, id))
+      .returning();
+    return schedule;
+  }
+
+  async updateContentScheduleByContentId(contentId: string, updates: {
+    status?: string;
+    published_at?: Date;
+    error?: string;
+    metadata?: any;
+  }) {
+    const updateData: any = {};
     
-//     updateQuotaUsage(selectedAccount.id, successCount);
-//     showNotification('success', `${successCount}/${urls.length} URLs submitted`);
-//     setBulkUrls('');
-//     setLoading(false);
-//   };
-
-//   const handleInspectUrl = async () => {
-//     if (!urlToInspect || !selectedAccount || !selectedProperty) return;
+    if (updates.status !== undefined) updateData.status = updates.status;
+    if (updates.published_at !== undefined) updateData.publishedAt = updates.published_at;
+    if (updates.error !== undefined) {
+      updateData.metadata = {
+        ...(updateData.metadata || {}),
+        error: updates.error,
+        errorAt: new Date().toISOString()
+      };
+    }
+    if (updates.metadata !== undefined) {
+      updateData.metadata = {
+        ...(updateData.metadata || {}),
+        ...updates.metadata
+      };
+    }
     
-//     setLoading(true);
-//     try {
-//       const result = await SearchConsoleAPI.inspectURL(
-//         selectedAccount.id,
-//         selectedProperty.siteUrl,
-//         urlToInspect
-//       );
-//       setInspectionResult(result);
-//       showNotification('success', 'URL inspection complete');
-//     } catch (error: any) {
-//       showNotification('error', 'Failed to inspect URL');
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   const handleSubmitSitemap = async () => {
-//     if (!sitemapUrl || !selectedAccount || !selectedProperty) return;
+    updateData.updatedAt = new Date();
     
-//     setLoading(true);
-//     try {
-//       const result = await SearchConsoleAPI.submitSitemap(
-//         selectedAccount.id,
-//         selectedProperty.siteUrl,
-//         sitemapUrl
-//       );
-//       setSitemapList([...sitemapList, result]);
-//       showNotification('success', 'Sitemap submitted successfully');
-//       setSitemapUrl('');
-//     } catch (error: any) {
-//       showNotification('error', 'Failed to submit sitemap');
-//     } finally {
-//       setLoading(false);
+    const result = await db
+      .update(contentSchedule)
+      .set(updateData)
+      .where(eq(contentSchedule.contentId, contentId))
+      .returning();
+    
+    return result[0] || null;
+  }
+
+  async deleteContentSchedule(id: string): Promise<boolean> {
+    const result = await db.delete(contentSchedule).where(eq(contentSchedule.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getContentScheduleById(id: string): Promise<ContentSchedule | undefined> {
+    const [schedule] = await db
+      .select()
+      .from(contentSchedule)
+      .where(eq(contentSchedule.id, id));
+    return schedule;
+  }
+
+  async getUserContentSchedule(userId: string, websiteId?: string): Promise<ContentSchedule[]> {
+    if (websiteId) {
+      const website = await this.getUserWebsite(websiteId, userId);
+      if (!website) {
+        return [];
+      }
+      return await this.getContentSchedule(websiteId);
+    }
+    
+    return await db
+      .select()
+      .from(contentSchedule)
+      .where(eq(contentSchedule.userId, userId))
+      .orderBy(contentSchedule.scheduledDate);
+  }
+
+  async getPendingScheduledContent(): Promise<ContentSchedule[]> {
+    const now = new Date();
+    return await db
+      .select()
+      .from(contentSchedule)
+      .where(
+        and(
+          eq(contentSchedule.status, 'scheduled'),
+          lte(contentSchedule.scheduledDate, now)
+        )
+      )
+      .orderBy(contentSchedule.scheduledDate);
+  }
+
+  async getUpcomingScheduledContent(userId: string): Promise<ContentSchedule[]> {
+    const now = new Date();
+    const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    
+    return await db
+      .select()
+      .from(contentSchedule)
+      .where(
+        and(
+          eq(contentSchedule.userId, userId),
+          eq(contentSchedule.status, 'scheduled'),
+          gte(contentSchedule.scheduledDate, now),
+          lte(contentSchedule.scheduledDate, nextWeek)
+        )
+      )
+      .orderBy(contentSchedule.scheduledDate);
+  }
+
+  async isContentScheduled(contentId: string): Promise<boolean> {
+    const [schedule] = await db
+      .select()
+      .from(contentSchedule)
+      .where(
+        and(
+          eq(contentSchedule.contentId, contentId),
+          or(
+            eq(contentSchedule.status, 'scheduled'),
+            eq(contentSchedule.status, 'publishing')
+          )
+        )
+      );
+    return !!schedule;
+  }
+
+  async getSchedulingStats(userId: string): Promise<{
+    totalScheduled: number;
+    scheduledThisWeek: number;
+    scheduledThisMonth: number;
+    overdueCount: number;
+    publishedFromSchedule: number;
+  }> {
+    const now = new Date();
+    const thisWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    
+    const [totalScheduled] = await db
+      .select({ count: count() })
+      .from(contentSchedule)
+      .where(
+        and(
+          eq(contentSchedule.userId, userId),
+          eq(contentSchedule.status, 'scheduled')
+        )
+      );
+    
+    const [scheduledThisWeek] = await db
+      .select({ count: count() })
+      .from(contentSchedule)
+      .where(
+        and(
+          eq(contentSchedule.userId, userId),
+          eq(contentSchedule.status, 'scheduled'),
+          gte(contentSchedule.scheduledDate, now),
+          lte(contentSchedule.scheduledDate, thisWeek)
+        )
+      );
+    
+    const [scheduledThisMonth] = await db
+      .select({ count: count() })
+      .from(contentSchedule)
+      .where(
+        and(
+          eq(contentSchedule.userId, userId),
+          eq(contentSchedule.status, 'scheduled'),
+          gte(contentSchedule.scheduledDate, thisMonthStart),
+          lte(contentSchedule.scheduledDate, thisMonthEnd)
+        )
+      );
+    
+    const [overdueCount] = await db
+      .select({ count: count() })
+      .from(contentSchedule)
+      .where(
+        and(
+          eq(contentSchedule.userId, userId),
+          eq(contentSchedule.status, 'scheduled'),
+          lte(contentSchedule.scheduledDate, now)
+        )
+      );
+    
+    const [publishedFromSchedule] = await db
+      .select({ count: count() })
+      .from(contentSchedule)
+      .where(
+        and(
+          eq(contentSchedule.userId, userId),
+          eq(contentSchedule.status, 'published')
+        )
+      );
+    
+    return {
+      totalScheduled: Number(totalScheduled.count) || 0,
+      scheduledThisWeek: Number(scheduledThisWeek.count) || 0,
+      scheduledThisMonth: Number(scheduledThisMonth.count) || 0,
+      overdueCount: Number(overdueCount.count) || 0,
+      publishedFromSchedule: Number(publishedFromSchedule.count) || 0
+    };
+  }
+
+  // ===============================
+  // DASHBOARD STATISTICS
+  // ===============================
+
+  async getUserDashboardStats(userId: string): Promise<{
+    websiteCount: number;
+    contentCount: number;
+    avgSeoScore: number;
+    recentActivity: number;
+    scheduledPosts: number;
+    seoReports?: any[];
+  }> {
+    const userWebsites = await this.getUserWebsites(userId);
+    const userContent = await this.getUserContent(userId);
+    const recentLogs = await db
+      .select()
+      .from(activityLogs)
+      .where(
+        and(
+          eq(activityLogs.userId, userId),
+          gte(activityLogs.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+        )
+      );
+    
+    const [scheduledCount] = await db
+      .select({ count: count() })
+      .from(contentSchedule)
+      .where(eq(contentSchedule.userId, userId));
+
+    const allSeoReports = [];
+    for (const website of userWebsites) {
+      const reports = await this.getSeoReportsByWebsite(website.id);
+      if (reports.length > 0) {
+        allSeoReports.push(...reports);
+      }
+    }
+    
+    allSeoReports.sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    const currentScore = allSeoReports.length > 0 
+      ? Math.round(allSeoReports[0].score)
+      : 0;
+
+    return {
+      websiteCount: userWebsites.length,
+      contentCount: userContent.length,
+      avgSeoScore: currentScore,
+      recentActivity: recentLogs.length,
+      scheduledPosts: Number(scheduledCount?.count) || 0,
+      seoReports: allSeoReports
+    };
+  }
+
+  // ===============================
+  // USER SETTINGS MANAGEMENT
+  // ===============================
+
+  async getUserSettings(userId: string): Promise<UserSettings | undefined> {
+    const [settings] = await db
+      .select()
+      .from(userSettings)
+      .where(eq(userSettings.userId, userId));
+    return settings;
+  }
+
+  async createUserSettings(userId: string, settingsData: Partial<InsertUserSettings>): Promise<UserSettings> {
+    const [settings] = await db
+      .insert(userSettings)
+      .values({
+        userId,
+        ...settingsData,
+      })
+      .returning();
+    return settings;
+  }
+
+  async updateUserSettings(userId: string, settingsData: Partial<InsertUserSettings>): Promise<UserSettings | undefined> {
+    const [settings] = await db
+      .update(userSettings)
+      .set({ 
+        ...settingsData, 
+        updatedAt: new Date() 
+      })
+      .where(eq(userSettings.userId, userId))
+      .returning();
+    return settings;
+  }
+
+  async deleteUserSettings(userId: string): Promise<boolean> {
+    const result = await db
+      .delete(userSettings)
+      .where(eq(userSettings.userId, userId));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getOrCreateUserSettings(userId: string): Promise<UserSettings> {
+    let settings = await this.getUserSettings(userId);
+    
+    if (!settings) {
+      settings = await this.createUserSettings(userId, {
+        profileTimezone: "America/New_York",
+        notificationEmailReports: true,
+        notificationContentGenerated: true,
+        notificationSeoIssues: true,
+        notificationSystemAlerts: false,
+        automationDefaultAiModel: "gpt-4o",
+        automationAutoFixSeoIssues: true,
+        automationContentGenerationFrequency: "twice-weekly",
+        automationReportGeneration: "weekly",
+        securityTwoFactorAuth: false,
+        securitySessionTimeout: 24,
+        securityAllowApiAccess: true,
+      });
+    }
+    
+    return settings;
+  }
+
+  // ===============================
+  // API KEY MANAGEMENT
+  // ===============================
+
+  private normalizeApiKey(row: any): UserApiKey {
+    return {
+      id: row.id,
+      userId: row.user_id || row.userId,
+      provider: row.provider,
+      keyName: row.key_name || row.keyName,
+      encryptedApiKey: row.encrypted_api_key || row.encryptedApiKey || row.encryptedKey,
+      maskedKey: row.masked_key || row.maskedKey,
+      isActive: row.is_active !== undefined ? row.is_active : row.isActive,
+      validationStatus: row.validation_status || row.validationStatus,
+      lastValidated: row.last_validated || row.lastValidated,
+      validationError: row.validation_error || row.validationError,
+      usageCount: row.usage_count !== undefined ? row.usage_count : row.usageCount,
+      lastUsed: row.last_used || row.lastUsed,
+      createdAt: row.created_at || row.createdAt,
+      updatedAt: row.updated_at || row.updatedAt,
+    };
+  }
+
+  async getUserApiKeys(userId: string): Promise<UserApiKey[]> {
+    const rawKeys = await db
+      .select()
+      .from(userApiKeys)
+      .where(eq(userApiKeys.userId, userId))
+      .orderBy(desc(userApiKeys.createdAt));
+    
+    return rawKeys.map(row => this.normalizeApiKey(row));
+  }
+
+  async getUserApiKey(userId: string, keyId: string): Promise<UserApiKey | undefined> {
+    const [rawKey] = await db
+      .select()
+      .from(userApiKeys)
+      .where(
+        and(
+          eq(userApiKeys.userId, userId),
+          eq(userApiKeys.id, keyId)
+        )
+      );
+    
+    return rawKey ? this.normalizeApiKey(rawKey) : undefined;
+  }
+
+  async createUserApiKey(userId: string, data: {
+    provider: string;
+    keyName: string;
+    apiKey: string;
+  }): Promise<UserApiKey> {
+    const formatValidation = apiKeyEncryptionService.validateApiKeyFormat(data.provider, data.apiKey);
+    if (!formatValidation.valid) {
+      throw new Error(formatValidation.error || 'Invalid API key format');
+    }
+
+    const encryptedApiKey = apiKeyEncryptionService.encrypt(data.apiKey);
+    const maskedKey = apiKeyEncryptionService.createMaskedKey(data.apiKey);
+
+    const [rawKey] = await db
+      .insert(userApiKeys)
+      .values({
+        userId,
+        provider: data.provider,
+        keyName: data.keyName,
+        encryptedApiKey,
+        maskedKey,
+        validationStatus: 'pending'
+      })
+      .returning();
+
+    return this.normalizeApiKey(rawKey);
+  }
+
+  async updateUserApiKey(userId: string, keyId: string, updates: Partial<{
+    keyName: string;
+    isActive: boolean;
+    validationStatus: string;
+    lastValidated: Date;
+    validationError: string;
+    usageCount: number;
+    lastUsed: Date;
+  }>): Promise<UserApiKey | undefined> {
+    const dbUpdates: any = {};
+    
+    if (updates.keyName !== undefined) dbUpdates.key_name = updates.keyName;
+    if (updates.isActive !== undefined) dbUpdates.is_active = updates.isActive;
+    if (updates.validationStatus !== undefined) dbUpdates.validation_status = updates.validationStatus;
+    if (updates.lastValidated !== undefined) dbUpdates.last_validated = updates.lastValidated;
+    if (updates.validationError !== undefined) dbUpdates.validation_error = updates.validationError;
+    if (updates.usageCount !== undefined) dbUpdates.usage_count = updates.usageCount;
+    if (updates.lastUsed !== undefined) dbUpdates.last_used = updates.lastUsed;
+    
+    if (Object.keys(dbUpdates).length === 0) {
+      console.warn('updateUserApiKey called with no valid fields to update');
+      const existingKey = await db
+        .select()
+        .from(userApiKeys)
+        .where(
+          and(
+            eq(userApiKeys.userId, userId),
+            eq(userApiKeys.id, keyId)
+          )
+        )
+        .limit(1);
+      return existingKey[0] ? this.normalizeApiKey(existingKey[0]) : undefined;
+    }
+    
+    dbUpdates.updated_at = new Date();
+
+    const [rawKey] = await db
+      .update(userApiKeys)
+      .set(dbUpdates)
+      .where(
+        and(
+          eq(userApiKeys.userId, userId),
+          eq(userApiKeys.id, keyId)
+        )
+      )
+      .returning();
+    
+    return rawKey ? this.normalizeApiKey(rawKey) : undefined;
+  }
+
+  async deleteUserApiKey(userId: string, keyId: string): Promise<boolean> {
+    const result = await db
+      .delete(userApiKeys)
+      .where(
+        and(
+          eq(userApiKeys.userId, userId),
+          eq(userApiKeys.id, keyId)
+        )
+      );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getDecryptedApiKey(userId: string, keyId: string): Promise<string | null> {
+    const apiKey = await this.getUserApiKey(userId, keyId);
+    if (!apiKey || !apiKey.isActive) {
+      return null;
+    }
+
+    try {
+      return apiKeyEncryptionService.decrypt(apiKey.encryptedApiKey);
+    } catch (error) {
+      console.error('Failed to decrypt API key:', error);
+      return null;
+    }
+  }
+
+  async validateUserApiKey(userId: string, keyId: string): Promise<{ valid: boolean; error?: string }> {
+    const apiKey = await this.getUserApiKey(userId, keyId);
+    if (!apiKey) {
+      return { valid: false, error: 'API key not found' };
+    }
+
+    try {
+      const decryptedKey = await this.getDecryptedApiKey(userId, keyId);
+      if (!decryptedKey) {
+        return { valid: false, error: 'Could not decrypt API key' };
+      }
+
+      await this.updateUserApiKey(userId, keyId, {
+        lastValidated: new Date(),
+        validationStatus: 'valid',
+        validationError: undefined
+      });
+
+      return { valid: true };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Validation failed';
+      
+      await this.updateUserApiKey(userId, keyId, {
+        lastValidated: new Date(),
+        validationStatus: 'invalid',
+        validationError: errorMessage
+      });
+
+      return { valid: false, error: errorMessage };
+    }
+  }
+
+  async getApiKeyUsageStats(userId: string): Promise<{
+    totalKeys: number;
+    activeKeys: number;
+    validKeys: number;
+    totalUsage: number;
+  }> {
+    const keys = await this.getUserApiKeys(userId);
+    
+    return {
+      totalKeys: keys.length,
+      activeKeys: keys.filter(k => k.isActive).length,
+      validKeys: keys.filter(k => k.validationStatus === 'valid').length,
+      totalUsage: keys.reduce((sum, k) => sum + (k.usageCount || 0), 0)
+    };
+  }
+
+  // ===============================
+  // AUTO-SCHEDULE MANAGEMENT
+  // ===============================
+
+  async getActiveAutoSchedules(): Promise<AutoSchedule[]> {
+    try {
+      const schedules = await db
+        .select()
+        .from(autoSchedules)
+        .where(
+          and(
+            eq(autoSchedules.isActive, true),
+            isNull(autoSchedules.deletedAt)
+          )
+        )
+        .orderBy(desc(autoSchedules.createdAt));
+      
+      return schedules.map(schedule => ({
+        ...schedule,
+        topics: schedule.topics || [],
+        customDays: schedule.customDays || [],
+        publishDelay: schedule.publishDelay || 0,
+        topicRotation: schedule.topicRotation || 'sequential',
+        nextTopicIndex: schedule.nextTopicIndex || 0,
+        maxDailyCost: schedule.maxDailyCost || 10,
+        maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
+        costToday: schedule.costToday || 0,
+        postsThisMonth: schedule.postsThisMonth || 0,
+      }));
+    } catch (error) {
+      console.error('Error fetching active auto-schedules:', error);
+      return [];
+    }
+  }
+
+  async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Promise<AutoSchedule> {
+    try {
+      const scheduleData = {
+        id: randomUUID(),
+        userId: schedule.userId,
+        websiteId: schedule.websiteId,
+        name: schedule.name,
+        frequency: schedule.frequency,
+        timeOfDay: schedule.timeOfDay,
+        customDays: schedule.customDays || [],
+        topics: schedule.topics || [],
+        keywords: schedule.keywords || null,
+        tone: schedule.tone || 'professional',
+        wordCount: schedule.wordCount || 800,
+        brandVoice: schedule.brandVoice || null,
+        targetAudience: schedule.targetAudience || null,
+        eatCompliance: schedule.eatCompliance || false,
+        aiProvider: schedule.aiProvider || 'openai',
+        includeImages: schedule.includeImages || false,
+        imageCount: schedule.imageCount || 1,
+        imageStyle: schedule.imageStyle || 'natural',
+        seoOptimized: schedule.seoOptimized !== false,
+        autoPublish: schedule.autoPublish || false,
+        publishDelay: schedule.publishDelay || 0,
+        topicRotation: schedule.topicRotation || 'random',
+        nextTopicIndex: schedule.nextTopicIndex || 0,
+        maxDailyCost: schedule.maxDailyCost || 5.00,
+        maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
+        costToday: schedule.costToday || 0,
+        postsThisMonth: schedule.postsThisMonth || 0,
+        lastRun: schedule.lastRun || null,
+        isActive: schedule.isActive !== false,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      const [newSchedule] = await db
+        .insert(autoSchedules)
+        .values(scheduleData)
+        .returning();
+      
+      console.log('Auto-schedule created successfully:', newSchedule.id);
+      return newSchedule;
+    } catch (error) {
+      console.error('Error creating auto-schedule:', error);
+      throw error;
+    }
+  }
+
+  async updateAutoSchedule(scheduleId: string, updates: any): Promise<void> {
+    try {
+      const updateData: any = {
+        updatedAt: new Date()
+      };
+      
+      if (updates.lastRun !== undefined) {
+        updateData.lastRun = updates.lastRun;
+      }
+      
+      if (updates.postsThisMonth !== undefined) {
+        const posts = typeof updates.postsThisMonth === 'string' 
+          ? parseInt(updates.postsThisMonth) 
+          : updates.postsThisMonth;
+        updateData.postsThisMonth = posts || 0;
+      }
+      
+      if (updates.costToday !== undefined) {
+        let cost = updates.costToday;
+        
+        if (typeof cost === 'string' && cost.includes('.') && cost.split('.').length > 2) {
+          const parts = cost.split('.');
+          cost = parseFloat(`0.${parts[parts.length - 1]}`);
+        } else {
+          cost = parseFloat(cost);
+        }
+        
+        if (isNaN(cost)) {
+          console.error('Invalid costToday value:', updates.costToday);
+          updateData.costToday = 0;
+        } else {
+          updateData.costToday = cost;
+        }
+        
+        console.log('Cost update:', {
+          original: updates.costToday,
+          parsed: cost,
+          final: updateData.costToday
+        });
+      }
+      
+      if (updates.nextTopicIndex !== undefined) {
+        const index = typeof updates.nextTopicIndex === 'string' 
+          ? parseInt(updates.nextTopicIndex) 
+          : updates.nextTopicIndex;
+        updateData.nextTopicIndex = index || 0;
+      }
+
+      console.log('Updating auto-schedule:', {
+        scheduleId,
+        updates: updateData
+      });
+
+      await db
+        .update(autoSchedules)
+        .set(updateData)
+        .where(eq(autoSchedules.id, scheduleId));
+        
+      console.log('✅ Auto-schedule updated successfully');
+    } catch (error) {
+      console.error('Error updating auto-schedule:', error);
+      throw error;
+    }
+  }
+
+  async getAutoSchedule(scheduleId: string): Promise<AutoSchedule | undefined> {
+    try {
+      const [schedule] = await db
+        .select()
+        .from(autoSchedules)
+        .where(eq(autoSchedules.id, scheduleId));
+      
+      return schedule;
+    } catch (error) {
+      console.error('Error fetching auto-schedule:', error);
+      return undefined;
+    }
+  }
+
+  async deleteAutoSchedule(scheduleId: string): Promise<boolean> {
+    try {
+      await db
+        .update(autoSchedules)
+        .set({ 
+          deletedAt: new Date(),
+          isActive: false,
+          updatedAt: new Date()
+        })
+        .where(eq(autoSchedules.id, scheduleId));
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting auto-schedule:', error);
+      return false;
+    }
+  }
+
+  async getUserAutoSchedules(userId: string): Promise<AutoSchedule[]> {
+    try {
+      const schedules = await db
+        .select()
+        .from(autoSchedules)
+        .where(
+          and(
+            eq(autoSchedules.userId, userId),
+            isNull(autoSchedules.deletedAt)
+          )
+        )
+        .orderBy(desc(autoSchedules.createdAt));
+      
+      return schedules;
+    } catch (error) {
+      console.error('Error fetching user auto-schedules:', error);
+      return [];
+    }
+  }
+
+  async resetAutoScheduleDailyCosts(): Promise<void> {
+    try {
+      await db
+        .update(autoSchedules)
+        .set({ 
+          costToday: 0,
+          updatedAt: new Date()
+        })
+        .where(eq(autoSchedules.isActive, true));
+      
+      console.log('✅ Daily costs reset for all active auto-schedules');
+    } catch (error) {
+      console.error('Error resetting daily costs:', error);
+      throw error;
+    }
+  }
+
+  async resetAutoScheduleMonthlyCounts(): Promise<void> {
+    try {
+      await db
+        .update(autoSchedules)
+        .set({ 
+          postsThisMonth: 0,
+          updatedAt: new Date()
+        })
+        .where(eq(autoSchedules.isActive, true));
+      
+      console.log('✅ Monthly post counts reset for all active auto-schedules');
+    } catch (error) {
+      console.error('Error resetting monthly counts:', error);
+      throw error;
+    }
+  }
+
+  // ===============================
+  // SEO ISSUE TRACKING MANAGEMENT
+  // ===============================
+
+  private generateIssueHash(issueType: string, websiteId: string, elementPath?: string): string {
+    const hashInput = `${issueType}-${websiteId}-${elementPath || 'global'}`;
+    return createHash('sha256').update(hashInput).digest('hex').substring(0, 16);
+  }
+
+  async createSeoIssue(issue: {
+    userId: string;
+    websiteId: string;
+    seoReportId?: string;
+    issueType: string;
+    issueTitle: string;
+    issueDescription?: string;
+    severity: 'critical' | 'warning' | 'info';
+    autoFixAvailable: boolean;
+    status?: 'detected' | 'fixing' | 'fixed' | 'resolved' | 'reappeared';
+    elementPath?: string;
+    currentValue?: string;
+    recommendedValue?: string;
+    detectedAt?: Date;
+    lastSeenAt?: Date;
+  }): Promise<any> {
+    try {
+      const now = new Date();
+      
+      const existingIssues = await db
+        .select()
+        .from(seoIssueTracking)
+        .where(
+          and(
+            eq(seoIssueTracking.websiteId, issue.websiteId),
+            eq(seoIssueTracking.userId, issue.userId),
+            eq(seoIssueTracking.issueType, issue.issueType)
+          )
+        )
+        .limit(1);
+
+      if (existingIssues.length > 0) {
+        const existingIssue = existingIssues[0];
+        
+        let newStatus = existingIssue.status;
+        if (existingIssue.status === 'fixed' || existingIssue.status === 'resolved') {
+          newStatus = 'reappeared';
+        } else if (existingIssue.status === 'fixing') {
+          newStatus = 'detected';
+        }
+        
+        const [updatedIssue] = await db
+          .update(seoIssueTracking)
+          .set({
+            status: newStatus,
+            lastSeenAt: issue.lastSeenAt || now,
+            issueDescription: issue.issueDescription || existingIssue.issueDescription,
+            severity: issue.severity,
+            autoFixAvailable: issue.autoFixAvailable,
+            currentValue: issue.currentValue,
+            recommendedValue: issue.recommendedValue,
+            metadata: {
+              ...existingIssue.metadata,
+              lastDetectedInReport: issue.seoReportId,
+              detectionCount: (existingIssue.metadata?.detectionCount || 0) + 1,
+              reappearedAt: newStatus === 'reappeared' ? now.toISOString() : existingIssue.metadata?.reappearedAt
+            },
+            updatedAt: now
+          })
+          .where(eq(seoIssueTracking.id, existingIssue.id))
+          .returning();
+        
+        console.log(`Updated existing issue: ${issue.issueTitle} (${existingIssue.status} → ${newStatus})`);
+        return updatedIssue;
+      }
+      
+      const [newIssue] = await db
+        .insert(seoIssueTracking)
+        .values({
+          websiteId: issue.websiteId,
+          userId: issue.userId,
+          issueType: issue.issueType,
+          issueTitle: issue.issueTitle,
+          issueDescription: issue.issueDescription,
+          severity: issue.severity,
+          status: issue.status || 'detected',
+          autoFixAvailable: issue.autoFixAvailable,
+          detectedAt: issue.detectedAt || now,
+          lastSeenAt: issue.lastSeenAt || now,
+          elementPath: issue.elementPath,
+          currentValue: issue.currentValue,
+          recommendedValue: issue.recommendedValue,
+          metadata: {
+            firstDetectedInReport: issue.seoReportId,
+            detectionCount: 1
+          },
+          createdAt: now,
+          updatedAt: now
+        })
+        .returning();
+      
+      console.log(`Created new tracked issue: ${issue.issueTitle}`);
+      return newIssue;
+    } catch (error) {
+      console.error('Error creating SEO issue:', error);
+      throw error;
+    }
+  }
+
+  async createOrUpdateSeoIssue(issue: {
+    userId: string;
+    websiteId: string;
+    issueType: string;
+    issueTitle: string;
+    issueDescription?: string;
+    severity: 'critical' | 'warning' | 'info';
+    autoFixAvailable: boolean;
+    elementPath?: string;
+    currentValue?: string;
+    recommendedValue?: string;
+    seoReportId?: string;
+  }): Promise<SeoIssueTracking> {
+    const issueHash = this.generateIssueHash(issue.issueType, issue.websiteId, issue.elementPath);
+    
+    try {
+      const [existingIssue] = await db
+        .select()
+        .from(seoIssueTracking)
+        .where(
+          and(
+            eq(seoIssueTracking.websiteId, issue.websiteId),
+            eq(seoIssueTracking.userId, issue.userId),
+            eq(seoIssueTracking.issueType, issue.issueType),
+            eq(seoIssueTracking.issueTitle, issue.issueTitle)
+          )
+        )
+        .limit(1);
+
+      const now = new Date();
+      
+      if (existingIssue) {
+        let newStatus = existingIssue.status;
+        
+        if (existingIssue.status === 'fixing') {
+          newStatus = 'detected' as const;
+          console.log(`Reset stuck fixing status for: ${issue.issueTitle}`);
+        } else if (['fixed', 'resolved'].includes(existingIssue.status)) {
+          newStatus = 'reappeared' as const;
+        }
+        
+        const [updatedIssue] = await db
+          .update(seoIssueTracking)
+          .set({
+            lastSeenAt: now,
+            status: newStatus,
+            issueDescription: issue.issueDescription,
+            severity: issue.severity,
+            autoFixAvailable: issue.autoFixAvailable,
+            currentValue: issue.currentValue,
+            recommendedValue: issue.recommendedValue,
+            metadata: {
+              ...existingIssue.metadata,
+              lastDetectedInReport: issue.seoReportId,
+              detectionCount: (existingIssue.metadata?.detectionCount || 0) + 1,
+              reappearedAt: newStatus === 'reappeared' ? now.toISOString() : existingIssue.metadata?.reappearedAt,
+              wasStuckInFixing: existingIssue.status === 'fixing' ? true : existingIssue.metadata?.wasStuckInFixing
+            },
+            updatedAt: now
+          })
+          .where(eq(seoIssueTracking.id, existingIssue.id))
+          .returning();
+        
+        console.log(`Updated existing SEO issue: ${issue.issueTitle} (${existingIssue.status} → ${newStatus})`);
+        return updatedIssue;
+      } else {
+        const [newIssue] = await db
+          .insert(seoIssueTracking)
+          .values({
+            websiteId: issue.websiteId,
+            userId: issue.userId,
+            issueType: issue.issueType,
+            issueTitle: issue.issueTitle,
+            issueDescription: issue.issueDescription,
+            severity: issue.severity,
+            status: 'detected',
+            autoFixAvailable: issue.autoFixAvailable,
+            detectedAt: now,
+            lastSeenAt: now,
+            elementPath: issue.elementPath,
+            currentValue: issue.currentValue,
+            recommendedValue: issue.recommendedValue,
+            metadata: {
+              issueHash,
+              firstDetectedInReport: issue.seoReportId,
+              detectionCount: 1
+            },
+            createdAt: now,
+            updatedAt: now
+          })
+          .returning();
+        
+        console.log(`Created new SEO issue: ${issue.issueTitle}`);
+        return newIssue;
+      }
+    } catch (error) {
+      console.error('Error creating/updating SEO issue:', error);
+      throw error;
+    }
+  }
+
+  async getTrackedSeoIssues(
+    websiteId: string, 
+    userId: string,
+    options: {
+      status?: string[];
+      autoFixableOnly?: boolean;
+      limit?: number;
+    } = {}
+  ): Promise<SeoIssueTracking[]> {
+    try {
+      let query = db
+        .select()
+        .from(seoIssueTracking)
+        .where(
+          and(
+            eq(seoIssueTracking.websiteId, websiteId),
+            eq(seoIssueTracking.userId, userId)
+          )
+        );
+
+      if (options.status && options.status.length > 0) {
+        query = query.where(
+          and(
+            eq(seoIssueTracking.websiteId, websiteId),
+            eq(seoIssueTracking.userId, userId),
+            inArray(seoIssueTracking.status, options.status)
+          )
+        );
+      }
+
+      if (options.autoFixableOnly) {
+        query = query.where(
+          and(
+            eq(seoIssueTracking.websiteId, websiteId),
+            eq(seoIssueTracking.userId, userId),
+            eq(seoIssueTracking.autoFixAvailable, true)
+          )
+        );
+      }
+
+      query = query.orderBy(
+        desc(seoIssueTracking.lastSeenAt)
+      );
+
+      if (options.limit) {
+        query = query.limit(options.limit);
+      }
+
+      const issues = await query;
+      
+      console.log(`Retrieved ${issues.length} tracked SEO issues for website ${websiteId}`);
+      return issues;
+    } catch (error) {
+      console.error('Error getting tracked SEO issues:', error);
+      throw error;
+    }
+  }
+
+  async updateSeoIssueStatus(
+    issueId: string,
+    status: 'detected' | 'fixing' | 'fixed' | 'resolved' | 'reappeared',
+    updates: {
+      fixMethod?: 'ai_automatic' | 'manual';
+      fixSessionId?: string;
+      fixBefore?: string;
+      fixAfter?: string;
+      aiModel?: string;
+      tokensUsed?: number;
+      fixError?: string;
+      resolutionNotes?: string;
+      previousStatus?: string;
+      reappearedAt?: Date;
+      lastSeenAt?: Date;
+      fixedAt?: Date;
+      resolvedAt?: Date;
+      resolvedAutomatically?: boolean;
+    } = {}
+  ): Promise<SeoIssueTracking | null> {
+    try {
+      const now = new Date();
+      const updateData: any = {
+        status,
+        updatedAt: now
+      };
+
+      if (updates.fixedAt) updateData.fixedAt = updates.fixedAt;
+      if (updates.resolvedAt) updateData.resolvedAt = updates.resolvedAt;
+      if (updates.lastSeenAt) updateData.lastSeenAt = updates.lastSeenAt;
+      
+      if (status === 'fixed' && !updates.fixedAt) {
+        updateData.fixedAt = now;
+      }
+      if (status === 'resolved' && !updates.resolvedAt) {
+        updateData.resolvedAt = now;
+      }
+
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value !== undefined && !['fixedAt', 'resolvedAt', 'lastSeenAt', 'reappearedAt'].includes(key)) {
+          updateData[key] = value;
+        }
+      });
+
+      const [existingIssue] = await db
+        .select()
+        .from(seoIssueTracking)
+        .where(eq(seoIssueTracking.id, issueId))
+        .limit(1);
+
+      if (existingIssue) {
+        updateData.metadata = {
+          ...existingIssue.metadata,
+          statusHistory: [
+            ...(existingIssue.metadata?.statusHistory || []),
+            {
+              previousStatus: existingIssue.status,
+              newStatus: status,
+              timestamp: now.toISOString(),
+              fixMethod: updates.fixMethod,
+              fixSessionId: updates.fixSessionId,
+              resolutionNotes: updates.resolutionNotes
+            }
+          ],
+          fixAttempts: status === 'fixing' 
+            ? (existingIssue.metadata?.fixAttempts || 0) + 1
+            : existingIssue.metadata?.fixAttempts,
+          lastFixError: updates.fixError || existingIssue.metadata?.lastFixError,
+          previousStatus: updates.previousStatus,
+          reappearedAt: updates.reappearedAt?.toISOString(),
+          resolvedAutomatically: updates.resolvedAutomatically
+        };
+      }
+
+      const [updatedIssue] = await db
+        .update(seoIssueTracking)
+        .set(updateData)
+        .where(eq(seoIssueTracking.id, issueId))
+        .returning();
+
+      console.log(`Updated SEO issue ${issueId} status from ${existingIssue?.status} to: ${status}`);
+      return updatedIssue;
+    } catch (error) {
+      console.error('Error updating SEO issue status:', error);
+      throw error;
+    }
+  }
+
+  async bulkUpdateSeoIssueStatuses(
+    issueIds: string[],
+    status: 'detected' | 'fixing' | 'fixed' | 'resolved' | 'reappeared',
+    fixSessionId?: string
+  ): Promise<number> {
+    try {
+      const now = new Date();
+      const updateData: any = {
+        status,
+        updatedAt: now
+      };
+
+      if (status === 'fixing' && fixSessionId) {
+        updateData.fixSessionId = fixSessionId;
+      }
+
+      if (status === 'fixed' || status === 'resolved') {
+        updateData.fixedAt = now;
+        if (status === 'resolved') {
+          updateData.resolvedAt = now;
+        }
+      }
+
+      const result = await db
+        .update(seoIssueTracking)
+        .set(updateData)
+        .where(inArray(seoIssueTracking.id, issueIds));
+
+      console.log(`Bulk updated ${result.rowCount || 0} SEO issues to status: ${status}`);
+      return result.rowCount || 0;
+    } catch (error) {
+      console.error('Error bulk updating SEO issue statuses:', error);
+      throw error;
+    }
+  }
+
+  async getSeoIssueTrackingSummary(websiteId: string, userId: string): Promise<{
+    totalIssues: number;
+    detected: number;
+    fixing: number;
+    fixed: number;
+    resolved: number;
+    reappeared: number;
+    autoFixable: number;
+    completionPercentage: number;
+    lastActivity: Date | null;
+  }> {
+    try {
+      const [summary] = await db
+        .select({
+          totalIssues: count(),
+          detected: count(sql`CASE WHEN status = 'detected' THEN 1 END`),
+          fixing: count(sql`CASE WHEN status = 'fixing' THEN 1 END`),
+          fixed: count(sql`CASE WHEN status = 'fixed' THEN 1 END`),
+          resolved: count(sql`CASE WHEN status = 'resolved' THEN 1 END`),
+          reappeared: count(sql`CASE WHEN status = 'reappeared' THEN 1 END`),
+          autoFixable: count(sql`CASE WHEN auto_fix_available = true THEN 1 END`),
+          lastActivity: sql<Date>`MAX(last_seen_at)`
+        })
+        .from(seoIssueTracking)
+        .where(
+          and(
+            eq(seoIssueTracking.websiteId, websiteId),
+            eq(seoIssueTracking.userId, userId)
+          )
+        );
+
+      const completionPercentage = summary.totalIssues > 0 
+        ? Math.round(((summary.fixed + summary.resolved) / summary.totalIssues) * 100)
+        : 0;
+
+      return {
+        ...summary,
+        completionPercentage
+      };
+    } catch (error) {
+      console.error('Error getting SEO issue tracking summary:', error);
+      throw error;
+    }
+  }
+
+  async markIssuesAsResolved(
+    websiteId: string,
+    userId: string,
+    currentIssueTypes: string[]
+  ): Promise<number> {
+    try {
+      const now = new Date();
+      
+      let query = db
+        .update(seoIssueTracking)
+        .set({
+          status: 'resolved',
+          resolvedAt: now,
+          resolvedBy: 'auto_resolved',
+          resolutionNotes: 'Issue no longer detected in latest analysis',
+          updatedAt: now
+        })
+        .where(
+          and(
+            eq(seoIssueTracking.websiteId, websiteId),
+            eq(seoIssueTracking.userId, userId),
+            eq(seoIssueTracking.status, 'detected')
+          )
+        );
+
+      if (currentIssueTypes.length > 0) {
+        query = query.where(
+          and(
+            eq(seoIssueTracking.websiteId, websiteId),
+            eq(seoIssueTracking.userId, userId),
+            eq(seoIssueTracking.status, 'detected'),
+            not(inArray(seoIssueTracking.issueType, currentIssueTypes))
+          )
+        );
+      }
+
+      const result = await query;
+
+      console.log(`Auto-resolved ${result.rowCount || 0} issues no longer detected`);
+      return result.rowCount || 0;
+    } catch (error) {
+      console.error('Error marking issues as resolved:', error);
+      throw error;
+    }
+  }
+
+  async updateTrackedSeoIssue(
+    issueId: string,
+    updates: {
+      issueDescription?: string;
+      severity?: 'critical' | 'warning' | 'info';
+      currentValue?: string;
+      lastDetected?: Date;
+    }
+  ): Promise<void> {
+    try {
+      await this.db
+        .update(seoIssueTracking)
+        .set({
+          issueDescription: updates.issueDescription,
+          severity: updates.severity,
+          currentValue: updates.currentValue,
+          lastDetected: updates.lastDetected || new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(seoIssueTracking.id, issueId));
+    } catch (error) {
+      console.error('Error updating tracked SEO issue:', error);
+      throw error;
+    }
+  }
+
+  async deleteTrackedSeoIssuesByWebsite(websiteId: string, userId: string): Promise<void> {
+    try {
+      await db
+        .delete(seoIssueTracking)
+        .where(
+          and(
+            eq(seoIssueTracking.websiteId, websiteId),
+            eq(seoIssueTracking.userId, userId)
+          )
+        );
+      
+      console.log(`Deleted tracked SEO issues for website: ${websiteId}`);
+    } catch (error) {
+      console.error('Error deleting tracked SEO issues:', error);
+      throw error;
+    }
+  }
+
+  async getDetailedSeoData(websiteId: string, userId: string): Promise<{
+    hasAIAnalysis: boolean;
+    trackedIssues: any[];
+    issuesSummary: any;
+    recentActivity: any[];
+  }> {
+    try {
+      const seoReports = await this.getSeoReportsByWebsite(websiteId);
+      const latestReport = seoReports[0];
+      
+      const hasAIAnalysis = latestReport?.metadata?.aiAnalysisPerformed || false;
+      
+      const trackedIssues = await this.getTrackedSeoIssues(websiteId, userId, {
+        limit: 200
+      });
+      
+      console.log(`getDetailedSeoData: Retrieved ${trackedIssues.length} total issues`);
+      console.log(`Status breakdown:
+        - detected: ${trackedIssues.filter(i => i.status === 'detected').length}
+        - fixing: ${trackedIssues.filter(i => i.status === 'fixing').length}
+        - fixed: ${trackedIssues.filter(i => i.status === 'fixed').length}
+        - resolved: ${trackedIssues.filter(i => i.status === 'resolved').length}
+        - reappeared: ${trackedIssues.filter(i => i.status === 'reappeared').length}
+      `);
+      
+      const issuesSummary = await this.getSeoIssueTrackingSummary(websiteId, userId);
+      
+      const recentActivity = trackedIssues
+        .filter(issue => issue.metadata?.statusHistory)
+        .flatMap(issue => 
+          (issue.metadata.statusHistory || []).map((history: any) => ({
+            ...history,
+            issueTitle: issue.issueTitle,
+            issueType: issue.issueType,
+            issueId: issue.id
+          }))
+        )
+        .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 10);
+
+      return {
+        hasAIAnalysis,
+        trackedIssues,
+        issuesSummary,
+        recentActivity
+      };
+    } catch (error) {
+      console.error('Error getting detailed SEO data:', error);
+      return {
+        hasAIAnalysis: false,
+        trackedIssues: [],
+        issuesSummary: {
+          totalIssues: 0,
+          detected: 0,
+          fixing: 0,
+          fixed: 0,
+          resolved: 0,
+          reappeared: 0,
+          autoFixable: 0,
+          completionPercentage: 0,
+          lastActivity: null
+        },
+        recentActivity: []
+      };
+    }
+  }
+
+  // ===============================
+  // GOOGLE SEARCH CONSOLE MANAGEMENT
+  // ===============================
+
+  async saveGscConfiguration(userId: string, config: InsertGscConfiguration): Promise<GscConfiguration> {
+    const [saved] = await db
+      .insert(gscConfigurations)
+      .values({
+        ...config,
+        userId,
+        isConfigured: true
+      })
+      .onConflictDoUpdate({
+        target: gscConfigurations.userId,
+        set: {
+          ...config,
+          updatedAt: new Date()
+        }
+      })
+      .returning();
+    
+    return saved;
+  }
+
+  async getGscConfiguration(userId: string): Promise<GscConfiguration | undefined> {
+    const [config] = await db
+      .select()
+      .from(gscConfigurations)
+      .where(eq(gscConfigurations.userId, userId));
+    
+    return config;
+  }
+
+  async updateGscConfiguration(userId: string, updates: Partial<InsertGscConfiguration>): Promise<GscConfiguration | undefined> {
+    const [updated] = await db
+      .update(gscConfigurations)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(gscConfigurations.userId, userId))
+      .returning();
+    
+    return updated;
+  }
+
+  async deleteGscConfiguration(userId: string): Promise<boolean> {
+    const result = await db
+      .delete(gscConfigurations)
+      .where(eq(gscConfigurations.userId, userId));
+    
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async saveGscAccount(userId: string, account: InsertGscAccount): Promise<GscAccount> {
+    const [saved] = await db
+      .insert(gscAccounts)
+      .values({
+        ...account,
+        userId
+      })
+      .onConflictDoUpdate({
+        target: gscAccounts.id,
+        set: {
+          ...account,
+          updatedAt: new Date()
+        }
+      })
+      .returning();
+    
+    return saved;
+  }
+
+  async getGscAccounts(userId: string): Promise<GscAccount[]> {
+    return await db
+      .select()
+      .from(gscAccounts)
+      .where(eq(gscAccounts.userId, userId))
+      .orderBy(desc(gscAccounts.createdAt));
+  }
+
+  async getGscAccount(userId: string, accountId: string): Promise<GscAccount | undefined> {
+    const [account] = await db
+      .select()
+      .from(gscAccounts)
+      .where(
+        and(
+          eq(gscAccounts.userId, userId),
+          eq(gscAccounts.id, accountId)
+        )
+      );
+    
+    return account;
+  }
+
+  async updateGscAccount(userId: string, accountId: string, updates: Partial<GscAccount>): Promise<GscAccount | undefined> {
+    const [updated] = await db
+      .update(gscAccounts)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(
+        and(
+          eq(gscAccounts.userId, userId),
+          eq(gscAccounts.id, accountId)
+        )
+      )
+      .returning();
+    
+    return updated;
+  }
+
+  async removeGscAccount(userId: string, accountId: string): Promise<boolean> {
+    const result = await db
+      .delete(gscAccounts)
+      .where(
+        and(
+          eq(gscAccounts.userId, userId),
+          eq(gscAccounts.id, accountId)
+        )
+      );
+    
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getGscQuotaUsage(accountId: string, date?: Date): Promise<{ used: number; limit: number }> {
+    const targetDate = date || new Date();
+    targetDate.setHours(0, 0, 0, 0);
+    
+    const [quota] = await db
+      .select()
+      .from(gscQuotaUsage)
+      .where(
+        and(
+          eq(gscQuotaUsage.accountId, accountId),
+          eq(gscQuotaUsage.date, targetDate)
+        )
+      );
+    
+    return {
+      used: quota?.count || 0,
+      limit: quota?.limit || 200
+    };
+  }
+
+  async incrementGscQuotaUsage(accountId: string): Promise<void> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    await db
+      .insert(gscQuotaUsage)
+      .values({
+        accountId,
+        date: today,
+        count: 1,
+        limit: 200
+      })
+      .onConflictDoUpdate({
+        target: [gscQuotaUsage.accountId, gscQuotaUsage.date],
+        set: {
+          count: sql`${gscQuotaUsage.count} + 1`,
+          updatedAt: new Date()
+        }
+      });
+  }
+}
+
+// ===============================
+// EXPORT STORAGE INSTANCE
+// ===============================
+
+export const storage = new DatabaseStorage();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//shared/schema.ts
+import { sql } from "drizzle-orm";
+import {
+  pgTable,
+  text,
+  varchar,
+  timestamp,
+  integer,
+  boolean,
+  jsonb,
+  index,
+  uniqueIndex,
+  numeric
+} from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
+
+// ============================================================================
+// CORE USER TABLES
+// ============================================================================
+
+export const users = pgTable("users", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  username: text("username").notNull().unique(),
+  password: text("password").notNull(),
+});
+
+// Session storage table.
+// (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
+export const sessions = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)]
+);
+
+export const userSettings = pgTable(
+  "user_settings",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    // Profile settings
+    profileName: text("profile_name"),
+    profileEmail: text("profile_email"),
+    profileCompany: text("profile_company"),
+    profileTimezone: text("profile_timezone").default("America/New_York"),
+
+    // Notification preferences
+    notificationEmailReports: boolean("notification_email_reports").default(true),
+    notificationContentGenerated: boolean("notification_content_generated").default(true),
+    notificationSeoIssues: boolean("notification_seo_issues").default(true),
+    notificationSystemAlerts: boolean("notification_system_alerts").default(false),
+
+    // Automation preferences
+    automationDefaultAiModel: text("automation_default_ai_model").default("gpt-4o"),
+    automationAutoFixSeoIssues: boolean("automation_auto_fix_seo_issues").default(true),
+    automationContentGenerationFrequency: text("automation_content_generation_frequency").default("twice-weekly"),
+    automationReportGeneration: text("automation_report_generation").default("weekly"),
+
+    // Security settings
+    securityTwoFactorAuth: boolean("security_two_factor_auth").default(false),
+    securitySessionTimeout: integer("security_session_timeout").default(24),
+    securityAllowApiAccess: boolean("security_allow_api_access").default(true),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_user_settings_user_id").on(table.userId)]
+);
+
+export const userApiKeys = pgTable(
+  "user_api_keys",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    provider: text("provider").notNull(), // 'openai', 'anthropic', 'google_pagespeed'
+    keyName: text("key_name").notNull(),
+    encryptedApiKey: text("encrypted_api_key").notNull(), // Encrypted API key
+    maskedKey: text("masked_key").notNull(), // For display (e.g., "sk-...xyz123")
+
+    isActive: boolean("is_active").notNull().default(true),
+    validationStatus: text("validation_status").notNull().default("pending"), // 'valid', 'invalid', 'pending'
+    lastValidated: timestamp("last_validated"),
+    validationError: text("validation_error"),
+
+    // Usage tracking
+    usageCount: integer("usage_count").notNull().default(0),
+    lastUsed: timestamp("last_used"),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_user_api_keys_user_id").on(table.userId),
+    index("idx_user_api_keys_provider").on(table.provider),
+  ]
+);
+
+// ============================================================================
+// WEBSITE TABLES
+// ============================================================================
+
+export const websites = pgTable(
+  "websites",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    url: text("url").notNull(),
+    
+    // Secure WordPress Application Password authentication
+    wpApplicationName: text("wp_application_name").notNull(),
+    wpApplicationPassword: text("wp_application_password").notNull(), // Encrypted
+    wpUsername: text("wp_username"), // For display only, not authentication
+
+    // AI and automation settings
+    aiModel: text("ai_model").notNull().default("gpt-4o"),
+    autoPosting: boolean("auto_posting").notNull().default(false), // Default to manual approval
+    requireApproval: boolean("require_approval").notNull().default(true),
+
+    // Performance and status
+    status: text("status").notNull().default("active"), // active, processing, issues, suspended
+    seoScore: integer("seo_score").notNull().default(0),
+    contentCount: integer("content_count").notNull().default(0),
+
+    // Security and access control
+    allowedIPs: text("allowed_ips").array().default([]),
+    apiRateLimit: integer("api_rate_limit").notNull().default(100), // requests per hour
+
+    // Content quality settings
+    brandVoice: text("brand_voice").default("professional"),
+    contentGuidelines: text("content_guidelines"),
+    targetAudience: text("target_audience"),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_websites_user_id").on(table.userId),
+  ]
+);
+
+// ============================================================================
+// CONTENT TABLES
+// ============================================================================
+
+export const content = pgTable(
+  "content",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    excerpt: text("excerpt"),
+    metaDescription: text("meta_description"),
+    metaTitle: text("meta_title"),
+
+    // Content approval and workflow
+    status: text("status").notNull().default("pending_approval"),
+    approvedBy: varchar("approved_by").references(() => users.id),
+    approvedAt: timestamp("approved_at"),
+    rejectionReason: text("rejection_reason"),
+
+    // AI and SEO data
+    aiModel: text("ai_model").notNull(),
+    seoKeywords: text("seo_keywords").array().notNull().default([]),
+    seoScore: integer("seo_score").default(0),
+    readabilityScore: integer("readability_score").default(0),
+    plagiarismScore: integer("plagiarism_score").default(0),
+
+    // Content quality and brand compliance
+    brandVoiceScore: integer("brand_voice_score").default(0),
+    factCheckStatus: text("fact_check_status").default("pending"),
+    eatCompliance: boolean("eat_compliance").default(false),
+
+    // Token and cost tracking
+    tokensUsed: integer("tokens_used").default(0),
+    costUsd: integer("cost_usd").default(0), // Store as cents (multiply by 100)
+
+    // Scheduling and publishing
+    publishDate: timestamp("publish_date"),
+    wordpressPostId: integer("wordpress_post_id"),
+    wordpressUrl: text("wordpress_url"),
+    publishError: text("publish_error"),
+
+    // Image data
+    images: jsonb("images").default([]),
+    cloudinaryData: jsonb("cloudinary_data").default({}),
+    featuredImageUrl: text("featured_image_url"),
+    featuredImageCloudinaryId: text("featured_image_cloudinary_id"),
+    hasImages: boolean("has_images").default(false),
+    totalImageCost: integer("total_image_cost").default(0),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_content_user_id").on(table.userId),
+    index("idx_content_website_user").on(table.websiteId, table.userId),
+  ]
+);
+
+export const contentImages = pgTable(
+  "content_images",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    contentId: varchar("content_id")
+      .notNull()
+      .references(() => content.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id, { onDelete: "cascade" }),
+
+    // DALL-E generated image info
+    originalUrl: text("original_url").notNull(),
+    filename: text("filename").notNull(),
+    altText: text("alt_text").notNull(),
+    generationPrompt: text("generation_prompt").notNull(),
+    costCents: integer("cost_cents").notNull(),
+    imageStyle: text("image_style").notNull(),
+    size: text("size").notNull().default("1024x1024"),
+
+    // Cloudinary storage fields
+    cloudinaryUrl: text("cloudinary_url"),
+    cloudinarySecureUrl: text("cloudinary_secure_url"),
+    cloudinaryPublicId: text("cloudinary_public_id"),
+    cloudinaryFormat: varchar("cloudinary_format", { length: 20 }),
+    cloudinaryWidth: integer("cloudinary_width"),
+    cloudinaryHeight: integer("cloudinary_height"),
+    cloudinaryBytes: integer("cloudinary_bytes"),
+    cloudinaryVersion: varchar("cloudinary_version", { length: 20 }),
+    cloudinaryThumbnailUrl: text("cloudinary_thumbnail_url"),
+    cloudinaryOptimizedUrl: text("cloudinary_optimized_url"),
+    cloudinaryUploadedAt: timestamp("cloudinary_uploaded_at"),
+    
+    // Image ordering and featuring
+    imageOrder: integer("image_order").default(0),
+    isFeatured: boolean("is_featured").default(false),
+
+    // WordPress upload info
+    wordpressMediaId: integer("wordpress_media_id"),
+    wordpressUrl: text("wordpress_url"),
+    status: text("status").notNull().default("generated"),
+    uploadError: text("upload_error"),
+
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_content_images_content_id").on(table.contentId),
+    index("idx_content_images_user_id").on(table.userId),
+    index("idx_content_images_cloudinary_public_id").on(table.cloudinaryPublicId),
+    index("idx_content_images_order").on(table.contentId, table.imageOrder),
+  ]
+);
+
+export const contentApprovals = pgTable(
+  "content_approvals",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    contentId: varchar("content_id")
+      .notNull()
+      .references(() => content.id),
+    reviewerId: varchar("reviewer_id")
+      .notNull()
+      .references(() => users.id),
+    status: text("status").notNull(), // approved, rejected, needs_revision
+    feedback: text("feedback"),
+    qualityScore: integer("quality_score"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_content_approvals_user_id").on(table.userId)]
+);
+
+export const contentSchedule = pgTable(
+  "content_schedule",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id),
+    scheduledDate: timestamp("scheduled_date").notNull(),
+    topic: text("topic").notNull(),
+    keywords: text("keywords").array().notNull().default([]),
+    status: text("status").notNull().default("planned"), // planned, generating, ready, published
+    contentId: varchar("content_id").references(() => content.id),
+
+    hasImages: boolean("has_images").default(false),
+    imageCount: integer("image_count").default(0),
+    cloudinaryImageIds: text("cloudinary_image_ids").array().default([]),
+
+    abTestVariant: text("ab_test_variant"), // A, B, or null
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_content_schedule_user_id").on(table.userId)]
+);
+
+// ============================================================================
+// SEO TABLES
+// ============================================================================
+
+export const seoReports = pgTable(
+  "seo_reports",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id),
+    score: integer("score").notNull(),
+    issues: jsonb("issues").notNull().default([]),
+    recommendations: jsonb("recommendations").notNull().default([]),
+    pageSpeedScore: integer("page_speed_score"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    hasTrackedIssues: boolean("has_tracked_issues").default(false),
+    fixableIssuesCount: integer("fixable_issues_count").default(0),
+    criticalIssuesCount: integer("critical_issues_count").default(0),
+  },
+  (table) => [index("idx_seo_reports_user_id").on(table.userId)]
+);
+
+export const seoAudits = pgTable(
+  "seo_audits",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id),
+    url: text("url").notNull(),
+    auditType: text("audit_type").notNull(), // technical, content, performance
+    findings: jsonb("findings").notNull().default([]),
+    autoFixApplied: boolean("auto_fix_applied").default(false),
+    autoFixResults: jsonb("auto_fix_results").default([]),
+    coreWebVitals: jsonb("core_web_vitals").default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_seo_audits_user_id").on(table.userId)]
+);
+
+export const seoIssueStatuses = pgTable(
+  "seo_issue_statuses",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Issue identification
+    issueHash: text("issue_hash").notNull().unique(),
+    issueType: text("issue_type").notNull(),
+    issueTitle: text("issue_title").notNull(),
+    issueDescription: text("issue_description"),
+    issueSeverity: text("issue_severity").notNull(), // critical, warning, info
+    
+    // Status tracking
+    status: text("status").notNull().default("open"), // open, in_progress, fixed, ignored, cannot_fix
+    statusReason: text("status_reason"),
+    
+    // Fix attempts
+    fixAttempts: integer("fix_attempts").notNull().default(0),
+    lastFixAttempt: timestamp("last_fix_attempt"),
+    lastFixError: text("last_fix_error"),
+    
+    // Resolution details
+    resolvedAt: timestamp("resolved_at"),
+    resolvedBy: text("resolved_by"), // 'ai_fix', 'manual', 'auto_resolved'
+    resolutionNotes: text("resolution_notes"),
+    
+    // Context
+    firstDetected: timestamp("first_detected").notNull().defaultNow(),
+    lastDetected: timestamp("last_detected").notNull().defaultNow(),
+    detectionCount: integer("detection_count").notNull().default(1),
+    
+    // Associated data
+    wordpressPostId: integer("wordpress_post_id"),
+    elementPath: text("element_path"),
+    currentValue: text("current_value"),
+    recommendedValue: text("recommended_value"),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_seo_issue_statuses_user_website").on(table.userId, table.websiteId),
+    index("idx_seo_issue_statuses_hash").on(table.issueHash),
+    index("idx_seo_issue_statuses_status").on(table.status),
+    index("idx_seo_issue_statuses_type").on(table.issueType),
+  ]
+);
+
+export const seoIssueTracking = pgTable(
+  "seo_issue_tracking",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id, { onDelete: "cascade" }),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    
+    // Issue identification
+    issueType: varchar("issue_type", { length: 100 }).notNull(),
+    issueTitle: varchar("issue_title", { length: 500 }).notNull(),
+    issueDescription: text("issue_description"),
+    severity: text("severity", { enum: ['critical', 'warning', 'info'] }).notNull().default('warning'),
+    status: text("status", { enum: ['detected', 'fixing', 'fixed', 'resolved', 'reappeared'] }).notNull().default('detected'),
+    autoFixAvailable: boolean("auto_fix_available").notNull().default(false),
+    
+    // Timestamps
+    detectedAt: timestamp("detected_at").notNull().defaultNow(),
+    fixedAt: timestamp("fixed_at"),
+    resolvedAt: timestamp("resolved_at"),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    
+    // Fix details
+    fixMethod: text("fix_method", { enum: ['ai_automatic', 'ai_iterative', 'manual'] }),
+    fixSessionId: varchar("fix_session_id", { length: 255 }),
+    fixBefore: text("fix_before"),
+    fixAfter: text("fix_after"),
+    aiModel: varchar("ai_model", { length: 100 }),
+    tokensUsed: integer("tokens_used"),
+    
+    // Element details
+    elementPath: text("element_path"),
+    currentValue: text("current_value"),
+    recommendedValue: text("recommended_value"),
+    
+    // Resolution details
+    resolvedBy: text("resolved_by"), // 'ai_fix', 'manual', 'auto_resolved'
+    resolutionNotes: text("resolution_notes"),
+    
+    // Metadata stored as JSONB for flexibility
+    metadata: jsonb("metadata").default({}),
+    
+    // Audit timestamps
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_seo_issue_tracking_website_user").on(table.websiteId, table.userId),
+    index("idx_seo_issue_tracking_status").on(table.status),
+    index("idx_seo_issue_tracking_issue_type").on(table.issueType),
+    index("idx_seo_issue_tracking_severity").on(table.severity),
+    index("idx_seo_issue_tracking_detected_at").on(table.detectedAt.desc()),
+    index("idx_seo_issue_tracking_last_seen_at").on(table.lastSeenAt.desc()),
+    index("idx_seo_issue_tracking_auto_fix").on(table.autoFixAvailable),
+    index("idx_seo_issue_tracking_website_status_type").on(table.websiteId, table.status, table.issueType),
+  ]
+);
+
+export const appliedFixes = pgTable(
+  "applied_fixes",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Issue identification
+    issueType: text("issue_type").notNull(),
+    issueTitle: text("issue_title").notNull(),
+    issueDescription: text("issue_description"),
+    issueHash: text("issue_hash").notNull(),
+    
+    // Fix details
+    fixType: text("fix_type").notNull(),
+    fixDescription: text("fix_description").notNull(),
+    fixSuccess: boolean("fix_success").notNull(),
+    fixError: text("fix_error"),
+    
+    // Content affected
+    wordpressPostId: integer("wordpress_post_id"),
+    elementPath: text("element_path"),
+    beforeValue: text("before_value"),
+    afterValue: text("after_value"),
+    
+    // Fix context
+    fixBatchId: varchar("fix_batch_id"),
+    aiModel: text("ai_model"),
+    scoreBefore: integer("score_before"),
+    scoreAfter: integer("score_after"),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_applied_fixes_user_website").on(table.userId, table.websiteId),
+    index("idx_applied_fixes_issue_hash").on(table.issueHash),
+    index("idx_applied_fixes_batch").on(table.fixBatchId),
+  ]
+);
+
+// ============================================================================
+// AI & AUTOMATION TABLES
+// ============================================================================
+
+export const aiUsageTracking = pgTable(
+  "ai_usage_tracking",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id),
+    model: text("model").notNull(),
+    tokensUsed: integer("tokens_used").notNull(),
+    costUsd: integer("cost_usd").notNull(), // Store as cents
+    operation: text("operation").notNull(), // content_generation, seo_analysis, etc.
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_ai_usage_user_id").on(table.userId)]
+);
+
+export const autoSchedules = pgTable("auto_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  websiteId: varchar("website_id").notNull().references(() => websites.id, { onDelete: "cascade" }),
+  
+  // Schedule configuration
+  name: text("name").notNull(),
+  frequency: text("frequency").notNull(), // 'daily', 'twice_weekly', 'weekly', 'biweekly', 'monthly', 'custom'
+  timeOfDay: text("time_of_day").notNull(), // Format: 'HH:MM'
+  customDays: text("custom_days").array().default([]),
+  
+  // Content generation settings
+  topics: text("topics").array().default([]),
+  keywords: text("keywords"),
+  tone: text("tone"),
+  wordCount: integer("word_count").default(1000),
+  brandVoice: text("brand_voice"),
+  targetAudience: text("target_audience"),
+  eatCompliance: boolean("eat_compliance").default(false),
+  
+  // AI and image settings
+  aiProvider: text("ai_provider").default("openai"),
+  includeImages: boolean("include_images").default(false),
+  imageCount: integer("image_count").default(1),
+  imageStyle: text("image_style"),
+  seoOptimized: boolean("seo_optimized").default(true),
+  
+  // Publishing settings
+  autoPublish: boolean("auto_publish").default(false),
+  publishDelay: integer("publish_delay").default(0), // Hours to wait before publishing
+  
+  // Topic rotation settings
+  topicRotation: text("topic_rotation").default("sequential"), // 'sequential' or 'random'
+  nextTopicIndex: integer("next_topic_index").default(0),
+  
+  // Cost and limit controls
+  maxDailyCost: numeric("max_daily_cost", { precision: 10, scale: 2 }).default("10.00"),
+  maxMonthlyPosts: integer("max_monthly_posts").default(30),
+  costToday: numeric("cost_today", { precision: 10, scale: 2 }).default("0.00"),
+  postsThisMonth: integer("posts_this_month").default(0),
+  
+  // Tracking
+  lastRun: timestamp("last_run"),
+  isActive: boolean("is_active").default(true),
+  
+  // Timestamps
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+}, (table) => [
+  index("idx_auto_schedules_user_id").on(table.userId),
+  index("idx_auto_schedules_website_id").on(table.websiteId),
+  index("idx_auto_schedules_active").on(table.isActive),
+  index("idx_auto_schedules_last_run").on(table.lastRun),
+]);
+
+// ============================================================================
+// ACTIVITY & LOGGING TABLES
+// ============================================================================
+
+export const activityLogs = pgTable(
+  "activity_logs",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }), // nullable for system logs
+    websiteId: varchar("website_id").references(() => websites.id),
+    type: text("type").notNull(), // content_generated, seo_analysis, issue_detected, etc.
+    description: text("description").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_activity_logs_user_id").on(table.userId)]
+);
+
+export const securityAudits = pgTable(
+  "security_audits",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    websiteId: varchar("website_id").references(() => websites.id),
+    action: text("action").notNull(), // login, content_publish, seo_change, etc.
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    success: boolean("success").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_security_audits_user_id").on(table.userId)]
+);
+
+export const clientReports = pgTable(
+  "client_reports",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id),
+    reportType: text("report_type").notNull(), // weekly, monthly, quarterly
+    period: text("period").notNull(),
+    data: jsonb("data").notNull(),
+    insights: jsonb("insights").notNull().default([]),
+    roiData: jsonb("roi_data").notNull().default({}),
+    whiteLabelConfig: jsonb("white_label_config").default({}),
+    generatedAt: timestamp("generated_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_client_reports_user_id").on(table.userId)]
+);
+
+export const backups = pgTable(
+  "backups",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .notNull()
+      .references(() => websites.id),
+    backupType: text("backup_type").notNull(), // content, settings, full
+    data: jsonb("data").notNull(),
+    wordpressBackupId: text("wordpress_backup_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_backups_user_id").on(table.userId)]
+);
+
+// ============================================================================
+// CLOUDINARY & IMAGE TABLES
+// ============================================================================
+
+export const cloudinaryUsage = pgTable(
+  "cloudinary_usage",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Usage metrics
+    month: timestamp("month").notNull(),
+    imagesUploaded: integer("images_uploaded").default(0),
+    totalBytesStored: integer("total_bytes_stored").default(0),
+    bandwidthUsed: integer("bandwidth_used").default(0),
+    creditsUsed: integer("credits_used").default(0),
+    transformationsCount: integer("transformations_count").default(0),
+    
+    // Cost tracking (in cents)
+    estimatedCostCents: integer("estimated_cost_cents").default(0),
+    
+    // Timestamps
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_cloudinary_usage_user_website").on(table.userId, table.websiteId),
+    index("idx_cloudinary_usage_month").on(table.month),
+  ]
+);
+
+export const failedImageUploads = pgTable(
+  "failed_image_uploads",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    contentId: varchar("content_id")
+      .references(() => content.id, { onDelete: "cascade" }),
+    websiteId: varchar("website_id")
+      .references(() => websites.id, { onDelete: "cascade" }),
+    
+    // Original request data
+    dalleUrl: text("dalle_url"),
+    cloudinaryError: text("cloudinary_error"),
+    filename: varchar("filename", { length: 255 }),
+    altText: text("alt_text"),
+    prompt: text("prompt"),
+    
+    // Error tracking
+    errorMessage: text("error_message"),
+    errorCode: varchar("error_code", { length: 50 }),
+    retryCount: integer("retry_count").default(0),
+    maxRetries: integer("max_retries").default(3),
+    
+    // Status
+    status: text("status").default("pending_retry"), // pending_retry, retrying, resolved, abandoned
+    
+    // Timestamps
+    failedAt: timestamp("failed_at").notNull().defaultNow(),
+    lastRetryAt: timestamp("last_retry_at"),
+    resolvedAt: timestamp("resolved_at"),
+  },
+  (table) => [
+    index("idx_failed_uploads_status").on(table.status),
+    index("idx_failed_uploads_content").on(table.contentId),
+  ]
+);
+
+// ============================================================================
+// GOOGLE SEARCH CONSOLE TABLES
+// ============================================================================
+
+export const gscConfigurations = pgTable(
+  "gsc_configurations",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .unique()
+      .references(() => users.id, { onDelete: "cascade" }),
+    
+    clientId: text("client_id").notNull(),
+    clientSecret: text("client_secret").notNull(), // Plain text as requested
+    redirectUri: text("redirect_uri").notNull(),
+    isConfigured: boolean("is_configured").notNull().default(true),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [index("idx_gsc_config_user_id").on(table.userId)]
+);
+
+
+export const gscAccounts = pgTable(
+  "gsc_accounts",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),  // Auto-generated UUID
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accountId: varchar("account_id").notNull(),  // Google account ID stored here
+    
+    email: text("email").notNull(),
+    name: text("name").notNull(),
+    picture: text("picture"),
+    accessToken: text("access_token").notNull(),
+    refreshToken: text("refresh_token").notNull(),
+    tokenExpiry: integer("token_expiry").notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_gsc_accounts_user_id").on(table.userId),
+    index("idx_gsc_accounts_account_id").on(table.accountId),
+    index("idx_gsc_accounts_email").on(table.email),
+    // Add unique constraint for user_id + account_id combination
+    // This allows multiple users to connect the same Google account
+     uniqueIndex("ux_gsc_accounts_user_id_account_id").on(table.userId, table.accountId),
+  ]
+);
+
+// Update references in other tables to use account_id
+export const gscProperties = pgTable(
+  "gsc_properties",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accountId: varchar("account_id")  // References account_id, not id
+      .notNull(),
+    websiteId: varchar("website_id")
+      .references(() => websites.id, { onDelete: "set null" }),
+    
+    siteUrl: text("site_url").notNull().unique(),
+    permissionLevel: text("permission_level").notNull(),
+    siteType: text("site_type").notNull(),
+    verified: boolean("verified").notNull().default(true),
+    lastSynced: timestamp("last_synced"),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_gsc_properties_user_id").on(table.userId),
+    index("idx_gsc_properties_account_id").on(table.accountId),
+  ]
+);
+
+export const gscIndexingRequests = pgTable(
+  "gsc_indexing_requests",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accountId: varchar("account_id")  // References account_id, not id
+      .notNull(),
+    propertyId: varchar("property_id")
+      .notNull()
+      .references(() => gscProperties.id, { onDelete: "cascade" }),
+    
+    url: text("url").notNull(),
+    type: text("type").notNull(),
+    status: text("status").notNull().default("pending"),
+    message: text("message"),
+    notifyTime: timestamp("notify_time"),
+    
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_gsc_indexing_user_id").on(table.userId),
+    index("idx_gsc_indexing_status").on(table.status),
+  ]
+);
+
+export const gscQuotaUsage = pgTable(
+  "gsc_quota_usage",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    accountId: varchar("account_id"),  // References account_id, not id
+    
+    date: timestamp("date").notNull(),
+    count: integer("count").notNull().default(0),
+    limit: integer("limit").notNull().default(200),
+    
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_gsc_quota_account_date").on(table.accountId, table.date),
+  ]
+);
+
+// ============================================================================
+// INSERT SCHEMAS - CORE USER
+// ============================================================================
+
+export const insertUserSchema = createInsertSchema(users).pick({
+  username: true,
+  password: true,
+});
+
+export const insertUserSettingsSchema = createInsertSchema(userSettings).pick({
+  profileName: true,
+  profileEmail: true,
+  profileCompany: true,
+  profileTimezone: true,
+  notificationEmailReports: true,
+  notificationContentGenerated: true,
+  notificationSeoIssues: true,
+  notificationSystemAlerts: true,
+  automationDefaultAiModel: true,
+  automationAutoFixSeoIssues: true,
+  automationContentGenerationFrequency: true,
+  automationReportGeneration: true,
+  securityTwoFactorAuth: true,
+  securitySessionTimeout: true,
+  securityAllowApiAccess: true,
+});
+
+export const insertUserApiKeySchema = createInsertSchema(userApiKeys).pick({
+  provider: true,
+  keyName: true,
+  encryptedApiKey: true,
+  maskedKey: true,
+  isActive: true,
+  validationStatus: true,
+  lastValidated: true,
+  validationError: true,
+  usageCount: true,
+  lastUsed: true,
+});
+
+// ============================================================================
+// INSERT SCHEMAS - WEBSITES
+// ============================================================================
+
+export const insertWebsiteSchema = createInsertSchema(websites).pick({
+  name: true,
+  url: true,
+  wpApplicationName: true,
+  wpApplicationPassword: true,
+  wpUsername: true,
+  aiModel: true,
+  autoPosting: true,
+  requireApproval: true,
+  brandVoice: true,
+  contentGuidelines: true,
+  targetAudience: true,
+  // userId will be added automatically in the backend
+});
+
+// ============================================================================
+// INSERT SCHEMAS - CONTENT
+// ============================================================================
+
+export const insertContentSchema = createInsertSchema(content).pick({
+  websiteId: true,
+  title: true,
+  body: true,
+  excerpt: true,
+  metaDescription: true,
+  metaTitle: true,
+  aiModel: true,
+  seoKeywords: true,
+  publishDate: true,
+  seoScore: true,
+  readabilityScore: true,
+  brandVoiceScore: true,
+  tokensUsed: true,
+  costUsd: true,
+  eatCompliance: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertContentImageSchema = createInsertSchema(contentImages).pick({
+  contentId: true,
+  websiteId: true,
+  originalUrl: true,
+  filename: true,
+  altText: true,
+  generationPrompt: true,
+  costCents: true,
+  imageStyle: true,
+  size: true,
+  
+  // Cloudinary fields
+  cloudinaryUrl: true,
+  cloudinarySecureUrl: true,
+  cloudinaryPublicId: true,
+  cloudinaryFormat: true,
+  cloudinaryWidth: true,
+  cloudinaryHeight: true,
+  cloudinaryBytes: true,
+  cloudinaryVersion: true,
+  cloudinaryThumbnailUrl: true,
+  cloudinaryOptimizedUrl: true,
+  cloudinaryUploadedAt: true,
+  imageOrder: true,
+  isFeatured: true,
+  
+  // WordPress fields
+  wordpressMediaId: true,
+  wordpressUrl: true,
+  status: true,
+  uploadError: true,
+});
+
+export const insertContentApprovalSchema = createInsertSchema(contentApprovals).pick({
+  contentId: true,
+  reviewerId: true,
+  status: true,
+  feedback: true,
+  qualityScore: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertContentScheduleSchema = createInsertSchema(contentSchedule).pick({
+  websiteId: true,
+  scheduledDate: true,
+  topic: true,
+  keywords: true,
+  abTestVariant: true,
+  // userId will be added automatically in the backend
+});
+
+// ============================================================================
+// INSERT SCHEMAS - SEO
+// ============================================================================
+
+export const insertSeoReportSchema = createInsertSchema(seoReports).pick({
+  websiteId: true,
+  score: true,
+  issues: true,
+  recommendations: true,
+  pageSpeedScore: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertSeoAuditSchema = createInsertSchema(seoAudits).pick({
+  websiteId: true,
+  url: true,
+  auditType: true,
+  findings: true,
+  autoFixApplied: true,
+  autoFixResults: true,
+  coreWebVitals: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertSeoIssueStatusSchema = createInsertSchema(seoIssueStatuses).pick({
+  websiteId: true,
+  issueHash: true,
+  issueType: true,
+  issueTitle: true,
+  issueDescription: true,
+  issueSeverity: true,
+  status: true,
+  statusReason: true,
+  fixAttempts: true,
+  lastFixAttempt: true,
+  lastFixError: true,
+  resolvedAt: true,
+  resolvedBy: true,
+  resolutionNotes: true,
+  firstDetected: true,
+  lastDetected: true,
+  detectionCount: true,
+  wordpressPostId: true,
+  elementPath: true,
+  currentValue: true,
+  recommendedValue: true,
+});
+
+export const insertSeoIssueTrackingSchema = createInsertSchema(seoIssueTracking).pick({
+  websiteId: true,
+  issueType: true,
+  issueTitle: true,
+  issueDescription: true,
+  severity: true,
+  status: true,
+  autoFixAvailable: true,
+  detectedAt: true,
+  fixedAt: true,
+  resolvedAt: true,
+  lastSeenAt: true,
+  fixMethod: true,
+  fixSessionId: true,
+  fixBefore: true,
+  fixAfter: true,
+  aiModel: true,
+  tokensUsed: true,
+  elementPath: true,
+  currentValue: true,
+  recommendedValue: true,
+  resolvedBy: true,
+  resolutionNotes: true,
+  metadata: true,
+});
+
+// ============================================================================
+// INSERT SCHEMAS - AI & AUTOMATION
+// ============================================================================
+
+export const insertAiUsageTrackingSchema = createInsertSchema(aiUsageTracking).pick({
+  websiteId: true,
+  model: true,
+  tokensUsed: true,
+  costUsd: true,
+  operation: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertAutoScheduleSchema = createInsertSchema(autoSchedules).pick({
+  websiteId: true,
+  name: true,
+  frequency: true,
+  timeOfDay: true,
+  customDays: true,
+  topics: true,
+  keywords: true,
+  tone: true,
+  wordCount: true,
+  brandVoice: true,
+  targetAudience: true,
+  eatCompliance: true,
+  aiProvider: true,
+  includeImages: true,
+  imageCount: true,
+  imageStyle: true,
+  seoOptimized: true,
+  autoPublish: true,
+  publishDelay: true,
+  topicRotation: true,
+  maxDailyCost: true,
+  maxMonthlyPosts: true,
+  // userId will be added automatically in the backend
+});
+
+// ============================================================================
+// INSERT SCHEMAS - ACTIVITY & LOGGING
+// ============================================================================
+
+export const insertActivityLogSchema = createInsertSchema(activityLogs).pick({
+  websiteId: true,
+  type: true,
+  description: true,
+  metadata: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertSecurityAuditSchema = createInsertSchema(securityAudits).pick({
+  websiteId: true,
+  action: true,
+  ipAddress: true,
+  userAgent: true,
+  success: true,
+  metadata: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertClientReportSchema = createInsertSchema(clientReports).pick({
+  websiteId: true,
+  reportType: true,
+  period: true,
+  data: true,
+  insights: true,
+  roiData: true,
+  whiteLabelConfig: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertBackupSchema = createInsertSchema(backups).pick({
+  websiteId: true,
+  backupType: true,
+  data: true,
+  wordpressBackupId: true,
+  // userId will be added automatically in the backend
+});
+
+// ============================================================================
+// INSERT SCHEMAS - CLOUDINARY & IMAGES
+// ============================================================================
+
+export const insertCloudinaryUsageSchema = createInsertSchema(cloudinaryUsage).pick({
+  websiteId: true,
+  month: true,
+  imagesUploaded: true,
+  totalBytesStored: true,
+  bandwidthUsed: true,
+  creditsUsed: true,
+  transformationsCount: true,
+  estimatedCostCents: true,
+  // userId will be added automatically in the backend
+});
+
+export const insertFailedImageUploadSchema = createInsertSchema(failedImageUploads).pick({
+  contentId: true,
+  websiteId: true,
+  dalleUrl: true,
+  cloudinaryError: true,
+  filename: true,
+  altText: true,
+  prompt: true,
+  errorMessage: true,
+  errorCode: true,
+  retryCount: true,
+  maxRetries: true,
+  status: true,
+  // userId will be added automatically in the backend
+});
+
+// ============================================================================
+// INSERT SCHEMAS - GOOGLE SEARCH CONSOLE
+// ============================================================================
+
+export const insertGscConfigurationSchema = createInsertSchema(gscConfigurations).pick({
+  clientId: true,
+  clientSecret: true,
+  redirectUri: true,
+});
+
+export const insertGscAccountSchema = createInsertSchema(gscAccounts).pick({
+  id: true,
+  email: true,
+  name: true,
+  picture: true,
+  accessToken: true,
+  refreshToken: true,
+  tokenExpiry: true,
+});
+
+// ============================================================================
+// TYPE EXPORTS - CORE USER
+// ============================================================================
+
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
+export type UpsertUser = typeof users.$inferInsert;
+
+export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;
+export type UserSettings = typeof userSettings.$inferSelect;
+
+export type InsertUserApiKey = z.infer<typeof insertUserApiKeySchema>;
+export type UserApiKey = typeof userApiKeys.$inferSelect;
+
+// ============================================================================
+// TYPE EXPORTS - WEBSITES
+// ============================================================================
+
+export type InsertWebsite = z.infer<typeof insertWebsiteSchema>;
+export type Website = typeof websites.$inferSelect;
+
+// ============================================================================
+// TYPE EXPORTS - CONTENT
+// ============================================================================
+
+export type InsertContent = z.infer<typeof insertContentSchema>;
+export type Content = typeof content.$inferSelect;
+
+export type InsertContentImage = z.infer<typeof insertContentImageSchema>;
+export type ContentImage = typeof contentImages.$inferSelect;
+
+export type InsertContentApproval = z.infer<typeof insertContentApprovalSchema>;
+export type ContentApproval = typeof contentApprovals.$inferSelect;
+
+export type InsertContentSchedule = z.infer<typeof insertContentScheduleSchema>;
+export type ContentSchedule = typeof contentSchedule.$inferSelect;
+
+// ============================================================================
+// TYPE EXPORTS - SEO
+// ============================================================================
+
+export type InsertSeoReport = z.infer<typeof insertSeoReportSchema>;
+export type SeoReport = typeof seoReports.$inferSelect;
+
+export type InsertSeoAudit = z.infer<typeof insertSeoAuditSchema>;
+export type SeoAudit = typeof seoAudits.$inferSelect;
+
+export type InsertSeoIssueStatus = z.infer<typeof insertSeoIssueStatusSchema>;
+export type SeoIssueStatus = typeof seoIssueStatuses.$inferSelect;
+
+export type InsertSeoIssueTracking = z.infer<typeof insertSeoIssueTrackingSchema>;
+export type SeoIssueTracking = typeof seoIssueTracking.$inferSelect;
+
+// ============================================================================
+// TYPE EXPORTS - AI & AUTOMATION
+// ============================================================================
+
+export type InsertAiUsageTracking = z.infer<typeof insertAiUsageTrackingSchema>;
+export type AiUsageTracking = typeof aiUsageTracking.$inferSelect;
+
+export type InsertAutoSchedule = z.infer<typeof insertAutoScheduleSchema>;
+export type AutoSchedule = typeof autoSchedules.$inferSelect;
+
+// ============================================================================
+// TYPE EXPORTS - ACTIVITY & LOGGING
+// ============================================================================
+
+export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type ActivityLog = typeof activityLogs.$inferSelect;
+
+export type InsertSecurityAudit = z.infer<typeof insertSecurityAuditSchema>;
+export type SecurityAudit = typeof securityAudits.$inferSelect;
+
+export type InsertClientReport = z.infer<typeof insertClientReportSchema>;
+export type ClientReport = typeof clientReports.$inferSelect;
+
+export type InsertBackup = z.infer<typeof insertBackupSchema>;
+export type Backup = typeof backups.$inferSelect;
+
+// ============================================================================
+// TYPE EXPORTS - CLOUDINARY & IMAGES
+// ============================================================================
+
+export type InsertCloudinaryUsage = z.infer<typeof insertCloudinaryUsageSchema>;
+export type CloudinaryUsage = typeof cloudinaryUsage.$inferSelect;
+
+export type InsertFailedImageUpload = z.infer<typeof insertFailedImageUploadSchema>;
+export type FailedImageUpload = typeof failedImageUploads.$inferSelect;
+
+// ============================================================================
+// TYPE EXPORTS - GOOGLE SEARCH CONSOLE
+// ============================================================================
+
+export type GscConfiguration = typeof gscConfigurations.$inferSelect;
+export type InsertGscConfiguration = z.infer<typeof insertGscConfigurationSchema>;
+export type GscAccount = typeof gscAccounts.$inferSelect;
+export type InsertGscAccount = z.infer<typeof insertGscAccountSchema>;
+
+
+
+
+
+OLD routes.ts
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import type { Express, Request, Response, NextFunction } from "express";
+// import { createServer, type Server } from "http";
+// import { storage } from "./storage";
+// import { aiService } from "./services/ai-service";
+// import { seoService } from "./services/seo-service";
+// import { approvalWorkflowService } from "./services/approval-workflow";
+// import { insertWebsiteSchema, insertContentSchema, passwordResetTokens } from "@shared/schema";
+// import { eq, desc, and, gt } from "drizzle-orm";
+// import { AuthService } from "./services/auth-service";
+// import { wordpressService } from "./services/wordpress-service";
+// import { wordPressAuthService } from './services/wordpress-auth';
+// import { aiFixService } from "./services/ai-fix-service";
+// import { apiValidationService } from "./services/api-validation";
+// import { imageProcessor } from './services/image-processor';
+// import { batchProcessMetadata, getImageStatus } from './api/images/batch-process';
+// import { imageService } from "./services/image-service";
+// import sharp from 'sharp';
+// import FormData, { from } from 'form-data';
+// import { google } from 'googleapis';
+// import { OAuth2Client } from 'google-auth-library';
+// import { JSDOM } from 'jsdom';
+// import crypto from 'crypto';
+// import { ExifHandler, processImageWithSharpEnhanced } from './utils/exif-handler';
+// import { gscStorage } from "./services/gsc-storage";
+// import  gscRouter  from './routes/gsc.routes';
+// import multer from 'multer';
+// import { cloudinaryStorage } from "./services/cloudinary-storage";
+// import {db} from './db'
+// import { emailService } from './services/email-service';
+
+
+// // Configure multer
+// const upload = multer({ 
+//   storage: multer.memoryStorage(),
+//   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+//   fileFilter: (req, file, cb) => {
+//     if (file.mimetype.startsWith('image/')) {
+//       cb(null, true);
+//     } else {
+//       cb(new Error('Only images allowed'));
 //     }
-//   };
-
-//   return (
-//     <div className="min-h-screen bg-gray-50">
-//       {/* Configuration Modal */}
-//       <ConfigurationModal
-//         isOpen={configModalOpen}
-//         onClose={() => setConfigModalOpen(false)}
-//         onSave={(config) => {
-//           setConfiguration(config);
-//           showNotification('success', 'Configuration saved successfully');
-//         }}
-//         initialConfig={configuration}
-//       />
-
-//       {/* Header */}
-//       <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
-//         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-//           <div className="flex items-center justify-between h-16">
-//             <div className="flex items-center">
-//               <Globe className="w-8 h-8 text-blue-600 mr-3" />
-//               <h1 className="text-xl font-semibold text-gray-900">
-//                 Search Console Manager
-//               </h1>
-//             </div>
-            
-//             <div className="flex items-center space-x-3">
-//               {/* Configuration Status */}
-//               <button
-//                 onClick={() => setConfigModalOpen(true)}
-//                 className={`px-3 py-1.5 rounded-lg flex items-center space-x-2 text-sm transition-colors ${
-//                   configuration?.isConfigured
-//                     ? 'bg-green-100 text-green-700 hover:bg-green-200'
-//                     : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
-//                 }`}
-//               >
-//                 <Settings className="w-4 h-4" />
-//                 <span className="hidden sm:inline">
-//                   {configuration?.isConfigured ? 'Configured' : 'Setup'}
-//                 </span>
-//               </button>
-
-//               {/* Quota Display */}
-//               {selectedAccount && (
-//                 <div className="flex items-center space-x-2 px-3 py-1.5 bg-gray-100 rounded-lg">
-//                   <Activity className="w-4 h-4 text-gray-500" />
-//                   <span className="text-sm text-gray-700">
-//                     {quotaUsage.used}/{quotaUsage.limit}
-//                   </span>
-//                 </div>
-//               )}
-              
-//               {/* Account Selector */}
-//               {configuration?.isConfigured && (
-//                 <div className="relative">
-//                   <button
-//                     className="flex items-center space-x-2 px-3 py-1.5 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-//                     onClick={() => setAccountDropdownOpen(!accountDropdownOpen)}
-//                   >
-//                     <User className="w-4 h-4" />
-//                     <span className="text-sm hidden sm:inline">
-//                       {selectedAccount?.email || 'Select Account'}
-//                     </span>
-//                     <ChevronDown className="w-4 h-4" />
-//                   </button>
-                  
-//                   {accountDropdownOpen && (
-//                     <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200">
-//                       {accounts.map(account => (
-//                         <div
-//                           key={account.id}
-//                           className="flex items-center justify-between px-4 py-3 hover:bg-gray-50"
-//                         >
-//                           <button
-//                             className="flex-1 flex items-center space-x-3 text-left"
-//                             onClick={() => {
-//                               setSelectedAccount(account);
-//                               setAccountDropdownOpen(false);
-//                             }}
-//                           >
-//                             {account.picture ? (
-//                               <img src={account.picture} alt={account.name} className="w-8 h-8 rounded-full" />
-//                             ) : (
-//                               <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm">
-//                                 {account.name?.[0] || account.email[0].toUpperCase()}
-//                               </div>
-//                             )}
-//                             <div>
-//                               <p className="text-sm font-medium">{account.name}</p>
-//                               <p className="text-xs text-gray-500">{account.email}</p>
-//                             </div>
-//                           </button>
-//                           <div className="flex items-center space-x-1">
-//                             {selectedAccount?.id === account.id && (
-//                               <CheckCircle className="w-4 h-4 text-green-500" />
-//                             )}
-//                             <button
-//                               onClick={(e) => {
-//                                 e.stopPropagation();
-//                                 if (confirm(`Remove account ${account.email}?`)) {
-//                                   handleRemoveAccount(account.id);
-//                                 }
-//                               }}
-//                               className="p-1 hover:bg-red-50 rounded"
-//                               title="Remove account"
-//                             >
-//                               <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-500" />
-//                             </button>
-//                           </div>
-//                         </div>
-//                       ))}
-                      
-//                       {accounts.length === 0 && (
-//                         <div className="px-4 py-6 text-center text-sm text-gray-500">
-//                           No accounts connected
-//                         </div>
-//                       )}
-                      
-//                       <div className="border-t border-gray-200">
-//                         <button
-//                           onClick={(e) => {
-//                             e.stopPropagation();
-//                             handleAddAccount();
-//                             setAccountDropdownOpen(false);
-//                           }}
-//                           disabled={isAuthenticating}
-//                           className="w-full px-4 py-3 text-blue-600 hover:bg-blue-50 flex items-center space-x-2 text-sm"
-//                         >
-//                           {isAuthenticating ? (
-//                             <Loader2 className="w-4 h-4 animate-spin" />
-//                           ) : (
-//                             <Plus className="w-4 h-4" />
-//                           )}
-//                           <span>Add Account</span>
-//                         </button>
-//                       </div>
-//                     </div>
-//                   )}
-//                 </div>
-//               )}
-//             </div>
-//           </div>
-//         </div>
-//       </div>
-
-//       {/* Property Selector */}
-//       {selectedAccount && properties.length > 0 && (
-//         <div className="bg-white border-b border-gray-200">
-//           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-//             <div className="flex items-center space-x-4 py-3 overflow-x-auto">
-//               {properties.map(property => (
-//                 <button
-//                   key={property.siteUrl}
-//                   onClick={() => setSelectedProperty(property)}
-//                   className={`px-4 py-2 rounded-lg text-sm whitespace-nowrap transition-colors ${
-//                     selectedProperty?.siteUrl === property.siteUrl
-//                       ? 'bg-blue-100 text-blue-700 font-medium'
-//                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-//                   }`}
-//                 >
-//                   <Globe className="w-4 h-4 inline mr-2" />
-//                   {property.siteUrl}
-//                 </button>
-//               ))}
-//             </div>
-//           </div>
-//         </div>
-//       )}
-
-//       {/* Notification */}
-//       {notification && (
-//         <div className="fixed top-20 right-4 z-50 animate-in slide-in-from-top duration-300">
-//           <div className={`flex items-center space-x-2 px-4 py-3 rounded-lg shadow-lg ${
-//             notification.type === 'success' ? 'bg-green-500 text-white' :
-//             notification.type === 'error' ? 'bg-red-500 text-white' :
-//             notification.type === 'warning' ? 'bg-yellow-500 text-white' :
-//             'bg-blue-500 text-white'
-//           }`}>
-//             {notification.type === 'success' && <CheckCircle className="w-5 h-5" />}
-//             {notification.type === 'error' && <AlertCircle className="w-5 h-5" />}
-//             {notification.type === 'warning' && <AlertTriangle className="w-5 h-5" />}
-//             {notification.type === 'info' && <Info className="w-5 h-5" />}
-//             <span>{notification.message}</span>
-//             <button onClick={() => setNotification(null)} className="ml-2">
-//               <X className="w-4 h-4" />
-//             </button>
-//           </div>
-//         </div>
-//       )}
-
-//       {/* Main Content */}
-//       {selectedAccount && selectedProperty ? (
-//         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-//           {/* Tabs */}
-//           <div className="bg-white rounded-lg shadow mb-6">
-//             <div className="border-b border-gray-200">
-//               <nav className="flex -mb-px">
-//                 <button
-//                   onClick={() => setActiveTab('index')}
-//                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-//                     activeTab === 'index'
-//                       ? 'border-blue-500 text-blue-600'
-//                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-//                   }`}
-//                 >
-//                   <Send className="w-4 h-4 inline mr-2" />
-//                   URL Indexing
-//                 </button>
-//                 <button
-//                   onClick={() => setActiveTab('inspect')}
-//                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-//                     activeTab === 'inspect'
-//                       ? 'border-blue-500 text-blue-600'
-//                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-//                   }`}
-//                 >
-//                   <Search className="w-4 h-4 inline mr-2" />
-//                   URL Inspection
-//                 </button>
-//                 <button
-//                   onClick={() => setActiveTab('sitemap')}
-//                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-//                     activeTab === 'sitemap'
-//                       ? 'border-blue-500 text-blue-600'
-//                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-//                   }`}
-//                 >
-//                   <Map className="w-4 h-4 inline mr-2" />
-//                   Sitemaps
-//                 </button>
-//                 <button
-//                   onClick={() => setActiveTab('performance')}
-//                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-//                     activeTab === 'performance'
-//                       ? 'border-blue-500 text-blue-600'
-//                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-//                   }`}
-//                 >
-//                   <BarChart className="w-4 h-4 inline mr-2" />
-//                   Performance
-//                 </button>
-//               </nav>
-//             </div>
-
-//             <div className="p-6">
-//               {/* URL Indexing Tab */}
-//               {activeTab === 'index' && (
-//                 <div className="space-y-6">
-//                   {/* Single URL */}
-//                   <div>
-//                     <h3 className="text-lg font-medium text-gray-900 mb-4">Request Indexing</h3>
-//                     <div className="bg-gray-50 rounded-lg p-4">
-//                       <label className="block text-sm font-medium text-gray-700 mb-2">
-//                         Single URL
-//                       </label>
-//                       <div className="flex space-x-2">
-//                         <input
-//                           type="url"
-//                           value={urlToIndex}
-//                           onChange={(e) => setUrlToIndex(e.target.value)}
-//                           placeholder="https://example.com/page"
-//                           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-//                         />
-//                         <select
-//                           value={indexType}
-//                           onChange={(e) => setIndexType(e.target.value as 'URL_UPDATED' | 'URL_DELETED')}
-//                           className="px-3 py-2 border border-gray-300 rounded-lg"
-//                         >
-//                           <option value="URL_UPDATED">Update</option>
-//                           <option value="URL_DELETED">Delete</option>
-//                         </select>
-//                         <button
-//                           onClick={handleIndexUrl}
-//                           disabled={loading || !urlToIndex}
-//                           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-//                         >
-//                           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit'}
-//                         </button>
-//                       </div>
-//                     </div>
-//                   </div>
-
-//                   {/* Bulk URLs */}
-//                   <div>
-//                     <label className="block text-sm font-medium text-gray-700 mb-2">
-//                       Bulk URLs (one per line)
-//                     </label>
-//                     <div className="bg-gray-50 rounded-lg p-4">
-//                       <textarea
-//                         value={bulkUrls}
-//                         onChange={(e) => setBulkUrls(e.target.value)}
-//                         placeholder="https://example.com/page1&#10;https://example.com/page2&#10;https://example.com/page3"
-//                         rows={5}
-//                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-//                       />
-//                       <button
-//                         onClick={handleBulkIndex}
-//                         disabled={loading || !bulkUrls}
-//                         className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-//                       >
-//                         Submit All
-//                       </button>
-//                     </div>
-//                   </div>
-
-//                   {/* Queue */}
-//                   {indexingQueue.length > 0 && (
-//                     <div>
-//                       <h3 className="text-lg font-medium text-gray-900 mb-4">Indexing Queue</h3>
-//                       <div className="space-y-2">
-//                         {indexingQueue.slice(-5).reverse().map((item, index) => (
-//                           <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-//                             <span className="text-sm text-gray-700 truncate flex-1">{item.url}</span>
-//                             <div className="flex items-center space-x-2">
-//                               {item.status === 'pending' && <Loader2 className="w-4 h-4 animate-spin text-gray-500" />}
-//                               {item.status === 'success' && <CheckCircle className="w-4 h-4 text-green-500" />}
-//                               {item.status === 'error' && <AlertCircle className="w-4 h-4 text-red-500" />}
-//                               <span className={`text-xs ${
-//                                 item.status === 'success' ? 'text-green-600' :
-//                                 item.status === 'error' ? 'text-red-600' :
-//                                 'text-gray-500'
-//                               }`}>
-//                                 {item.status === 'pending' ? 'Processing...' :
-//                                  item.status === 'success' ? 'Indexed' :
-//                                  'Failed'}
-//                               </span>
-//                             </div>
-//                           </div>
-//                         ))}
-//                       </div>
-//                     </div>
-//                   )}
-//                 </div>
-//               )}
-
-//               {/* URL Inspection Tab */}
-//               {activeTab === 'inspect' && (
-//                 <div className="space-y-6">
-//                   <div>
-//                     <h3 className="text-lg font-medium text-gray-900 mb-4">Inspect URL</h3>
-//                     <div className="bg-gray-50 rounded-lg p-4">
-//                       <div className="flex space-x-2">
-//                         <input
-//                           type="url"
-//                           value={urlToInspect}
-//                           onChange={(e) => setUrlToInspect(e.target.value)}
-//                           placeholder="https://example.com/page-to-inspect"
-//                           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-//                         />
-//                         <button
-//                           onClick={handleInspectUrl}
-//                           disabled={loading || !urlToInspect}
-//                           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-//                         >
-//                           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Inspect'}
-//                         </button>
-//                       </div>
-//                     </div>
-//                   </div>
-
-//                   {inspectionResult && (
-//                     <div className="bg-white border border-gray-200 rounded-lg p-6">
-//                       <h4 className="text-lg font-medium text-gray-900 mb-4">Inspection Results</h4>
-//                       <div className="space-y-4">
-//                         <div className="grid grid-cols-2 gap-4">
-//                           <div>
-//                             <p className="text-sm text-gray-500">Index Status</p>
-//                             <p className="font-medium">{inspectionResult.inspectionResult?.indexStatusResult?.coverageState}</p>
-//                           </div>
-//                           <div>
-//                             <p className="text-sm text-gray-500">Last Crawl</p>
-//                             <p className="font-medium">
-//                               {inspectionResult.inspectionResult?.indexStatusResult?.lastCrawlTime 
-//                                 ? new Date(inspectionResult.inspectionResult.indexStatusResult.lastCrawlTime).toLocaleDateString()
-//                                 : 'N/A'}
-//                             </p>
-//                           </div>
-//                           <div>
-//                             <p className="text-sm text-gray-500">Mobile Usability</p>
-//                             <p className="font-medium">{inspectionResult.inspectionResult?.mobileUsabilityResult?.verdict}</p>
-//                           </div>
-//                           <div>
-//                             <p className="text-sm text-gray-500">Rich Results</p>
-//                             <p className="font-medium">
-//                               {inspectionResult.inspectionResult?.richResultsResult?.detectedItems?.length || 0} detected
-//                             </p>
-//                           </div>
-//                         </div>
-//                       </div>
-//                     </div>
-//                   )}
-//                 </div>
-//               )}
-
-//               {/* Sitemaps Tab */}
-//               {activeTab === 'sitemap' && (
-//                 <div className="space-y-6">
-//                   <div>
-//                     <h3 className="text-lg font-medium text-gray-900 mb-4">Submit Sitemap</h3>
-//                     <div className="bg-gray-50 rounded-lg p-4">
-//                       <div className="flex space-x-2">
-//                         <input
-//                           type="url"
-//                           value={sitemapUrl}
-//                           onChange={(e) => setSitemapUrl(e.target.value)}
-//                           placeholder="https://example.com/sitemap.xml"
-//                           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-//                         />
-//                         <button
-//                           onClick={handleSubmitSitemap}
-//                           disabled={loading || !sitemapUrl}
-//                           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-//                         >
-//                           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit'}
-//                         </button>
-//                       </div>
-//                     </div>
-//                   </div>
-
-//                   {sitemapList.length > 0 && (
-//                     <div>
-//                       <h3 className="text-lg font-medium text-gray-900 mb-4">Submitted Sitemaps</h3>
-//                       <div className="space-y-2">
-//                         {sitemapList.map((sitemap, index) => (
-//                           <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-//                             <div>
-//                               <p className="font-medium text-gray-900">{sitemap.path}</p>
-//                               <p className="text-sm text-gray-500">
-//                                 {sitemap.contents?.[0]?.indexed || 0} / {sitemap.contents?.[0]?.submitted || 0} indexed
-//                               </p>
-//                             </div>
-//                             <CheckCircle className="w-5 h-5 text-green-500" />
-//                           </div>
-//                         ))}
-//                       </div>
-//                     </div>
-//                   )}
-//                 </div>
-//               )}
-
-//               {/* Performance Tab */}
-//               {activeTab === 'performance' && (
-//                 <div className="space-y-6">
-//                   <div className="flex items-center justify-between">
-//                     <h3 className="text-lg font-medium text-gray-900">Performance Metrics</h3>
-//                     <select
-//                       value={performanceDays}
-//                       onChange={(e) => setPerformanceDays(Number(e.target.value))}
-//                       className="px-3 py-2 border border-gray-300 rounded-lg"
-//                     >
-//                       <option value={7}>Last 7 days</option>
-//                       <option value={28}>Last 28 days</option>
-//                       <option value={90}>Last 90 days</option>
-//                     </select>
-//                   </div>
-
-//                   {performanceData.length > 0 && (
-//                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-//                       <div className="bg-blue-50 rounded-lg p-4">
-//                         <p className="text-sm text-blue-600 font-medium">Total Clicks</p>
-//                         <p className="text-2xl font-bold text-blue-900">
-//                           {performanceData.reduce((sum, d) => sum + d.clicks, 0).toLocaleString()}
-//                         </p>
-//                       </div>
-//                       <div className="bg-green-50 rounded-lg p-4">
-//                         <p className="text-sm text-green-600 font-medium">Total Impressions</p>
-//                         <p className="text-2xl font-bold text-green-900">
-//                           {performanceData.reduce((sum, d) => sum + d.impressions, 0).toLocaleString()}
-//                         </p>
-//                       </div>
-//                       <div className="bg-purple-50 rounded-lg p-4">
-//                         <p className="text-sm text-purple-600 font-medium">Average CTR</p>
-//                         <p className="text-2xl font-bold text-purple-900">
-//                           {(performanceData.reduce((sum, d) => sum + d.ctr, 0) / performanceData.length * 100).toFixed(2)}%
-//                         </p>
-//                       </div>
-//                       <div className="bg-orange-50 rounded-lg p-4">
-//                         <p className="text-sm text-orange-600 font-medium">Average Position</p>
-//                         <p className="text-2xl font-bold text-orange-900">
-//                           {(performanceData.reduce((sum, d) => sum + d.position, 0) / performanceData.length).toFixed(1)}
-//                         </p>
-//                       </div>
-//                     </div>
-//                   )}
-
-//                   <div className="bg-white border border-gray-200 rounded-lg p-4">
-//                     <div className="h-64 flex items-center justify-center text-gray-400">
-//                       <BarChart className="w-8 h-8 mr-2" />
-//                       <span>Performance chart visualization would appear here</span>
-//                     </div>
-//                   </div>
-//                 </div>
-//               )}
-//             </div>
-//           </div>
-//         </div>
-//       ) : (
-//         /* Empty State */
-//         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-//           <div className="text-center">
-//             <Globe className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-//             <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-//               {!configuration?.isConfigured 
-//                 ? 'Configure OAuth to Get Started'
-//                 : 'Connect Your Google Account'}
-//             </h2>
-//             <p className="text-gray-600 mb-8 max-w-md mx-auto">
-//               {!configuration?.isConfigured 
-//                 ? 'Set up your Google OAuth credentials to start managing your search presence.'
-//                 : 'Connect your Google account to access Search Console features.'}
-//             </p>
-//             <button
-//               onClick={!configuration?.isConfigured ? () => setConfigModalOpen(true) : handleAddAccount}
-//               disabled={isAuthenticating}
-//               className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center space-x-2 disabled:opacity-50"
-//             >
-//               {!configuration?.isConfigured ? (
-//                 <>
-//                   <Settings className="w-5 h-5" />
-//                   <span>Configure OAuth</span>
-//                 </>
-//               ) : isAuthenticating ? (
-//                 <>
-//                   <Loader2 className="w-5 h-5 animate-spin" />
-//                   <span>Connecting...</span>
-//                 </>
-//               ) : (
-//                 <>
-//                   <Plus className="w-5 h-5" />
-//                   <span>Add Google Account</span>
-//                 </>
-//               )}
-//             </button>
-//           </div>
-//         </div>
-//       )}
-//     </div>
-//   );
-// }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// const pool = new Pool({
-//   connectionString: process.env.DATABASE_URL,
-//   ssl: { rejectUnauthorized: false }
+//   }
 // });
 
-// // GSC Scopes - Define only once at the top
-// const GSC_SCOPES = [
-//   'https://www.googleapis.com/auth/webmasters',
-//   'https://www.googleapis.com/auth/indexing',
-//   'https://www.googleapis.com/auth/siteverification',
-//   'https://www.googleapis.com/auth/userinfo.email',
-//   'https://www.googleapis.com/auth/userinfo.profile'
-// ];
+// function escapeRegExp(string: string): string {
+//   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// }
 
-// // Store user GSC tokens (temporary in-memory cache)
-// const gscUserTokens = new Map<string, any>();
+// const authService = new AuthService();
 
-// // Storage functions for GSC configurations
-// const gscConfigStorage = {
-//   async saveConfiguration(userId: string, config: {
-//     clientId: string;
-//     clientSecret: string;
-//     redirectUri: string;
-//   }) {
-//     const query = `
-//       INSERT INTO gsc_configurations (user_id, client_id, client_secret, redirect_uri)
-//       VALUES ($1, $2, $3, $4)
-//       ON CONFLICT (user_id) DO UPDATE SET
-//         client_id = EXCLUDED.client_id,
-//         client_secret = EXCLUDED.client_secret,
-//         redirect_uri = EXCLUDED.redirect_uri,
-//         updated_at = NOW()
-//       RETURNING id, client_id, redirect_uri, is_configured, created_at
-//     `;
+// // =============================================================================
+// // TYPE DECLARATIONS & SESSION EXTENSIONS
+// // =============================================================================
+
+// declare global {
+//   namespace Express {
+//     interface Request {
+//       session?: {
+//         userId?: string;
+//         save: (callback: (err?: any) => void) => void;
+//         destroy: (callback: (err?: any) => void) => void;
+//       };
+//       user?: {
+//         id: string;
+//         username: string;
+//         email: string;
+//         name: string;
+//       };
+//     }
+//   }
+// }
+
+// // =============================================================================
+// // AUTHENTICATION MIDDLEWARE
+// // =============================================================================
+
+// const requireAuth = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+//   try {
+//     const sessionId = req.session?.userId;
+//     if (!sessionId) {
+//       console.log('⌠No session in requireAuth middleware');
+//       res.status(401).json({ message: "Authentication required" });
+//       return;
+//     }
+
+//     const user = await storage.getUser(sessionId);
+//     if (!user) {
+//       console.log('⌠User not found in requireAuth middleware');
+//       req.session?.destroy(() => {});
+//       res.status(401).json({ message: "Invalid session" });
+//       return;
+//     }
+
+//     req.user = user;
+//     next();
+//   } catch (error) {
+//     console.error("Auth middleware error:", error);
+//     res.status(500).json({ message: "Authentication error" });
+//   }
+// };
+
+// // =============================================================================
+// // HELPER FUNCTIONS
+// // =============================================================================
+
+// // Generate period string for reports
+// const generatePeriodString = (reportType: "weekly" | "monthly" | "quarterly", date?: Date): string => {
+//   const targetDate = date || new Date();
+  
+//   switch (reportType) {
+//     case "weekly": {
+//       const startOfYear = new Date(targetDate.getFullYear(), 0, 1);
+//       const days = Math.floor((targetDate.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+//       const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+//       return `Week ${weekNumber}, ${targetDate.getFullYear()}`;
+//     }
     
-//     const result = await pool.query(query, [
-//       userId,
-//       config.clientId,
-//       config.clientSecret,  // Plain text
-//       config.redirectUri
+//     case "monthly": {
+//       const monthName = targetDate.toLocaleDateString("en-US", { month: "long" });
+//       return `${monthName} ${targetDate.getFullYear()}`;
+//     }
+    
+//     case "quarterly": {
+//       const quarter = Math.floor(targetDate.getMonth() / 3) + 1;
+//       return `Q${quarter} ${targetDate.getFullYear()}`;
+//     }
+    
+//     default:
+//       throw new Error(`Invalid report type: ${reportType}`);
+//   }
+// };
+
+// // Generate report data from existing data
+// async function generateReportData(websiteId: string, reportType: string, userId: string) {
+//   console.log(`📊 Generating report data for website: ${websiteId}, type: ${reportType}`);
+  
+//   const now = new Date();
+//   let startDate: Date;
+//   let period: string;
+
+//   if (reportType === 'weekly') {
+//     const startOfYear = new Date(now.getFullYear(), 0, 1);
+//     const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+//     const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+    
+//     startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+//     period = `Week ${weekNumber}, ${now.getFullYear()}`;
+//   } else if (reportType === 'monthly') {
+//     startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+//     period = `${now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`;
+//   } else {
+//     const quarter = Math.floor(now.getMonth() / 3) + 1;
+//     startDate = new Date(now.getFullYear(), (quarter - 1) * 3, 1);
+//     period = `Q${quarter} ${now.getFullYear()}`;
+//   }
+
+//   console.log(`📅 Report period: ${period} (from ${startDate.toISOString()})`);
+  
+//   try {
+//     const existingReports = await storage.getClientReports(websiteId);
+//     const duplicateReport = existingReports.find(report => 
+//       report.reportType === reportType && report.period === period
+//     );
+    
+//     if (duplicateReport) {
+//       console.log(`⚠️ Duplicate report found for ${period}, ${reportType}`);
+//       return {
+//         period: duplicateReport.period,
+//         data: duplicateReport.data,
+//         insights: duplicateReport.insights,
+//         roiData: duplicateReport.roiData
+//       };
+//     }
+    
+//     const [content, seoReports, activityLogs] = await Promise.all([
+//       storage.getContentByWebsite(websiteId),
+//       storage.getSeoReportsByWebsite(websiteId),
+//       storage.getActivityLogs(websiteId)
 //     ]);
     
+//     console.log(`📊 Data fetched - Content: ${content.length}, SEO Reports: ${seoReports.length}, Activity: ${activityLogs.length}`);
+    
+//     const periodContent = content.filter(c => new Date(c.createdAt) >= startDate);
+//     const periodSeoReports = seoReports.filter(r => new Date(r.createdAt) >= startDate);
+//     const periodActivity = activityLogs.filter(a => new Date(a.createdAt) >= startDate);
+    
+//     const publishedContent = periodContent.filter(c => c.status === 'published');
+//     const latestSeoReport = seoReports[0];
+//     const previousSeoReport = seoReports[1];
+    
+//     const seoScoreChange = latestSeoReport && previousSeoReport ? 
+//       latestSeoReport.score - previousSeoReport.score : 0;
+    
+//     const avgSeoScore = periodContent.length > 0 ? 
+//       Math.round(periodContent.reduce((sum, c) => sum + (c.seoScore || 0), 0) / periodContent.length) : 0;
+    
+//     const avgReadabilityScore = periodContent.length > 0 ? 
+//       Math.round(periodContent.reduce((sum, c) => sum + (c.readabilityScore || 0), 0) / periodContent.length) : 0;
+    
+//     const avgBrandVoiceScore = periodContent.length > 0 ? 
+//       Math.round(periodContent.reduce((sum, c) => sum + (c.brandVoiceScore || 0), 0) / periodContent.length) : 0;
+    
+//     const totalCostCents = periodContent.reduce((sum, c) => sum + (c.costUsd || 0), 0);
+//     const totalImageCostCents = periodContent.reduce((sum, c) => sum + (c.imageCostCents || 0), 0);
+//     const totalTokens = periodContent.reduce((sum, c) => sum + (c.tokensUsed || 0), 0);
+//     const totalCostUsd = (totalCostCents + totalImageCostCents) / 100;
+    
+//     const activeDays = periodActivity.length > 0 ? 
+//       new Set(periodActivity.map(a => a.createdAt.toDateString())).size : 0;
+    
+//     const contentWithImages = periodContent.filter(c => c.hasImages).length;
+//     const totalImages = periodContent.reduce((sum, c) => sum + (c.imageCount || 0), 0);
+    
+//     const insights = [];
+    
+//     if (seoScoreChange > 5) {
+//       insights.push(`SEO score improved significantly by ${seoScoreChange.toFixed(1)} points this ${reportType}.`);
+//     } else if (seoScoreChange < -5) {
+//       insights.push(`SEO score declined by ${Math.abs(seoScoreChange).toFixed(1)} points - recommend immediate attention.`);
+//     } else if (Math.abs(seoScoreChange) <= 2) {
+//       insights.push(`SEO score remained stable with minimal change (${seoScoreChange >= 0 ? '+' : ''}${seoScoreChange.toFixed(1)} points).`);
+//     }
+    
+//     if (publishedContent.length > 0) {
+//       insights.push(`Published ${publishedContent.length} pieces of content with an average SEO score of ${avgSeoScore}%.`);
+      
+//       if (contentWithImages > 0) {
+//         insights.push(`${contentWithImages} content pieces included AI-generated images (${totalImages} total images).`);
+//       }
+//     } else {
+//       insights.push(`No content was published during this ${reportType} period.`);
+//     }
+    
+//     if (avgBrandVoiceScore > 80) {
+//       insights.push(`Excellent brand voice consistency with ${avgBrandVoiceScore}% average score.`);
+//     } else if (avgBrandVoiceScore > 60) {
+//       insights.push(`Good brand voice alignment with ${avgBrandVoiceScore}% average score.`);
+//     } else if (avgBrandVoiceScore > 0) {
+//       insights.push(`Brand voice needs improvement - current average: ${avgBrandVoiceScore}%.`);
+//     }
+    
+//     if (totalCostUsd > 0) {
+//       const textCost = totalCostCents / 100;
+//       const imageCost = totalImageCostCents / 100;
+//       if (imageCost > 0) {
+//         insights.push(`AI generation cost: $${totalCostUsd.toFixed(2)} total ($${textCost.toFixed(2)} content + $${imageCost.toFixed(2)} images) for ${totalTokens.toLocaleString()} tokens.`);
+//       } else {
+//         insights.push(`AI content generation cost: $${textCost.toFixed(2)} for ${totalTokens.toLocaleString()} tokens.`);
+//       }
+//     }
+    
+//     if (activeDays > 0) {
+//       const activityRate = (activeDays / ((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))) * 100;
+//       insights.push(`Active on ${activeDays} days (${activityRate.toFixed(0)}% activity rate) during this period.`);
+//     }
+    
+//     const data = {
+//       seoScoreChange: Math.round(seoScoreChange * 10) / 10,
+//       currentSeoScore: latestSeoReport?.score || 0,
+//       previousSeoScore: previousSeoReport?.score || 0,
+//       contentPublished: publishedContent.length,
+//       contentTotal: periodContent.length,
+//       avgSeoScore,
+//       avgReadabilityScore,
+//       avgBrandVoiceScore,
+//       totalCostUsd,
+//       textCostUsd: totalCostCents / 100,
+//       imageCostUsd: totalImageCostCents / 100,
+//       totalTokens,
+//       activeDays,
+//       contentWithImages,
+//       totalImages,
+//       pageViews: null,
+//       organicTraffic: null,
+//       conversionRate: null,
+//       backlinks: null,
+//       keywordRankings: null,
+//       hasAnalytics: false,
+//       hasSeoTools: false,
+//       dataNote: "Traffic and ranking data requires analytics integration"
+//     };
+    
+//     const roiData = {
+//       contentROI: publishedContent.length > 0 && totalCostUsd > 0 ? 
+//         Math.round((publishedContent.length * 50) / totalCostUsd) : 0,
+//       timeInvested: publishedContent.length * 30,
+//       costPerContent: publishedContent.length > 0 ? 
+//         Math.round((totalCostUsd / publishedContent.length) * 100) / 100 : 0,
+//       costEfficiency: totalTokens > 0 ? 
+//         Math.round((totalTokens / (totalCostUsd * 100)) * 100) / 100 : 0
+//     };
+    
+//     console.log(`✅ FACTUAL report data generated:`, { 
+//       period, 
+//       contentCount: periodContent.length, 
+//       publishedCount: publishedContent.length,
+//       seoScoreChange: data.seoScoreChange,
+//       totalCostUsd: data.totalCostUsd,
+//       activeDays: data.activeDays,
+//       hasImages: contentWithImages > 0
+//     });
+    
 //     return {
-//       id: result.rows[0].id,
-//       clientId: result.rows[0].client_id,
-//       redirectUri: result.rows[0].redirect_uri,
-//       isConfigured: result.rows[0].is_configured
-//     };
-//   },
-
-//   async getConfiguration(userId: string) {
-//     const query = 'SELECT * FROM gsc_configurations WHERE user_id = $1 AND is_configured = true';
-//     const result = await pool.query(query, [userId]);
-    
-//     if (result.rows.length === 0) return null;
-    
-//     const row = result.rows[0];
-//     return {
-//       id: row.id,
-//       clientId: row.client_id,
-//       clientSecret: row.client_secret,  // Plain text
-//       redirectUri: row.redirect_uri,
-//       isConfigured: row.is_configured
-//     };
-//   },
-
-//   async deleteConfiguration(userId: string) {
-//     const query = 'UPDATE gsc_configurations SET is_configured = false WHERE user_id = $1';
-//     await pool.query(query, [userId]);
-//     return { success: true };
-//   },
-
-//   async hasConfiguration(userId: string): Promise<boolean> {
-//     const query = 'SELECT id FROM gsc_configurations WHERE user_id = $1 AND is_configured = true LIMIT 1';
-//     const result = await pool.query(query, [userId]);
-//     return result.rows.length > 0;
-//   }
-// };
-
-// // Create OAuth2 client with user config or env vars as fallback
-// const createGscOAuth2Client = async (userId?: string) => {
-//   // If userId is provided, try to use user-specific configuration
-//   if (userId) {
-//     const config = await gscConfigStorage.getConfiguration(userId);
-    
-//     if (config) {
-//       // User has configured their own credentials
-//       return new google.auth.OAuth2(
-//         config.clientId,
-//         config.clientSecret,
-//         config.redirectUri
-//       );
-//     }
-    
-//     // No user configuration found, fall back to environment variables
-//     if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-//       return new google.auth.OAuth2(
-//         process.env.GOOGLE_CLIENT_ID,
-//         process.env.GOOGLE_CLIENT_SECRET,
-//         process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-//       );
-//     }
-    
-//     throw new Error('OAuth configuration not found. Please configure your Google OAuth credentials.');
-//   }
-  
-//   // No userId provided, use environment variables (backward compatibility)
-//   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-//     return new google.auth.OAuth2(
-//       process.env.GOOGLE_CLIENT_ID,
-//       process.env.GOOGLE_CLIENT_SECRET,
-//       process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-//     );
-//   }
-  
-//   throw new Error('OAuth configuration not found. Please set up Google OAuth credentials.');
-// };
-
-// // Helper function to get authenticated client with proper token handling
-// async function getAuthenticatedClient(userId: string, accountId: string): Promise<any> {
-//   // Get tokens from memory or database
-//   let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-  
-//   if (!tokens) {
-//     const savedAccount = await gscStorage.getGscAccount(userId, accountId);
-//     if (!savedAccount) {
-//       throw new Error('Account not found or not authenticated');
-//     }
-    
-//     tokens = {
-//       access_token: savedAccount.accessToken,
-//       refresh_token: savedAccount.refreshToken,
-//       expiry_date: savedAccount.tokenExpiry
+//       period,
+//       data,
+//       insights,
+//       roiData
 //     };
     
-//     // Cache in memory
-//     gscUserTokens.set(`${userId}_${accountId}`, tokens);
+//   } catch (error) {
+//     console.error("Error generating FACTUAL report data:", error);
+//     throw error;
 //   }
-  
-//   // Create OAuth2 client with user's credentials or env vars as fallback
-//   // THIS IS THE FIX - Pass userId to createGscOAuth2Client
-//   const authClient = await createGscOAuth2Client(userId);
-//   authClient.setCredentials(tokens);
-  
-//   // Check if token needs refresh (expires in less than 5 minutes)
-//   if (tokens.expiry_date && tokens.expiry_date - Date.now() < 300000) {
-//     try {
-//       const { credentials } = await authClient.refreshAccessToken();
-      
-//       // Update tokens
-//       tokens = credentials;
-//       gscUserTokens.set(`${userId}_${accountId}`, credentials);
-      
-//       // Update in database
-//       await gscStorage.updateGscAccount(userId, accountId, {
-//         accessToken: credentials.access_token!,
-//         tokenExpiry: credentials.expiry_date!
-//       });
-      
-//       console.log(`✅ Token auto-refreshed for account: ${accountId}`);
-//     } catch (refreshError: any) {
-//       console.error('Token auto-refresh failed:', refreshError);
-//       // Continue with existing token - it might still work
-//     }
-//   }
-  
-//   return authClient;
 // }
 
-// // ===================== API ROUTES =====================
-
-// // Save configuration endpoint
-// app.post("/api/gsc/configuration", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { clientId, clientSecret, redirectUri } = req.body;
-    
-//     console.log(`📝 Saving GSC configuration for user: ${userId}`);
-    
-//     if (!clientId || !clientSecret || !redirectUri) {
-//       res.status(400).json({ error: 'Client ID, Client Secret, and Redirect URI are required' });
-//       return;
+// // Generate iterative fix recommendations
+// function generateIterativeFixRecommendations(result: any): string[] {
+//   const recommendations: string[] = [];
+  
+//   if (result.stoppedReason === 'target_reached') {
+//     recommendations.push(`🎉 Excellent work! Your website now has a ${result.finalScore}/100 SEO score.`);
+//     recommendations.push("Monitor your SEO score weekly to maintain this performance.");
+//     if (result.finalScore < 95) {
+//       recommendations.push("Consider running a detailed content audit to reach 95+ score.");
 //     }
-    
-//     // Validate the redirect URI format
-//     try {
-//       new URL(redirectUri);
-//     } catch {
-//       res.status(400).json({ error: 'Invalid redirect URI format' });
-//       return;
-//     }
-    
-//     const config = await gscConfigStorage.saveConfiguration(userId, {
-//       clientId,
-//       clientSecret,
-//       redirectUri
-//     });
-    
-//     // Log activity
-//     await storage.createActivityLog({
-//       userId,
-//       type: "gsc_configuration_saved",
-//       description: "Google OAuth configuration saved",
-//       metadata: { clientId }
-//     });
-    
-//     console.log(`✅ GSC configuration saved for user: ${userId}`);
-//     res.json(config);
-    
-//   } catch (error: any) {
-//     console.error('Configuration save error:', error);
-//     res.status(500).json({ error: 'Failed to save configuration' });
+//   } else if (result.stoppedReason === 'max_iterations') {
+//     recommendations.push(`Reached maximum iterations. Score improved by ${result.scoreImprovement.toFixed(1)} points.`);
+//     recommendations.push("Consider running the process again after addressing remaining critical issues manually.");
+//     recommendations.push("Review technical SEO elements that require manual intervention.");
+//   } else if (result.stoppedReason === 'no_improvement') {
+//     recommendations.push("Score improvement plateaued. Consider manual optimization for remaining issues.");
+//     recommendations.push("Focus on content quality improvements and technical SEO elements.");
+//     recommendations.push("Review website structure and user experience factors.");
+//   } else if (result.stoppedReason === 'error') {
+//     recommendations.push("Process encountered errors. Check website accessibility and try again.");
+//     recommendations.push("Review error logs for specific issues that need manual attention.");
 //   }
-// });
-
-// // Get configuration (without exposing secret)
-// app.get("/api/gsc/configuration", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const config = await gscConfigStorage.getConfiguration(userId);
-    
-//     if (!config) {
-//       // Check if env vars are available as fallback
-//       const hasEnvConfig = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-//       res.json({ 
-//         isConfigured: hasEnvConfig,
-//         usingEnvVars: hasEnvConfig 
-//       });
-//       return;
-//     }
-    
-//     // Don't send the actual secret to the frontend
-//     res.json({
-//       id: config.id,
-//       clientId: config.clientId,
-//       redirectUri: config.redirectUri,
-//       isConfigured: true,
-//       usingEnvVars: false
-//     });
-    
-//   } catch (error: any) {
-//     console.error('Configuration fetch error:', error);
-//     res.status(500).json({ error: 'Failed to fetch configuration' });
+  
+//   if (result.finalScore < 70) {
+//     recommendations.push("Focus on critical SEO issues: meta descriptions, title tags, and image optimization.");
+//   } else if (result.finalScore < 85) {
+//     recommendations.push("Work on advanced SEO: internal linking, content structure, and technical optimization.");
 //   }
-// });
+  
+//   if (result.iterationsCompleted > 0) {
+//     const avgImprovement = result.scoreImprovement / result.iterationsCompleted;
+//     if (avgImprovement > 5) {
+//       recommendations.push(`Strong improvement trend (+${avgImprovement.toFixed(1)} points/iteration). Keep up the momentum!`);
+//     } else if (avgImprovement > 2) {
+//       recommendations.push(`Steady improvement (+${avgImprovement.toFixed(1)} points/iteration). Consider focusing on high-impact fixes.`);
+//     }
+//   }
+  
+//   return recommendations;
+// }
 
-// // Test configuration
-// app.post("/api/gsc/configuration/test", requireAuth, async (req: Request, res: Response): Promise<void> => {
+// // Find media ID from URL for WordPress
+// async function findMediaIdFromUrl(baseUrl: string, imageUrl: string, authHeader?: string): Promise<string | null> {
 //   try {
-//     const { clientId, clientSecret, redirectUri } = req.body;
+//     const urlParts = imageUrl.split('/');
+//     const filename = urlParts[urlParts.length - 1];
+//     const originalFilename = filename.replace(/-\d+x\d+(\.\w+)$/, '$1');
     
-//     if (!clientId || !clientSecret || !redirectUri) {
-//       res.json({ valid: false, error: 'Missing required fields' });
-//       return;
+//     console.log(`  Searching for media with filename: ${originalFilename}`);
+    
+//     const searchUrl = `${baseUrl}/wp-json/wp/v2/media?search=${encodeURIComponent(originalFilename)}&per_page=100`;
+    
+//     const headers: any = {};
+//     if (authHeader) {
+//       headers['Authorization'] = authHeader;
 //     }
     
-//     // Try to create an OAuth2 client to test the credentials
-//     try {
-//       const testClient = new google.auth.OAuth2(
-//         clientId,
-//         clientSecret,
-//         redirectUri
-//       );
+//     const response = await fetch(searchUrl, { headers });
+    
+//     if (response.ok) {
+//       const mediaItems = await response.json();
       
-//       // Generate auth URL to verify credentials are formatted correctly
-//       const authUrl = testClient.generateAuthUrl({
-//         access_type: 'offline',
-//         scope: GSC_SCOPES,
-//         prompt: 'consent'
-//       });
-      
-//       res.json({ valid: !!authUrl });
-//     } catch (testError: any) {
-//       res.json({ valid: false, error: 'Invalid credentials format' });
-//     }
-    
-//   } catch (error: any) {
-//     console.error('Configuration test error:', error);
-//     res.status(500).json({ valid: false, error: 'Test failed' });
-//   }
-// });
-
-// // Delete configuration
-// app.delete("/api/gsc/configuration", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     await gscConfigStorage.deleteConfiguration(userId);
-    
-//     // Clear any cached tokens for this user
-//     const keysToDelete: string[] = [];
-//     gscUserTokens.forEach((value, key) => {
-//       if (key.startsWith(`${userId}_`)) {
-//         keysToDelete.push(key);
+//       for (const media of mediaItems) {
+//         if (media.source_url && (
+//           media.source_url === imageUrl ||
+//           media.source_url.includes(originalFilename) ||
+//           imageUrl.includes(media.slug)
+//         )) {
+//           console.log(`  Found media ID: ${media.id}`);
+//           return media.id.toString();
+//         }
 //       }
-//     });
-//     keysToDelete.forEach(key => gscUserTokens.delete(key));
+//     }
     
-//     console.log(`🗑️ GSC configuration deleted for user: ${userId}`);
-//     res.json({ success: true });
-    
-//   } catch (error: any) {
-//     console.error('Configuration delete error:', error);
-//     res.status(500).json({ error: 'Failed to delete configuration' });
+//     return null;
+//   } catch (error) {
+//     console.error('  Error searching for media ID:', error);
+//     return null;
 //   }
-// });
+// }
 
-// // Get OAuth URL with user-specific credentials
-// app.get("/api/gsc/auth-url", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     console.log(`🔐 Generating GSC OAuth URL for user: ${userId}`);
-    
-//     // Create OAuth2 client with user's credentials or env vars as fallback
-//     const authClient = await createGscOAuth2Client(userId);
-    
-//     const authUrl = authClient.generateAuthUrl({
-//       access_type: 'offline',
-//       scope: GSC_SCOPES,
-//       prompt: 'consent',
-//       state: userId
+// // Process image with Sharp
+// async function processImageWithSharp(
+//   imageBuffer: Buffer,
+//   options: any
+// ): Promise<Buffer> {
+//   let pipeline = sharp(imageBuffer);
+  
+//   const metadata = await pipeline.metadata();
+  
+//   if (options.action === 'strip') {
+//     console.log('  Stripping metadata');
+//     pipeline = pipeline.withMetadata({
+//       orientation: metadata.orientation
 //     });
     
-//     res.json({ authUrl });
-//   } catch (error: any) {
-//     console.error('GSC auth URL error:', error);
+//   } else if (options.action === 'add' || options.action === 'update') {
+//     console.log('  Adding/updating metadata');
     
-//     if (error.message?.includes('configuration not found')) {
-//       res.status(400).json({ 
-//         error: 'OAuth configuration not found. Please configure your credentials first.',
-//         requiresConfig: true 
+//     const metadataOptions: any = {
+//       orientation: metadata.orientation
+//     };
+    
+//     if (options.copyright || options.author) {
+//       try {
+//         metadataOptions.exif = {
+//           IFD0: {
+//             Copyright: options.copyright || '',
+//             Artist: options.author || '',
+//             Software: 'AI Content Manager',
+//             DateTime: new Date().toISOString().split('T')[0].replace(/-/g, ':') + ' ' + 
+//                      new Date().toISOString().split('T')[1].split('.')[0]
+//           }
+//         };
+        
+//         if (metadata.exif) {
+//           try {
+//             const existingExif = await sharp(metadata.exif).metadata();
+//             metadataOptions.exif = {
+//               ...existingExif,
+//               ...metadataOptions.exif
+//             };
+//           } catch (e) {
+//             console.log('  Could not preserve existing EXIF');
+//           }
+//         }
+//       } catch (e) {
+//         console.log('  Warning: Could not add full metadata:', e);
+//       }
+//     }
+    
+//     pipeline = pipeline.withMetadata(metadataOptions);
+//   }
+  
+//   if (options.optimize) {
+//     console.log('  Optimizing image');
+    
+//     if (options.maxWidth && metadata.width && metadata.width > options.maxWidth) {
+//       console.log(`  Resizing from ${metadata.width}px to ${options.maxWidth}px`);
+//       pipeline = pipeline.resize(options.maxWidth, null, {
+//         withoutEnlargement: true,
+//         fit: 'inside'
+//       });
+//     }
+    
+//     const quality = options.quality || 85;
+    
+//     if (metadata.format === 'png') {
+//       const stats = await sharp(imageBuffer).stats();
+//       const channels = stats.channels.length;
+//       const hasTransparency = channels === 4;
+      
+//       if (!hasTransparency && metadata.density && metadata.density > 72) {
+//         console.log('  Converting PNG photo to JPEG');
+//         pipeline = pipeline.jpeg({
+//           quality,
+//           progressive: true,
+//           mozjpeg: true
+//         });
+//       } else {
+//         console.log('  Optimizing PNG');
+//         pipeline = pipeline.png({
+//           quality,
+//           compressionLevel: 9,
+//           palette: true
+//         });
+//       }
+//     } else if (metadata.format === 'webp') {
+//       console.log('  Optimizing WebP');
+//       pipeline = pipeline.webp({
+//         quality,
+//         effort: 6,
+//         lossless: false
 //       });
 //     } else {
-//       res.status(500).json({ error: 'Failed to generate auth URL' });
+//       console.log('  Optimizing JPEG');
+//       pipeline = pipeline.jpeg({
+//         quality,
+//         progressive: true,
+//         mozjpeg: true
+//       });
 //     }
 //   }
-// });
+  
+//   if (options.removeGPS && options.action !== 'strip') {
+//     console.log('  Removing GPS data');
+//     const currentMeta = await pipeline.metadata();
+//     pipeline = pipeline.withMetadata({
+//       orientation: currentMeta.orientation
+//     });
+//   }
+  
+//   if (!options.keepColorProfile) {
+//     console.log('  Converting to sRGB');
+//     pipeline = pipeline.toColorspace('srgb');
+//   }
+  
+//   const processedBuffer = await pipeline.toBuffer();
+//   console.log(`  Processed size: ${(processedBuffer.length / 1024).toFixed(1)}KB`);
+  
+//   return processedBuffer;
+// }
 
-// // Exchange code for tokens with user-specific credentials
-// app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Promise<void> => {
+// // =============================================================================
+// // MAIN ROUTE REGISTRATION FUNCTION
+// // =============================================================================
+
+// export async function registerRoutes(app: Express): Promise<Server> {
+  
+//   // ===========================================================================
+//   // AUTHENTICATION ROUTES
+//   // ===========================================================================
+
+
+
+//   app.post("/api/auth/signup", async (req: Request, res: Response): Promise<void> => {
 //   try {
-//     const userId = req.user!.id;
-//     const { code } = req.body;
-    
-//     console.log(`🔐 Exchanging GSC auth code for user: ${userId}`);
-    
-//     if (!code) {
-//       res.status(400).json({ error: 'Authorization code required' });
-//       return;
-//     }
-    
-//     // Create OAuth2 client with user's credentials or env vars as fallback
-//     const authClient = await createGscOAuth2Client(userId);
-    
-//     try {
-//       // Exchange code for tokens
-//       const { tokens } = await authClient.getToken(code);
+//     console.log('🔐 Signup request received:', {
+//       body: req.body,
+//       hasUsername: !!req.body.username,
+//       hasPassword: !!req.body.password,
+//       hasEmail: !!req.body.email,
+//     });
+
+//     const { username, password, email, name } = req.body;
+
+//       if (!username || !password) {
+//         console.error('⌠ Missing required fields');
+//         res.status(400).json({ 
+//           message: "Username and password are required",
+//           errors: ['Username is required', 'Password is required'].filter((_, i) => 
+//             i === 0 ? !username : !password
+//           )
+//         });
+//         return;
+//       }
+
+//       const validation = authService.validateUserData({ username, password, email, name });
+//       if (validation.length > 0) {
+//         console.error('⌠ Validation errors:', validation);
+//         res.status(400).json({ 
+//           message: "Validation failed", 
+//           errors: validation 
+//         });
+//         return;
+//       }
+
+//       console.log('👤 Creating user...');
+//       const user = await authService.createUser({ username, password, email, name });
+//       console.log('✅ User created:', { id: user.id, username: user.username });
       
-//       if (!tokens.access_token) {
-//         console.error('No access token received');
-//         res.status(400).json({ error: 'Failed to obtain access token' });
+//       if (req.session) {
+//         req.session.userId = user.id;
+//         req.session.save((err) => {
+//           if (err) {
+//             console.error("⌠ Session save error:", err);
+//             res.status(500).json({ message: "Failed to create session" });
+//             return;
+//           }
+
+//         console.log('✅ Session created for user:', user.id);
+
+//           res.status(201).json({
+//             success: true,
+//             message: "Account created successfully",
+//             user: {
+//               id: user.id,
+//               username: user.username,
+//               email: user.email,
+//               name: user.name
+//             }
+//           });
+//         });
+//       } else {
+//         console.error('⌠ No session available');
+//         res.status(500).json({ message: "Session not configured" });
+//       }
+//     } catch (error) {
+//       console.error("⌠ Signup error:", error);
+      
+//       if (error instanceof Error) {
+//         if (error.message.includes('already exists')) {
+//           res.status(409).json({ message: error.message });
+//           return;
+//         }
+        
+//         if (error.message.includes('Validation failed')) {
+//           res.status(400).json({ message: error.message });
+//           return;
+//         }
+//       }
+      
+//       res.status(500).json({ message: "Failed to create account" });
+//     }
+//   });
+
+//   app.post("/api/auth/login", async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       console.log('🔐 Login request received:', {
+//         hasUsername: !!req.body.username,
+//         hasPassword: !!req.body.password,
+//         username: req.body.username
+//       });
+
+//       const { username, password } = req.body;
+
+//       if (!username || !password) {
+//         console.error('⌠Missing login credentials');
+//         res.status(400).json({ message: "Username and password are required" });
+//         return;
+//       }
+
+//       console.log('🔍 Authenticating user...');
+//       const user = await authService.authenticateUser(username, password);
+//       console.log('✅ Authentication successful:', user.username);
+      
+//       if (req.session) {
+//         req.session.userId = user.id;
+//         req.session.save((err) => {
+//           if (err) {
+//             console.error("⌠Session save error:", err);
+//             res.status(500).json({ message: "Failed to create session" });
+//             return;
+//           }
+
+//           console.log('✅ Session created for login:', user.id);
+
+//           res.json({
+//             success: true,
+//             message: "Login successful",
+//             user: {
+//               id: user.id,
+//               username: user.username,
+//               email: user.email,
+//               name: user.name
+//             }
+//           });
+//         });
+//       } else {
+//         console.error('⌠No session available for login');
+//         res.status(500).json({ message: "Session not configured" });
+//       }
+//     } catch (error) {
+//       console.error("⌠Login error:", error);
+      
+//       if (error instanceof Error && error.message.includes('Invalid username or password')) {
+//         res.status(401).json({ message: "Invalid username or password" });
 //         return;
 //       }
       
-//       // Set credentials for this client instance
-//       authClient.setCredentials(tokens);
-      
-//       // Get user info
-//       const oauth2 = google.oauth2({ version: 'v2', auth: authClient });
-//       const { data: userInfo } = await oauth2.userinfo.get();
-      
-//       // Store tokens
-//       const gscAccount = {
-//         id: userInfo.id!,
-//         email: userInfo.email!,
-//         name: userInfo.name || userInfo.email!,
-//         picture: userInfo.picture,
-//         accessToken: tokens.access_token!,
-//         refreshToken: tokens.refresh_token || '',
-//         tokenExpiry: tokens.expiry_date || Date.now() + 3600000,
-//         isActive: true
-//       };
-      
-//       // Store in memory cache
-//       gscUserTokens.set(`${userId}_${userInfo.id}`, tokens);
-      
-//       // Save to database
-//       await gscStorage.saveGscAccount(userId, gscAccount);
-      
-//       // Log activity
-//       await storage.createActivityLog({
-//         userId,
-//         type: "gsc_account_connected",
-//         description: `Connected Google Search Console account: ${userInfo.email}`,
-//         metadata: { 
-//           gscAccountId: userInfo.id,
-//           email: userInfo.email
-//         }
-//       });
-      
-//       console.log(`✅ GSC account connected: ${userInfo.email}`);
-//       res.json({ account: gscAccount });
-      
-//     } catch (tokenError: any) {
-//       if (tokenError.message?.includes('invalid_grant')) {
-//         res.status(400).json({ 
-//           error: 'Authorization code expired or already used. Please try signing in again.' 
-//         });
-//       } else if (tokenError.message?.includes('redirect_uri_mismatch')) {
-//         res.status(400).json({ 
-//           error: 'Redirect URI mismatch. Please check your configuration.' 
-//         });
-//       } else {
-//         throw tokenError;
-//       }
+//       res.status(500).json({ message: "Login failed" });
 //     }
-    
-//   } catch (error: any) {
-//     console.error('GSC auth error:', error);
-    
-//     if (error.message?.includes('configuration not found')) {
-//       res.status(400).json({ 
-//         error: 'OAuth configuration not found. Please configure your credentials first.',
-//         requiresConfig: true 
-//       });
-//     } else {
-//       res.status(500).json({ 
-//         error: 'Authentication failed',
-//         details: process.env.NODE_ENV === 'development' ? error.message : undefined
-//       });
-//     }
-//   }
-// });
+//   });
 
-// // Get user's GSC properties
-// app.get("/api/gsc/properties", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId } = req.query;
-    
-//     console.log(`🌐 Fetching GSC properties for user: ${userId}, account: ${accountId}`);
-    
-//     if (!accountId) {
-//       res.status(400).json({ error: 'Account ID required' });
-//       return;
-//     }
-    
-//     // Get authenticated client with user's credentials
-//     const authClient = await getAuthenticatedClient(userId, accountId as string);
-    
-//     // Get properties from Search Console
-//     const searchconsole = google.searchconsole({ version: 'v1', auth: authClient });
-//     const { data } = await searchconsole.sites.list();
-    
-//     // Transform properties
-//     const properties = (data.siteEntry || []).map(site => ({
-//       siteUrl: site.siteUrl!,
-//       permissionLevel: site.permissionLevel!,
-//       siteType: site.siteUrl?.startsWith('sc-domain:') ? 'DOMAIN' : 'SITE',
-//       verified: true,
-//       accountId: accountId as string
-//     }));
-    
-//     console.log(`✅ Found ${properties.length} GSC properties`);
-//     res.json(properties);
-    
-//   } catch (error: any) {
-//     console.error('Error fetching GSC properties:', error);
-    
-//     if (error.message?.includes('auth') || error.code === 401) {
-//       res.status(401).json({ error: 'Authentication expired. Please reconnect your account.' });
-//     } else if (error.message?.includes('configuration not found')) {
-//       res.status(400).json({ 
-//         error: 'OAuth configuration not found. Please configure your credentials first.',
-//         requiresConfig: true 
-//       });
-//     } else {
-//       res.status(500).json({ error: 'Failed to fetch properties' });
-//     }
-//   }
-// });
-
-// // Submit URL for indexing
-// app.post("/api/gsc/index", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, url, type = 'URL_UPDATED' } = req.body;
-    
-//     console.log(`📤 Submitting URL for indexing: ${url} (${type})`);
-    
-//     if (!accountId || !url) {
-//       res.status(400).json({ error: 'Account ID and URL required' });
-//       return;
-//     }
-    
-//     // Get authenticated client with user's credentials
-//     const authClient = await getAuthenticatedClient(userId, accountId);
-    
-//     // Use Indexing API
-//     const indexing = google.indexing({ version: 'v3', auth: authClient });
-    
+//   app.post("/api/auth/logout", async (req: Request, res: Response): Promise<void> => {
 //     try {
-//       const result = await indexing.urlNotifications.publish({
-//         requestBody: {
-//           url: url,
-//           type: type
-//         }
-//       });
+//       const userId = req.session?.userId;
       
-//       // Log activity
+//       req.session?.destroy((err) => {
+//         if (err) {
+//           console.error("Session destroy error:", err);
+//           res.status(500).json({ message: "Failed to logout" });
+//           return;
+//         }
+        
+//         res.clearCookie('connect.sid');
+//         res.json({ 
+//           success: true, 
+//           message: "Logged out successfully" 
+//         });
+//       });
+//     } catch (error) {
+//       console.error("Logout error:", error);
+//       res.status(500).json({ message: "Logout failed" });
+//     }
+//   });
+
+//   app.get("/api/auth/me", async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       console.log('👤 Auth check request, session:', {
+//         hasSession: !!req.session,
+//         userId: req.session?.userId
+//       });
+
+//       const sessionId = req.session?.userId;
+//       if (!sessionId) {
+//         console.log('⌠No session ID found');
+//         res.status(401).json({ message: "Authentication required" });
+//         return;
+//       }
+
+//       const user = await storage.getUser(sessionId);
+//       if (!user) {
+//         console.log('⌠User not found for session:', sessionId);
+//         req.session?.destroy(() => {});
+//         res.status(401).json({ message: "Invalid session" });
+//         return;
+//       }
+
+//       console.log('✅ User found:', { id: user.id, username: user.username });
+
+//       res.json({
+//         id: user.id,
+//         username: user.username,
+//         email: user.email || null,
+//         name: user.name || null
+//       });
+//     } catch (error) {
+//       console.error("⌠Auth check error:", error);
+//       res.status(500).json({ message: "Authentication error" });
+//     }
+//   });
+
+//   app.post("/api/auth/change-password", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const { currentPassword, newPassword, confirmPassword } = req.body;
+      
+//       console.log(`🔐 Password change request for user: ${userId}`);
+      
+//       if (!currentPassword || !newPassword || !confirmPassword) {
+//         res.status(400).json({ 
+//           message: "Current password, new password, and confirmation are required" 
+//         });
+//         return;
+//       }
+      
+//       if (newPassword !== confirmPassword) {
+//         res.status(400).json({ 
+//           message: "New password and confirmation do not match" 
+//         });
+//         return;
+//       }
+      
+//       const passwordValidation = authService.validatePassword(newPassword);
+//       if (passwordValidation.length > 0) {
+//         res.status(400).json({ 
+//           message: "Password does not meet requirements",
+//           errors: passwordValidation
+//         });
+//         return;
+//       }
+      
+//       const user = await storage.getUser(userId);
+//       if (!user) {
+//         res.status(404).json({ message: "User not found" });
+//         return;
+//       }
+      
+//       const isCurrentPasswordValid = await authService.verifyPassword(currentPassword, user.password);
+//       if (!isCurrentPasswordValid) {
+//         res.status(400).json({ 
+//           message: "Current password is incorrect" 
+//         });
+//         return;
+//       }
+      
+//       const isSamePassword = await authService.verifyPassword(newPassword, user.password);
+//       if (isSamePassword) {
+//         res.status(400).json({ 
+//           message: "New password must be different from current password" 
+//         });
+//         return;
+//       }
+      
+//       const hashedNewPassword = await authService.hashPassword(newPassword);
+      
+//       const updatedUser = await authService.updateUserPassword(userId, hashedNewPassword);
+      
+//       if (!updatedUser) {
+//         res.status(500).json({ message: "Failed to update password" });
+//         return;
+//       }
+      
 //       await storage.createActivityLog({
 //         userId,
-//         type: "gsc_url_indexed",
-//         description: `URL submitted for indexing: ${url}`,
+//         type: "password_changed",
+//         description: "User password changed successfully",
 //         metadata: { 
-//           url,
-//           type,
-//           notifyTime: result.data.urlNotificationMetadata?.latestUpdate?.notifyTime
+//           timestamp: new Date().toISOString(),
+//           ipAddress: req.ip || 'unknown'
 //         }
 //       });
       
-//       console.log(`✅ URL submitted for indexing: ${url}`);
+//       await storage.createSecurityAudit({
+//         userId,
+//         action: "password_change",
+//         ipAddress: req.ip,
+//         userAgent: req.get('User-Agent'),
+//         success: true,
+//         metadata: {
+//           timestamp: new Date().toISOString()
+//         }
+//       });
+      
+//       console.log(`✅ Password changed successfully for user: ${userId}`);
+      
 //       res.json({
 //         success: true,
-//         notifyTime: result.data.urlNotificationMetadata?.latestUpdate?.notifyTime,
-//         url: url
+//         message: "Password changed successfully"
 //       });
       
-//     } catch (indexError: any) {
-//       if (indexError.code === 429) {
-//         res.status(429).json({ error: 'Daily quota exceeded (200 URLs/day)' });
-//       } else {
-//         throw indexError;
+//     } catch (error) {
+//       console.error("Password change error:", error);
+      
+//       try {
+//         await storage.createSecurityAudit({
+//           userId: req.user?.id,
+//           action: "password_change_failed",
+//           ipAddress: req.ip,
+//           userAgent: req.get('User-Agent'),
+//           success: false,
+//           metadata: {
+//             error: error instanceof Error ? error.message : 'Unknown error',
+//             timestamp: new Date().toISOString()
+//           }
+//         });
+//       } catch (logError) {
+//         console.error("Failed to log security audit:", logError);
 //       }
+      
+//       res.status(500).json({ 
+//         message: "Failed to change password",
+//         error: error instanceof Error ? error.message : 'Unknown error'
+//       });
 //     }
+//   });
+
+
+
+//   //nadagdag
+// // ===========================================================================
+// // PASSWORD RESET ROUTES
+// // ===========================================================================
+
+
+// app.post("/api/auth/forgot-password", async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const { email } = req.body;
     
-//   } catch (error: any) {
-//     console.error('Indexing error:', error);
+//     console.log('🔑 Password reset request for email:', email);
     
-//     if (error.message?.includes('auth') || error.code === 401) {
-//       res.status(401).json({ error: 'Authentication expired. Please reconnect your account.' });
-//     } else if (error.message?.includes('configuration not found')) {
+//     // Validation
+//     if (!email) {
 //       res.status(400).json({ 
-//         error: 'OAuth configuration not found. Please configure your credentials first.',
-//         requiresConfig: true 
+//         message: "Email address is required" 
 //       });
-//     } else {
-//       res.status(500).json({ error: 'Failed to submit URL for indexing' });
-//     }
-//   }
-// });
-
-// // URL Inspection endpoint
-// app.post("/api/gsc/inspect", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, siteUrl, inspectionUrl } = req.body;
-    
-//     console.log(`🔍 Inspecting URL: ${inspectionUrl}`);
-    
-//     if (!accountId || !siteUrl || !inspectionUrl) {
-//       res.status(400).json({ error: 'Account ID, site URL, and inspection URL required' });
 //       return;
 //     }
     
-//     // Get authenticated client with user's credentials
-//     const authClient = await getAuthenticatedClient(userId, accountId);
-    
-//     // Use Search Console API
-//     const searchconsole = google.searchconsole({ version: 'v1', auth: authClient });
-    
-//     const result = await searchconsole.urlInspection.index.inspect({
-//       requestBody: {
-//         siteUrl: siteUrl,
-//         inspectionUrl: inspectionUrl
-//       }
-//     });
-    
-//     console.log(`✅ URL inspection complete: ${inspectionUrl}`);
-//     res.json(result.data);
-    
-//   } catch (error: any) {
-//     console.error('URL inspection error:', error);
-    
-//     if (error.message?.includes('auth') || error.code === 401) {
-//       res.status(401).json({ error: 'Authentication expired. Please reconnect your account.' });
-//     } else {
-//       res.status(500).json({ error: 'Failed to inspect URL' });
-//     }
-//   }
-// });
-
-// // Submit Sitemap endpoint
-// app.post("/api/gsc/sitemap", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, siteUrl, sitemapUrl } = req.body;
-    
-//     console.log(`📍 Submitting sitemap: ${sitemapUrl}`);
-    
-//     if (!accountId || !siteUrl || !sitemapUrl) {
-//       res.status(400).json({ error: 'Account ID, site URL, and sitemap URL required' });
+//     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+//     if (!emailRegex.test(email)) {
+//       res.status(400).json({ 
+//         message: "Please enter a valid email address" 
+//       });
 //       return;
 //     }
     
-//     // Get authenticated client with user's credentials
-//     const authClient = await getAuthenticatedClient(userId, accountId);
+//     const user = await storage.getUserByEmail(email);
     
-//     // Use Search Console API
-//     const searchconsole = google.searchconsole({ version: 'v1', auth: authClient });
-    
-//     await searchconsole.sitemaps.submit({
-//       siteUrl: siteUrl,
-//       feedpath: sitemapUrl
-//     });
-    
-//     // Get sitemap details
-//     const result = await searchconsole.sitemaps.get({
-//       siteUrl: siteUrl,
-//       feedpath: sitemapUrl
-//     });
-    
-//     console.log(`✅ Sitemap submitted: ${sitemapUrl}`);
-//     res.json(result.data);
-    
-//   } catch (error: any) {
-//     console.error('Sitemap submission error:', error);
-    
-//     if (error.message?.includes('auth') || error.code === 401) {
-//       res.status(401).json({ error: 'Authentication expired. Please reconnect your account.' });
-//     } else {
-//       res.status(500).json({ error: 'Failed to submit sitemap' });
-//     }
-//   }
-// });
-
-// // Get Performance data endpoint
-// app.get("/api/gsc/performance", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, siteUrl, days = '28' } = req.query;
-    
-//     console.log(`📊 Fetching performance data for ${siteUrl}`);
-    
-//     if (!accountId || !siteUrl) {
-//       res.status(400).json({ error: 'Account ID and site URL required' });
-//       return;
-//     }
-    
-//     // Get authenticated client with user's credentials
-//     const authClient = await getAuthenticatedClient(userId, accountId as string);
-    
-//     // Use Search Console API
-//     const searchconsole = google.searchconsole({ version: 'v1', auth: authClient });
-    
-//     const endDate = new Date();
-//     const startDate = new Date();
-//     startDate.setDate(startDate.getDate() - parseInt(days as string));
-    
-//     const result = await searchconsole.searchanalytics.query({
-//       siteUrl: siteUrl as string,
-//       requestBody: {
-//         startDate: startDate.toISOString().split('T')[0],
-//         endDate: endDate.toISOString().split('T')[0],
-//         dimensions: ['date'],
-//         metrics: ['clicks', 'impressions', 'ctr', 'position']
-//       }
-//     });
-    
-//     console.log(`✅ Performance data fetched for ${siteUrl}`);
-//     res.json(result.data.rows || []);
-    
-//   } catch (error: any) {
-//     console.error('Performance data error:', error);
-    
-//     if (error.message?.includes('auth') || error.code === 401) {
-//       res.status(401).json({ error: 'Authentication expired. Please reconnect your account.' });
-//     } else {
-//       res.status(500).json({ error: 'Failed to fetch performance data' });
-//     }
-//   }
-// });
-
-// // Refresh token endpoint
-// app.post("/api/gsc/refresh-token", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, refreshToken } = req.body;
-    
-//     console.log(`🔄 Refreshing token for account: ${accountId}`);
-    
-//     if (!accountId || !refreshToken) {
-//       res.status(400).json({ error: 'Account ID and refresh token required' });
-//       return;
-//     }
-    
-//     // Create OAuth2 client with user's credentials
-//     const authClient = await createGscOAuth2Client(userId);
-//     authClient.setCredentials({ refresh_token: refreshToken });
-    
-//     const { credentials } = await authClient.refreshAccessToken();
-    
-//     // Update in memory cache
-//     gscUserTokens.set(`${userId}_${accountId}`, credentials);
-    
-//     // Update in database
-//     await gscStorage.updateGscAccount(userId, accountId, {
-//       accessToken: credentials.access_token!,
-//       tokenExpiry: credentials.expiry_date!
-//     });
-    
-//     console.log(`✅ Token refreshed for account: ${accountId}`);
-//     res.json({ success: true });
-    
-//   } catch (error: any) {
-//     console.error('Token refresh error:', error);
-//     res.status(500).json({ error: 'Failed to refresh token' });
-//   }
-// });
-
-
-
-
-
-
-// // Store user GSC tokens (temporary in-memory cache)
-// const gscUserTokens = new Map<string, any>();
-
-// // Get OAuth URL for GSC
-// app.get("/api/gsc/auth-url", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     console.log(`🔐 Generating GSC OAuth URL for user: ${userId}`);
-    
-//     const authUrl = gscOAuth2Client.generateAuthUrl({
-//       access_type: 'offline',
-//       scope: GSC_SCOPES,
-//       prompt: 'consent',
-//       state: userId
-//     });
-    
-//     res.json({ authUrl });
-//   } catch (error) {
-//     console.error('GSC auth URL error:', error);
-//     res.status(500).json({ error: 'Failed to generate auth URL' });
-//   }
-// });
-
-// // Exchange code for tokens
-// app.post("/api/gsc/auth", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { code } = req.body;
-    
-//     console.log(`🔐 Exchanging GSC auth code for user: ${userId}`);
-    
-//     if (!code) {
-//       res.status(400).json({ error: 'Authorization code required' });
-//       return;
-//     }
-    
-//     // Create a new OAuth2 client instance for this request
-//     const authClient = new google.auth.OAuth2(
-//       process.env.GOOGLE_CLIENT_ID,
-//       process.env.GOOGLE_CLIENT_SECRET,
-//       process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/gsc/oauth-callback'
-//     );
-    
-//     try {
-//       // Exchange code for tokens
-//       const { tokens } = await authClient.getToken(code);
-      
-//       if (!tokens.access_token) {
-//         console.error('No access token received');
-//         res.status(400).json({ error: 'Failed to obtain access token' });
+//     if (!user) {
+//         console.log('⚠️ User not found for email:', email);
+//         res.status(404).json({  // ← Returns 404 Not Found
+//           success: false,  // ← Says failure
+//           message: "No account found with this email address"
+//         });
 //         return;
 //       }
+    
+//     // Generate and store code
+//     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+//     const hashedCode = crypto.createHash('sha256').update(verificationCode).digest('hex');
+//     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    
+//     // Clear any existing tokens for this user
+//     await db
+//       .delete(passwordResetTokens)
+//       .where(
+//         and(
+//           eq(passwordResetTokens.userId, user.id),
+//           eq(passwordResetTokens.used, false)
+//         )
+//       );
+    
+//     // Store new reset token
+//     await db.insert(passwordResetTokens).values({
+//       userId: user.id,
+//       email: user.email,
+//       token: hashedCode,
+//       expiresAt,
+//       used: false,
+//       metadata: {
+//         type: 'verification_code',
+//         attempts: 0,
+//         verified: false,
+//         codeLength: 6
+//       }
+//     });
+
+//     // SEND EMAIL WITH VERIFICATION CODE
+//     try {
+//       const emailSent = await emailService.sendPasswordResetCode(user.email, verificationCode);
       
-//       // Set credentials for this client instance
-//       authClient.setCredentials(tokens);
+//       if (emailSent) {
+//         console.log('✅ Verification code email sent to:', user.email);
+//       } else {
+//         console.warn('⚠️ Failed to send email, but code was generated');
+//         // In production, you might want to return an error here
+//         // But for development, continue so the code can still be used
+//       }
+//     } catch (emailError) {
+//       console.error('Failed to send email:', emailError);
+//       // Continue anyway - in development, user can see code in response
+//     }
+
+//     // Log the activity
+//     await storage.createActivityLog({
+//       userId: user.id,
+//       type: "password_reset_requested",
+//       description: "Password reset code requested",
+//       metadata: { 
+//         email: user.email,
+//         timestamp: new Date().toISOString(),
+//         ipAddress: req.ip || 'unknown'
+//       }
+//     });
+
+//     console.log('🔐 Verification code generated for:', user.email);
+
+//     // Response
+//     const responseData: any = {
+//       success: true,
+//       message: "If an account exists with that email, a verification code has been sent."
+//     };
+    
+//     // Only include sensitive data in development mode
+//     if (process.env.NODE_ENV === 'development') {
+//       responseData.verificationCode = verificationCode;
+//       responseData.email = user.email;
+//       responseData.expiresAt = expiresAt.toISOString();
+//       responseData.devNote = "Code exposed only in development mode";
+//       console.log('📧 Dev Mode - Verification Code:', verificationCode);
+//     }
+    
+//     res.json(responseData);
+    
+//   } catch (error) {
+//     console.error("Password reset request error:", error);
+//     res.status(500).json({ 
+//       message: "An error occurred. Please try again later." 
+//     });
+//   }
+// });
+
+// app.post("/api/auth/verify-code", async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const { email, code } = req.body;
+    
+//     console.log('🔍 Verifying reset code for email:', email);
+    
+//     if (!email || !code) {
+//       res.status(400).json({ 
+//         valid: false,
+//         message: "Email and verification code are required" 
+//       });
+//       return;
+//     }
+
+//     // Find user by email
+//     const user = await storage.getUserByEmail(email);
+    
+//     if (!user) {
+//       res.status(400).json({ 
+//         valid: false,
+//         message: "Invalid email or code" 
+//       });
+//       return;
+//     }
+
+//     // Hash the provided code
+//     const hashedCode = crypto.createHash('sha256').update(code).digest('hex');
+    
+//     // Find valid reset token
+//     const [resetToken] = await db
+//       .select()
+//       .from(passwordResetTokens)
+//       .where(
+//         and(
+//           eq(passwordResetTokens.userId, user.id),
+//           eq(passwordResetTokens.token, hashedCode),
+//           eq(passwordResetTokens.used, false),
+//           gt(passwordResetTokens.expiresAt, new Date())
+//         )
+//       )
+//       .limit(1);
+    
+//     if (!resetToken) {
+//       // Increment failed attempts for the most recent token
+//       const [latestToken] = await db
+//         .select()
+//         .from(passwordResetTokens)
+//         .where(
+//           and(
+//             eq(passwordResetTokens.userId, user.id),
+//             eq(passwordResetTokens.used, false)
+//           )
+//         )
+//         .orderBy(desc(passwordResetTokens.createdAt))
+//         .limit(1);
       
-//       // Get user info
-//       const oauth2 = google.oauth2({ version: 'v2', auth: authClient });
-//       const { data: userInfo } = await oauth2.userinfo.get();
-      
-//       // Store tokens
-//       const gscAccount = {
-//         id: userInfo.id!,
-//         email: userInfo.email!,
-//         name: userInfo.name || userInfo.email!,
-//         picture: userInfo.picture,
-//         accessToken: tokens.access_token!,
-//         refreshToken: tokens.refresh_token || '',
-//         tokenExpiry: tokens.expiry_date || Date.now() + 3600000,
-//         isActive: true
-//       };
-      
-//       // Store in memory cache
-//       gscUserTokens.set(`${userId}_${userInfo.id}`, tokens);
-      
-//       // Save to database
-//       try {
-//         await gscStorage.saveGscAccount(userId, gscAccount);
-//       } catch (storageError) {
-//         console.error('Storage error (non-fatal):', storageError);
+//       if (latestToken) {
+//         const currentAttempts = (latestToken.metadata as any)?.attempts || 0;
+        
+//         // Update attempts count
+//         await db
+//           .update(passwordResetTokens)
+//           .set({
+//             metadata: {
+//               ...(latestToken.metadata as any || {}),
+//               attempts: currentAttempts + 1,
+//               lastAttemptAt: new Date().toISOString()
+//             }
+//           })
+//           .where(eq(passwordResetTokens.id, latestToken.id));
+        
+//         // Check if too many attempts
+//         if (currentAttempts >= 4) { // 5 total attempts
+//           // Mark as used to invalidate it
+//           await db
+//             .update(passwordResetTokens)
+//             .set({ 
+//               used: true,
+//               usedAt: new Date(),
+//               metadata: {
+//                 ...(latestToken.metadata as any || {}),
+//                 invalidatedReason: 'too_many_attempts'
+//               }
+//             })
+//             .where(eq(passwordResetTokens.id, latestToken.id));
+          
+//           await storage.createSecurityAudit({
+//             userId: user.id,
+//             action: "password_reset_blocked",
+//             ipAddress: req.ip,
+//             userAgent: req.get('User-Agent'),
+//             success: false,
+//             metadata: {
+//               reason: "Too many failed attempts",
+//               email: user.email,
+//               timestamp: new Date().toISOString()
+//             }
+//           });
+          
+//           res.status(400).json({ 
+//             valid: false,
+//             message: "Too many failed attempts. Please request a new code." 
+//           });
+//           return;
+//         }
 //       }
       
-//       // Log activity
-//       try {
-//         if (storage && storage.createActivityLog) {
-//           await storage.createActivityLog({
-//             userId,
-//             type: "gsc_account_connected",
-//             description: `Connected Google Search Console account: ${userInfo.email}`,
-//             metadata: { 
-//               gscAccountId: userInfo.id,
-//               email: userInfo.email
+//       res.status(400).json({ 
+//         valid: false,
+//         message: "Invalid or expired verification code" 
+//       });
+//       return;
+//     }
+
+//     // Code is valid - mark it as verified in metadata
+//     await db
+//       .update(passwordResetTokens)
+//       .set({
+//         metadata: {
+//           ...(resetToken.metadata as any || {}),
+//           verified: true,
+//           verifiedAt: new Date().toISOString()
+//         }
+//       })
+//       .where(eq(passwordResetTokens.id, resetToken.id));
+    
+//     // Log successful verification
+//     await storage.createActivityLog({
+//       userId: user.id,
+//       type: "password_reset_code_verified",
+//       description: "Password reset code verified successfully",
+//       metadata: { 
+//         email: user.email,
+//         timestamp: new Date().toISOString(),
+//         ipAddress: req.ip || 'unknown'
+//       }
+//     });
+
+//     res.json({
+//       valid: true,
+//       message: "Code verified successfully",
+//       // Return the token ID as session reference
+//       resetTokenId: resetToken.id
+//     });
+
+//   } catch (error) {
+//     console.error("Code verification error:", error);
+//     res.status(500).json({ 
+//       valid: false,
+//       message: "Failed to verify code" 
+//     });
+//   }
+// });
+
+// app.post("/api/auth/reset-password", async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const { email, code, newPassword } = req.body;
+    
+//     console.log('🔐 Password reset attempt for email:', email);
+    
+//     if (!email || !code || !newPassword) {
+//       res.status(400).json({ 
+//         message: "Email, verification code, and new password are required" 
+//       });
+//       return;
+//     }
+
+//     // Validate password
+//     if (newPassword.length < 6) {
+//       res.status(400).json({ 
+//         message: "Password must be at least 6 characters long" 
+//       });
+//       return;
+//     }
+
+//     // Find user by email
+//     const user = await storage.getUserByEmail(email);
+    
+//     if (!user) {
+//       res.status(400).json({ 
+//         message: "Invalid email or verification code" 
+//       });
+//       return;
+//     }
+
+//     // Hash the provided code
+//     const hashedCode = crypto.createHash('sha256').update(code).digest('hex');
+    
+//     // Find valid and verified reset token
+//     const [resetToken] = await db
+//       .select()
+//       .from(passwordResetTokens)
+//       .where(
+//         and(
+//           eq(passwordResetTokens.userId, user.id),
+//           eq(passwordResetTokens.token, hashedCode),
+//           eq(passwordResetTokens.used, false),
+//           gt(passwordResetTokens.expiresAt, new Date())
+//         )
+//       )
+//       .limit(1);
+    
+//     if (!resetToken) {
+//       res.status(400).json({ 
+//         message: "Invalid or expired verification code. Please request a new one." 
+//       });
+//       return;
+//     }
+
+//     // Check if code was verified
+//     const metadata = resetToken.metadata as any;
+//     if (!metadata?.verified) {
+//       res.status(400).json({ 
+//         message: "Code must be verified first" 
+//       });
+//       return;
+//     }
+
+//     // Check if code was recently verified (within 5 minutes)
+//     const verifiedAt = new Date(metadata.verifiedAt);
+//     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    
+//     if (verifiedAt < fiveMinutesAgo) {
+//       res.status(400).json({ 
+//         message: "Verification has expired. Please request a new code." 
+//       });
+//       return;
+//     }
+
+//     // Hash the new password
+//     const hashedPassword = await authService.hashPassword(newPassword);
+    
+//     // Update user's password
+//     const updatedUser = await authService.updateUserPassword(user.id, hashedPassword);
+    
+//     if (!updatedUser) {
+//       res.status(500).json({ 
+//         message: "Failed to reset password" 
+//       });
+//       return;
+//     }
+
+//     // Mark the token as used
+//     await db
+//       .update(passwordResetTokens)
+//       .set({ 
+//         used: true,
+//         usedAt: new Date(),
+//         metadata: {
+//           ...metadata,
+//           completedAt: new Date().toISOString()
+//         }
+//       })
+//       .where(eq(passwordResetTokens.id, resetToken.id));
+    
+//     // Mark all other tokens for this user as used
+//     await db
+//       .update(passwordResetTokens)
+//       .set({ 
+//         used: true,
+//         usedAt: new Date()
+//       })
+//       .where(
+//         and(
+//           eq(passwordResetTokens.userId, user.id),
+//           eq(passwordResetTokens.used, false)
+//         )
+//       );
+    
+//     // Log the successful reset
+//     await storage.createActivityLog({
+//       userId: user.id,
+//       type: "password_reset_completed",
+//       description: "Password successfully reset",
+//       metadata: { 
+//         email: user.email,
+//         timestamp: new Date().toISOString(),
+//         ipAddress: req.ip || 'unknown'
+//       }
+//     });
+
+//     await storage.createSecurityAudit({
+//       userId: user.id,
+//       action: "password_reset",
+//       ipAddress: req.ip,
+//       userAgent: req.get('User-Agent'),
+//       success: true,
+//       metadata: {
+//         email: user.email,
+//         timestamp: new Date().toISOString()
+//       }
+//     });
+
+//     console.log(`✅ Password reset successfully for user: ${user.email}`);
+    
+//     res.json({
+//       success: true,
+//       message: "Password has been reset successfully. You can now login with your new password."
+//     });
+
+//   } catch (error) {
+//     console.error("Password reset error:", error);
+    
+//     // Log failed attempt if we have user context
+//     try {
+//       const { email } = req.body;
+//       if (email) {
+//         const user = await storage.getUserByEmail(email);
+        
+//         if (user) {
+//           await storage.createSecurityAudit({
+//             userId: user.id,
+//             action: "password_reset_failed",
+//             ipAddress: req.ip,
+//             userAgent: req.get('User-Agent'),
+//             success: false,
+//             metadata: {
+//               error: error instanceof Error ? error.message : 'Unknown error',
+//               email: user.email,
+//               timestamp: new Date().toISOString()
 //             }
 //           });
 //         }
-//       } catch (logError) {
-//         console.error('Activity log error (non-fatal):', logError);
 //       }
-      
-//       console.log(`✅ GSC account connected: ${userInfo.email}`);
-//       res.json({ account: gscAccount });
-      
-//     } catch (tokenError: any) {
-//       if (tokenError.message?.includes('invalid_grant')) {
-//         console.error('Invalid grant - code may have been used or expired');
-//         res.status(400).json({ 
-//           error: 'Authorization code expired or already used. Please try signing in again.' 
-//         });
-//         return;
-//       }
-      
-//       if (tokenError.message?.includes('redirect_uri_mismatch')) {
-//         console.error('Redirect URI mismatch during token exchange');
-//         res.status(400).json({ 
-//           error: 'Configuration error. Please contact support.' 
-//         });
-//         return;
-//       }
-      
-//       throw tokenError;
+//     } catch (logError) {
+//       console.error("Failed to log security audit:", logError);
 //     }
     
-//   } catch (error: any) {
-//     console.error('GSC auth error:', error);
-//     const errorMessage = error.message || 'Authentication failed';
-//     const statusCode = error.response?.status || 500;
-    
-//     res.status(statusCode).json({ 
-//       error: 'Authentication failed',
-//       details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+//     res.status(500).json({ 
+//       message: "Failed to reset password. Please try again." 
 //     });
 //   }
 // });
 
-// // Get user's GSC properties
-// app.get("/api/gsc/properties", requireAuth, async (req: Request, res: Response): Promise<void> => {
+// app.post("/api/auth/resend-code", async (req: Request, res: Response): Promise<void> => {
 //   try {
-//     const userId = req.user!.id;
-//     const { accountId } = req.query;
+//     const { email } = req.body;
     
-//     console.log(`🌐 Fetching GSC properties for user: ${userId}, account: ${accountId}`);
+//     console.log('🔄 Resending verification code for email:', email);
     
-//     if (!accountId) {
-//       res.status(400).json({ error: 'Account ID required' });
+//     if (!email) {
+//       res.status(400).json({ 
+//         message: "Email address is required" 
+//       });
 //       return;
 //     }
-    
-//     // Get tokens from memory or database
-//     let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-//     if (!tokens) {
-//       const savedAccount = await gscStorage.getGscAccount(userId, accountId as string);
-//       if (!savedAccount) {
-//         res.status(401).json({ error: 'Not authenticated' });
-//         return;
-//       }
-      
-//       tokens = {
-//         access_token: savedAccount.accessToken,
-//         refresh_token: savedAccount.refreshToken,
-//         expiry_date: savedAccount.tokenExpiry
-//       };
-      
-//       // Cache in memory
-//       gscUserTokens.set(`${userId}_${accountId}`, tokens);
-//     }
-    
-//     // Set credentials
-//     gscOAuth2Client.setCredentials(tokens);
-    
-//     // Get properties from Search Console
-//     const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
-//     const { data } = await searchconsole.sites.list();
-    
-//     // Transform properties
-//     const properties = (data.siteEntry || []).map(site => ({
-//       siteUrl: site.siteUrl!,
-//       permissionLevel: site.permissionLevel!,
-//       siteType: site.siteUrl?.startsWith('sc-domain:') ? 'DOMAIN' : 'SITE',
-//       verified: true,
-//       accountId: accountId as string
-//     }));
-    
-//     console.log(`✅ Found ${properties.length} GSC properties`);
-//     res.json(properties);
-    
-//   } catch (error) {
-//     console.error('Error fetching GSC properties:', error);
-//     res.status(500).json({ error: 'Failed to fetch properties' });
-//   }
-// });
 
-// // Submit URL for indexing
-// app.post("/api/gsc/index", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, url, type = 'URL_UPDATED' } = req.body;
+//     // Find user by email
+//     const user = await storage.getUserByEmail(email);
     
-//     console.log(`📤 Submitting URL for indexing: ${url} (${type})`);
-    
-//     if (!accountId || !url) {
-//       res.status(400).json({ error: 'Account ID and URL required' });
-//       return;
-//     }
-    
-//     // Get tokens from memory or database
-//     let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-//     if (!tokens) {
-//       const savedAccount = await gscStorage.getGscAccount(userId, accountId);
-//       if (!savedAccount) {
-//         res.status(401).json({ error: 'Not authenticated' });
-//         return;
-//       }
-      
-//       tokens = {
-//         access_token: savedAccount.accessToken,
-//         refresh_token: savedAccount.refreshToken,
-//         expiry_date: savedAccount.tokenExpiry
-//       };
-      
-//       gscUserTokens.set(`${userId}_${accountId}`, tokens);
-//     }
-    
-//     gscOAuth2Client.setCredentials(tokens);
-    
-//     // Use Indexing API
-//     const indexing = google.indexing({ version: 'v3', auth: gscOAuth2Client });
-    
-//     try {
-//       const result = await indexing.urlNotifications.publish({
-//         requestBody: {
-//           url: url,
-//           type: type
-//         }
-//       });
-      
-//       // Log activity
-//       await storage.createActivityLog({
-//         userId,
-//         type: "gsc_url_indexed",
-//         description: `URL submitted for indexing: ${url}`,
-//         metadata: { 
-//           url,
-//           type,
-//           notifyTime: result.data.urlNotificationMetadata?.latestUpdate?.notifyTime
-//         }
-//       });
-      
-//       console.log(`✅ URL submitted for indexing: ${url}`);
+//     // Always return success to prevent email enumeration
+//     if (!user) {
 //       res.json({
 //         success: true,
-//         notifyTime: result.data.urlNotificationMetadata?.latestUpdate?.notifyTime,
-//         url: url
+//         message: "If an account exists with that email, a new verification code has been sent."
 //       });
+//       return;
+//     }
+
+//     // Check for rate limiting - count recent tokens
+//     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+//     const recentTokens = await db
+//       .select()
+//       .from(passwordResetTokens)
+//       .where(
+//         and(
+//           eq(passwordResetTokens.userId, user.id),
+//           gt(passwordResetTokens.createdAt, oneHourAgo)
+//         )
+//       );
+    
+//     if (recentTokens.length >= 3) {
+//       res.status(429).json({ 
+//         message: "Too many requests. Please try again later." 
+//       });
+//       return;
+//     }
+
+//     // Mark existing unused tokens as used
+//     await db
+//       .update(passwordResetTokens)
+//       .set({ 
+//         used: true,
+//         usedAt: new Date(),
+//         metadata: sql`jsonb_set(COALESCE(metadata, '{}'), '{invalidatedReason}', '"new_code_requested"')`
+//       })
+//       .where(
+//         and(
+//           eq(passwordResetTokens.userId, user.id),
+//           eq(passwordResetTokens.used, false)
+//         )
+//       );
+
+//     // Generate new 6-digit verification code
+//     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+//     const hashedCode = crypto.createHash('sha256').update(verificationCode).digest('hex');
+//     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+//     // Store new reset token
+//     await db.insert(passwordResetTokens).values({
+//       userId: user.id,
+//       email: user.email,
+//       token: hashedCode,
+//       expiresAt,
+//       used: false,
+//       metadata: {
+//         type: 'verification_code',
+//         attempts: 0,
+//         verified: false,
+//         codeLength: 6,
+//         resent: true
+//       }
+//     });
+
+//     // SEND EMAIL WITH NEW VERIFICATION CODE
+//     try {
+//       const emailSent = await emailService.sendPasswordResetCode(user.email, verificationCode);
       
-//     } catch (indexError: any) {
-//       if (indexError.code === 429) {
-//         res.status(429).json({ error: 'Daily quota exceeded (200 URLs/day)' });
+//       if (emailSent) {
+//         console.log('✅ New verification code email sent to:', user.email);
 //       } else {
-//         throw indexError;
+//         console.warn('⚠️ Failed to send resend email');
 //       }
+//     } catch (emailError) {
+//       console.error('Failed to send email:', emailError);
+//       // Continue anyway - in development, user can see code in response
 //     }
-    
-//   } catch (error) {
-//     console.error('Indexing error:', error);
-//     res.status(500).json({ error: 'Failed to submit URL for indexing' });
-//   }
-// });
 
-// // Inspect URL
-// app.post("/api/gsc/inspect", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, siteUrl, inspectionUrl } = req.body;
-    
-//     console.log(`🔍 Inspecting URL: ${inspectionUrl}`);
-    
-//     if (!accountId || !siteUrl || !inspectionUrl) {
-//       res.status(400).json({ error: 'Account ID, site URL, and inspection URL required' });
-//       return;
-//     }
-    
-//     // Get tokens from memory or database
-//     let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-//     if (!tokens) {
-//       const savedAccount = await gscStorage.getGscAccount(userId, accountId);
-//       if (!savedAccount) {
-//         res.status(401).json({ error: 'Not authenticated' });
-//         return;
-//       }
-      
-//       tokens = {
-//         access_token: savedAccount.accessToken,
-//         refresh_token: savedAccount.refreshToken,
-//         expiry_date: savedAccount.tokenExpiry
-//       };
-      
-//       gscUserTokens.set(`${userId}_${accountId}`, tokens);
-//     }
-    
-//     gscOAuth2Client.setCredentials(tokens);
-    
-//     // Use URL Inspection API
-//     const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
-    
-//     const result = await searchconsole.urlInspection.index.inspect({
-//       requestBody: {
-//         inspectionUrl: inspectionUrl,
-//         siteUrl: siteUrl
-//       }
-//     });
-    
-//     const inspection = result.data.inspectionResult;
-    
-//     // Transform result
-//     const inspectionResult = {
-//       url: inspectionUrl,
-//       indexStatus: inspection?.indexStatusResult?.coverageState || 'NOT_INDEXED',
-//       lastCrawlTime: inspection?.indexStatusResult?.lastCrawlTime,
-//       pageFetchState: inspection?.indexStatusResult?.pageFetchState,
-//       googleCanonical: inspection?.indexStatusResult?.googleCanonical,
-//       userCanonical: inspection?.indexStatusResult?.userCanonical,
-//       sitemap: inspection?.indexStatusResult?.sitemap,
-//       mobileUsability: inspection?.mobileUsabilityResult?.verdict || 'NEUTRAL',
-//       richResultsStatus: inspection?.richResultsResult?.verdict
-//     };
-    
-//     console.log(`✅ URL inspection complete: ${inspectionResult.indexStatus}`);
-//     res.json(inspectionResult);
-    
-//   } catch (error) {
-//     console.error('Inspection error:', error);
-//     res.status(500).json({ error: 'Failed to inspect URL' });
-//   }
-// });
-
-// // Submit sitemap
-// app.post("/api/gsc/sitemap", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, siteUrl, sitemapUrl } = req.body;
-    
-//     console.log(`📄 Submitting sitemap: ${sitemapUrl}`);
-    
-//     if (!accountId || !siteUrl || !sitemapUrl) {
-//       res.status(400).json({ error: 'Account ID, site URL, and sitemap URL required' });
-//       return;
-//     }
-    
-//     // Get tokens from memory or database
-//     let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-//     if (!tokens) {
-//       const savedAccount = await gscStorage.getGscAccount(userId, accountId);
-//       if (!savedAccount) {
-//         res.status(401).json({ error: 'Not authenticated' });
-//         return;
-//       }
-      
-//       tokens = {
-//         access_token: savedAccount.accessToken,
-//         refresh_token: savedAccount.refreshToken,
-//         expiry_date: savedAccount.tokenExpiry
-//       };
-      
-//       gscUserTokens.set(`${userId}_${accountId}`, tokens);
-//     }
-    
-//     gscOAuth2Client.setCredentials(tokens);
-    
-//     // Submit sitemap
-//     const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
-    
-//     await searchconsole.sitemaps.submit({
-//       siteUrl: siteUrl,
-//       feedpath: sitemapUrl
-//     });
-    
-//     // Log activity
+//     // Log the activity
 //     await storage.createActivityLog({
-//       userId,
-//       type: "gsc_sitemap_submitted",
-//       description: `Sitemap submitted: ${sitemapUrl}`,
+//       userId: user.id,
+//       type: "password_reset_code_resent",
+//       description: "Password reset code resent",
 //       metadata: { 
-//         siteUrl,
-//         sitemapUrl
+//         email: user.email,
+//         timestamp: new Date().toISOString(),
+//         ipAddress: req.ip || 'unknown'
 //       }
 //     });
-    
-//     console.log(`✅ Sitemap submitted: ${sitemapUrl}`);
+
+//     console.log('📧 New verification code generated for:', user.email);
+//     console.log('🔐 Code (for testing only):', verificationCode);
+
 //     res.json({
 //       success: true,
-//       message: 'Sitemap submitted successfully'
+//       message: "If an account exists with that email, a new verification code has been sent.",
+//       ...(process.env.NODE_ENV === 'development' && { 
+//         verificationCode,
+//         expiresAt: expiresAt.toISOString()
+//       })
 //     });
-    
+
 //   } catch (error) {
-//     console.error('Sitemap submission error:', error);
-//     res.status(500).json({ error: 'Failed to submit sitemap' });
+//     console.error("Resend code error:", error);
+//     res.status(500).json({ 
+//       message: "An error occurred. Please try again later." 
+//     });
 //   }
 // });
 
-// // Get performance data
-// app.get("/api/gsc/performance", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, siteUrl, days = '28' } = req.query;
-    
-//     console.log(`📊 Fetching performance data for: ${siteUrl}`);
-    
-//     if (!accountId || !siteUrl) {
-//       res.status(400).json({ error: 'Account ID and site URL required' });
-//       return;
+
+
+//   // ===========================================================================
+//   // USER SETTINGS ROUTES
+//   // ===========================================================================
+  
+//   app.get("/api/user/settings", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       console.log(`⚙️ Fetching settings for user: ${userId}`);
+      
+//       const settings = await storage.getOrCreateUserSettings(userId);
+      
+//       const transformedSettings = {
+//         profile: {
+//           name: settings.profileName || req.user!.name || "",
+//           email: settings.profileEmail || req.user!.email || "",
+//           company: settings.profileCompany || "",
+//           timezone: settings.profileTimezone || "America/New_York",
+//         },
+//         notifications: {
+//           emailReports: settings.notificationEmailReports,
+//           contentGenerated: settings.notificationContentGenerated,
+//           seoIssues: settings.notificationSeoIssues,
+//           systemAlerts: settings.notificationSystemAlerts,
+//         },
+//         automation: {
+//           defaultAiModel: settings.automationDefaultAiModel,
+//           autoFixSeoIssues: settings.automationAutoFixSeoIssues,
+//           contentGenerationFrequency: settings.automationContentGenerationFrequency,
+//           reportGeneration: settings.automationReportGeneration,
+//         },
+//         security: {
+//           twoFactorAuth: settings.securityTwoFactorAuth,
+//           sessionTimeout: settings.securitySessionTimeout,
+//           allowApiAccess: settings.securityAllowApiAccess,
+//         },
+//       };
+      
+//       console.log(`✅ Settings fetched successfully for user ${userId}`);
+//       res.json(transformedSettings);
+//     } catch (error) {
+//       console.error("Failed to fetch user settings:", error);
+//       res.status(500).json({ message: "Failed to fetch settings" });
 //     }
-    
-//     // Get tokens from memory or database
-//     let tokens = gscUserTokens.get(`${userId}_${accountId}`);
-//     if (!tokens) {
-//       const savedAccount = await gscStorage.getGscAccount(userId, accountId as string);
-//       if (!savedAccount) {
-//         res.status(401).json({ error: 'Not authenticated' });
+//   });
+
+//   app.put("/api/user/settings", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const { profile, notifications, automation, security } = req.body;
+      
+//       console.log(`⚙️ Updating settings for user: ${userId}`);
+      
+//       const updateData: Partial<InsertUserSettings> = {};
+      
+//       if (profile) {
+//         if (profile.name !== undefined) updateData.profileName = profile.name;
+//         if (profile.email !== undefined) updateData.profileEmail = profile.email;
+//         if (profile.company !== undefined) updateData.profileCompany = profile.company;
+//         if (profile.timezone !== undefined) updateData.profileTimezone = profile.timezone;
+//       }
+      
+//       if (notifications) {
+//         if (notifications.emailReports !== undefined) updateData.notificationEmailReports = notifications.emailReports;
+//         if (notifications.contentGenerated !== undefined) updateData.notificationContentGenerated = notifications.contentGenerated;
+//         if (notifications.seoIssues !== undefined) updateData.notificationSeoIssues = notifications.seoIssues;
+//         if (notifications.systemAlerts !== undefined) updateData.notificationSystemAlerts = notifications.systemAlerts;
+//       }
+      
+//       if (automation) {
+//         if (automation.defaultAiModel !== undefined) updateData.automationDefaultAiModel = automation.defaultAiModel;
+//         if (automation.autoFixSeoIssues !== undefined) updateData.automationAutoFixSeoIssues = automation.autoFixSeoIssues;
+//         if (automation.contentGenerationFrequency !== undefined) updateData.automationContentGenerationFrequency = automation.contentGenerationFrequency;
+//         if (automation.reportGeneration !== undefined) updateData.automationReportGeneration = automation.reportGeneration;
+//       }
+      
+//       if (security) {
+//         if (security.twoFactorAuth !== undefined) updateData.securityTwoFactorAuth = security.twoFactorAuth;
+//         if (security.sessionTimeout !== undefined) updateData.securitySessionTimeout = security.sessionTimeout;
+//         if (security.allowApiAccess !== undefined) updateData.securityAllowApiAccess = security.allowApiAccess;
+//       }
+      
+//       if (updateData.securitySessionTimeout !== undefined) {
+//         if (updateData.securitySessionTimeout < 1 || updateData.securitySessionTimeout > 168) {
+//           res.status(400).json({ message: "Session timeout must be between 1 and 168 hours" });
+//           return;
+//         }
+//       }
+      
+//       const updatedSettings = await storage.updateUserSettings(userId, updateData);
+      
+//       if (!updatedSettings) {
+//         res.status(404).json({ message: "Settings not found" });
 //         return;
 //       }
       
-//       tokens = {
-//         access_token: savedAccount.accessToken,
-//         refresh_token: savedAccount.refreshToken,
-//         expiry_date: savedAccount.tokenExpiry
+//       const transformedSettings = {
+//         profile: {
+//           name: updatedSettings.profileName || req.user!.name || "",
+//           email: updatedSettings.profileEmail || req.user!.email || "",
+//           company: updatedSettings.profileCompany || "",
+//           timezone: updatedSettings.profileTimezone || "America/New_York",
+//         },
+//         notifications: {
+//           emailReports: updatedSettings.notificationEmailReports,
+//           contentGenerated: updatedSettings.notificationContentGenerated,
+//           seoIssues: updatedSettings.notificationSeoIssues,
+//           systemAlerts: updatedSettings.notificationSystemAlerts,
+//         },
+//         automation: {
+//           defaultAiModel: updatedSettings.automationDefaultAiModel,
+//           autoFixSeoIssues: updatedSettings.automationAutoFixSeoIssues,
+//           contentGenerationFrequency: updatedSettings.automationContentGenerationFrequency,
+//           reportGeneration: updatedSettings.automationReportGeneration,
+//         },
+//         security: {
+//           twoFactorAuth: updatedSettings.securityTwoFactorAuth,
+//           sessionTimeout: updatedSettings.securitySessionTimeout,
+//           allowApiAccess: updatedSettings.securityAllowApiAccess,
+//         },
 //       };
       
-//       gscUserTokens.set(`${userId}_${accountId}`, tokens);
+//       await storage.createActivityLog({
+//         userId,
+//         type: "settings_updated",
+//         description: "User settings updated",
+//         metadata: { 
+//           sectionsUpdated: Object.keys(req.body),
+//           timestamp: new Date().toISOString()
+//         }
+//       });
+      
+//       console.log(`✅ Settings updated successfully for user ${userId}`);
+//       res.json(transformedSettings);
+//     } catch (error) {
+//       console.error("Failed to update user settings:", error);
+//       res.status(500).json({ message: "Failed to update settings" });
+//     }
+//   });
+
+//   app.delete("/api/user/settings", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       console.log(`🗑️ Resetting settings to defaults for user: ${userId}`);
+      
+//       const deleted = await storage.deleteUserSettings(userId);
+      
+//       if (!deleted) {
+//         res.status(404).json({ message: "Settings not found" });
+//         return;
+//       }
+      
+//       const defaultSettings = await storage.getOrCreateUserSettings(userId);
+      
+//       const transformedSettings = {
+//         profile: {
+//           name: req.user!.name || "",
+//           email: req.user!.email || "",
+//           company: "",
+//           timezone: "America/New_York",
+//         },
+//         notifications: {
+//           emailReports: true,
+//           contentGenerated: true,
+//           seoIssues: true,
+//           systemAlerts: false,
+//         },
+//         automation: {
+//           defaultAiModel: "gpt-4o",
+//           autoFixSeoIssues: true,
+//           contentGenerationFrequency: "twice-weekly",
+//           reportGeneration: "weekly",
+//         },
+//         security: {
+//           twoFactorAuth: false,
+//           sessionTimeout: 24,
+//           allowApiAccess: true,
+//         },
+//       };
+      
+//       await storage.createActivityLog({
+//         userId,
+//         type: "settings_reset",
+//         description: "User settings reset to defaults",
+//         metadata: { 
+//           timestamp: new Date().toISOString()
+//         }
+//       });
+      
+//       console.log(`✅ Settings reset to defaults for user ${userId}`);
+//       res.json({
+//         message: "Settings reset to defaults",
+//         settings: transformedSettings
+//       });
+//     } catch (error) {
+//       console.error("Failed to reset user settings:", error);
+//       res.status(500).json({ message: "Failed to reset settings" });
+//     }
+//   });
+
+//   // ===========================================================================
+//   // API KEY MANAGEMENT ROUTES
+//   // ===========================================================================
+  
+//   app.get("/api/user/api-keys", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       console.log(`🔑 Fetching API keys for user: ${userId}`);
+      
+//       const apiKeys = await storage.getUserApiKeys(userId);
+      
+//       const transformedKeys = apiKeys.map(key => ({
+//         id: key.id,
+//         provider: key.provider,
+//         keyName: key.keyName,
+//         maskedKey: key.maskedKey,
+//         isActive: key.isActive,
+//         validationStatus: key.validationStatus,
+//         lastValidated: key.lastValidated?.toISOString(),
+//         validationError: key.validationError,
+//         usageCount: key.usageCount,
+//         lastUsed: key.lastUsed?.toISOString(),
+//         createdAt: key.createdAt.toISOString()
+//       }));
+      
+//       console.log(`✅ Found ${transformedKeys.length} API keys for user ${userId}`);
+//       res.json(transformedKeys);
+//     } catch (error) {
+//       console.error("Failed to fetch API keys:", error);
+//       res.status(500).json({ message: "Failed to fetch API keys" });
+//     }
+//   });
+
+//   app.post("/api/user/api-keys", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+//     const { provider, keyName, apiKey } = req.body;
+    
+//     console.log(`🔑 Adding API key for user: ${userId}, provider: ${provider}`);
+    
+//     if (!provider || !keyName || !apiKey) {
+//       res.status(400).json({ message: "Provider, key name, and API key are required" });
+//       return;
 //     }
     
-//     gscOAuth2Client.setCredentials(tokens);
+//     if (!apiValidationService.getSupportedProviders().includes(provider)) {
+//       res.status(400).json({ message: "Invalid provider" });
+//       return;
+//     }
     
-//     // Get performance data
-//     const searchconsole = google.searchconsole({ version: 'v1', auth: gscOAuth2Client });
+//     const existingKeys = await storage.getUserApiKeys(userId);
+//     const existingProviderKey = existingKeys.find(k => k.provider === provider && k.isActive);
     
-//     const endDate = new Date();
-//     const startDate = new Date();
-//     startDate.setDate(startDate.getDate() - parseInt(days as string));
+//     if (existingProviderKey) {
+//       res.status(400).json({ 
+//         message: `You already have an active ${apiValidationService.getProviderDisplayName(provider)} API key. Please delete the existing one first.` 
+//       });
+//       return;
+//     }
     
-//     const result = await searchconsole.searchanalytics.query({
-//       siteUrl: siteUrl as string,
-//       requestBody: {
-//         startDate: startDate.toISOString().split('T')[0],
-//         endDate: endDate.toISOString().split('T')[0],
-//         dimensions: ['date'],
-//         metrics: ['clicks', 'impressions', 'ctr', 'position'],
-//         rowLimit: 1000
+//     let newApiKey;
+//     try {
+//       newApiKey = await storage.createUserApiKey(userId, {
+//         provider,
+//         keyName,
+//         apiKey
+//       });
+//     } catch (createError) {
+//       res.status(400).json({ 
+//         message: createError instanceof Error ? createError.message : "Invalid API key format"
+//       });
+//       return;
+//     }
+    
+//     console.log(`🔍 Validating ${provider} API key...`);
+    
+//     let validationResult;
+//     try {
+//       validationResult = await apiValidationService.validateApiKey(provider, apiKey);
+//     } catch (validationError) {
+//       console.error(`Validation failed for ${provider}:`, validationError);
+//       validationResult = { 
+//         valid: false, 
+//         error: validationError instanceof Error ? validationError.message : 'Validation failed' 
+//       };
+//     }
+    
+//     await storage.updateUserApiKey(userId, newApiKey.id, {
+//       validationStatus: validationResult.valid ? 'valid' : 'invalid',
+//       lastValidated: new Date(),
+//       validationError: validationResult.error || null
+//     });
+    
+//     const updatedKey = await storage.getUserApiKey(userId, newApiKey.id);
+    
+//     if (!validationResult.valid) {
+//       await storage.deleteUserApiKey(userId, newApiKey.id);
+      
+//       res.status(400).json({ 
+//         message: validationResult.error || "API key validation failed",
+//         error: "INVALID_API_KEY"
+//       });
+//       return;
+//     }
+    
+//     // CLEAR CACHE after successfully adding key
+//     if (provider === 'openai') {
+//       console.log('🔄 Clearing OpenAI cache for AI and image services');
+//       aiService.clearApiKeyCache(userId, 'openai');
+//       imageService.clearApiKeyCache(userId);
+//     } else if (provider === 'anthropic') {
+//       console.log('🔄 Clearing Anthropic cache for AI service');
+//       aiService.clearApiKeyCache(userId, 'anthropic');
+//     } else if (provider === 'google_pagespeed' || provider === 'gemini') {
+//       console.log('🔄 Clearing Gemini cache for AI service');
+//       aiService.clearApiKeyCache(userId, 'gemini');
+//     }
+    
+//     await storage.createActivityLog({
+//       userId,
+//       type: "api_key_added",
+//       description: `API key added for ${apiValidationService.getProviderDisplayName(provider)}: ${keyName}`,
+//       metadata: { 
+//         provider,
+//         keyName,
+//         keyId: newApiKey.id,
+//         validationStatus: validationResult.valid ? 'valid' : 'invalid'
 //       }
 //     });
     
-//     const performanceData = (result.data.rows || []).map(row => ({
-//       date: row.keys?.[0],
-//       clicks: row.clicks || 0,
-//       impressions: row.impressions || 0,
-//       ctr: row.ctr || 0,
-//       position: row.position || 0
+//     console.log(`✅ API key added and validated successfully for user ${userId}`);
+    
+//     res.status(201).json({
+//       id: updatedKey!.id,
+//       provider: updatedKey!.provider,
+//       keyName: updatedKey!.keyName,
+//       maskedKey: updatedKey!.maskedKey,
+//       isActive: updatedKey!.isActive,
+//       validationStatus: updatedKey!.validationStatus,
+//       lastValidated: updatedKey!.lastValidated?.toISOString(),
+//       validationError: updatedKey!.validationError,
+//       usageCount: updatedKey!.usageCount,
+//       lastUsed: updatedKey!.lastUsed?.toISOString(),
+//       createdAt: updatedKey!.createdAt.toISOString()
+//     });
+//   } catch (error) {
+//     console.error("Failed to add API key:", error);
+//     res.status(500).json({ 
+//       message: "Failed to add API key",
+//       error: error instanceof Error ? error.message : 'Unknown error'
+//     });
+//   }
+// });
+
+//   app.post("/api/user/api-keys/:id/validate", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const keyId = req.params.id;
+      
+//       console.log(`🔍 Validating API key ${keyId} for user: ${userId}`);
+      
+//       const apiKey = await storage.getUserApiKey(userId, keyId);
+//       if (!apiKey) {
+//         res.status(404).json({ message: "API key not found" });
+//         return;
+//       }
+      
+//       const decryptedKey = await storage.getDecryptedApiKey(userId, keyId);
+//       if (!decryptedKey) {
+//         res.status(400).json({ message: "Cannot decrypt API key" });
+//         return;
+//       }
+      
+//       let validationResult;
+//       try {
+//         validationResult = await apiValidationService.validateApiKey(apiKey.provider, decryptedKey);
+//       } catch (validationError) {
+//         console.error(`Validation failed for ${apiKey.provider}:`, validationError);
+//         validationResult = { 
+//           valid: false, 
+//           error: validationError instanceof Error ? validationError.message : 'Validation failed' 
+//         };
+//       }
+      
+//       await storage.updateUserApiKey(userId, keyId, {
+//         validationStatus: validationResult.valid ? 'valid' : 'invalid',
+//         lastValidated: new Date(),
+//         validationError: validationResult.error || null
+//       });
+      
+//       await storage.createActivityLog({
+//         userId,
+//         type: "api_key_validated",
+//         description: `API key validation ${validationResult.valid ? 'successful' : 'failed'}: ${apiKey.keyName}`,
+//         metadata: { 
+//           keyId,
+//           provider: apiKey.provider,
+//           isValid: validationResult.valid,
+//           error: validationResult.error
+//         }
+//       });
+      
+//       console.log(`✅ API key validation completed for user ${userId}: ${validationResult.valid ? 'valid' : 'invalid'}`);
+      
+//       res.json({
+//         isValid: validationResult.valid,
+//         error: validationResult.error,
+//         lastValidated: new Date().toISOString()
+//       });
+//     } catch (error) {
+//       console.error("Failed to validate API key:", error);
+//       res.status(500).json({ 
+//         message: "Failed to validate API key",
+//         error: error instanceof Error ? error.message : 'Unknown error'
+//       });
+//     }
+//   });
+
+//   app.delete("/api/user/api-keys/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+//     const keyId = req.params.id;
+    
+//     console.log(`🗑️ Deleting API key ${keyId} for user: ${userId}`);
+    
+//     const apiKey = await storage.getUserApiKey(userId, keyId);
+//     if (!apiKey) {
+//       res.status(404).json({ message: "API key not found" });
+//       return;
+//     }
+    
+//     const deleted = await storage.deleteUserApiKey(userId, keyId);
+    
+//     if (!deleted) {
+//       res.status(404).json({ message: "API key not found" });
+//       return;
+//     }
+    
+//     // CLEAR CACHE after successfully deleting key
+//     if (apiKey.provider === 'openai') {
+//       console.log('🔄 Clearing OpenAI cache after key deletion');
+//       aiService.clearApiKeyCache(userId, 'openai');
+//       imageService.clearApiKeyCache(userId);
+//     } else if (apiKey.provider === 'anthropic') {
+//       console.log('🔄 Clearing Anthropic cache after key deletion');
+//       aiService.clearApiKeyCache(userId, 'anthropic');
+//     } else if (apiKey.provider === 'google_pagespeed' || apiKey.provider === 'gemini') {
+//       console.log('🔄 Clearing Gemini cache after key deletion');
+//       aiService.clearApiKeyCache(userId, 'gemini');
+//     }
+    
+//     await storage.createActivityLog({
+//       userId,
+//       type: "api_key_deleted",
+//       description: `API key deleted: ${apiKey.keyName} (${apiValidationService.getProviderDisplayName(apiKey.provider)})`,
+//       metadata: { 
+//         keyId,
+//         provider: apiKey.provider,
+//         keyName: apiKey.keyName
+//       }
+//     });
+    
+//     console.log(`✅ API key deleted successfully for user ${userId}`);
+//     res.status(204).send();
+//   } catch (error) {
+//     console.error("Failed to delete API key:", error);
+//     res.status(500).json({ 
+//       message: "Failed to delete API key",
+//       error: error instanceof Error ? error.message : 'Unknown error'
+//     });
+//   }
+// });
+
+//   app.get("/api/user/api-keys/status", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       console.log(`📊 Fetching API key status for user: ${userId}`);
+      
+//       const userKeys = await storage.getUserApiKeys(userId);
+      
+//       const providers = {
+//         openai: {
+//           configured: false,
+//           keyName: null as string | null,
+//           lastValidated: null as string | null,
+//           status: "not_configured" as string
+//         },
+//         anthropic: {
+//           configured: false,
+//           keyName: null as string | null,
+//           lastValidated: null as string | null,
+//           status: "not_configured" as string
+//         },
+//         google_pagespeed: {
+//           configured: false,
+//           keyName: null as string | null,
+//           lastValidated: null as string | null,
+//           status: "not_configured" as string
+//         }
+//       };
+      
+//       for (const key of userKeys) {
+//         if (key.isActive && providers[key.provider as keyof typeof providers]) {
+//           const providerStatus = providers[key.provider as keyof typeof providers];
+//           providerStatus.configured = true;
+//           providerStatus.keyName = key.keyName;
+//           providerStatus.lastValidated = key.lastValidated?.toISOString() || null;
+//           providerStatus.status = key.validationStatus === 'valid' ? 'active' : 
+//                                    key.validationStatus === 'invalid' ? 'invalid' : 'pending';
+//         }
+//       }
+      
+//       if (!providers.openai.configured && (process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR)) {
+//         providers.openai.configured = true;
+//         providers.openai.keyName = "System OpenAI Key";
+//         providers.openai.status = "system";
+//       }
+      
+//       if (!providers.anthropic.configured && process.env.ANTHROPIC_API_KEY) {
+//         providers.anthropic.configured = true;
+//         providers.anthropic.keyName = "System Anthropic Key";
+//         providers.anthropic.status = "system";
+//       }
+      
+//       if (!providers.google_pagespeed.configured && process.env.GOOGLE_PAGESPEED_API_KEY) {
+//         providers.google_pagespeed.configured = true;
+//         providers.google_pagespeed.keyName = "System PageSpeed Key";
+//         providers.google_pagespeed.status = "system";
+//       }
+      
+//       console.log(`✅ API key status fetched for user ${userId}`);
+//       res.json({ providers });
+//     } catch (error) {
+//       console.error("Failed to fetch API key status:", error);
+//       res.status(500).json({ 
+//         message: "Failed to fetch API key status",
+//         error: error instanceof Error ? error.message : 'Unknown error'
+//       });
+//     }
+//   });
+
+//   app.put("/api/user/api-keys/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+//     const keyId = req.params.id;
+//     const { isActive } = req.body;
+    
+//     const apiKey = await storage.getUserApiKey(userId, keyId);
+//     if (!apiKey) {
+//       res.status(404).json({ message: "API key not found" });
+//       return;
+//     }
+    
+//     await storage.updateUserApiKey(userId, keyId, {
+//       isActive: isActive !== undefined ? isActive : apiKey.isActive,
+//     });
+    
+//     // CLEAR CACHE when key is deactivated/activated
+//     if (isActive !== undefined) {
+//       if (apiKey.provider === 'openai') {
+//         console.log('🔄 Clearing OpenAI cache after key status change');
+//         aiService.clearApiKeyCache(userId, 'openai');
+//         imageService.clearApiKeyCache(userId);
+//       } else if (apiKey.provider === 'anthropic') {
+//         console.log('🔄 Clearing Anthropic cache after key status change');
+//         aiService.clearApiKeyCache(userId, 'anthropic');
+//       } else if (apiKey.provider === 'google_pagespeed' || apiKey.provider === 'gemini') {
+//         console.log('🔄 Clearing Gemini cache after key status change');
+//         aiService.clearApiKeyCache(userId, 'gemini');
+//       }
+//     }
+    
+//     const updatedKey = await storage.getUserApiKey(userId, keyId);
+//     res.json(updatedKey);
+//   } catch (error) {
+//     console.error("Failed to update API key:", error);
+//     res.status(500).json({ 
+//       message: "Failed to update API key",
+//       error: error instanceof Error ? error.message : 'Unknown error'
+//     });
+//   }
+// });
+//   // ===========================================================================
+//   // WEBSITE MANAGEMENT ROUTES
+//   // ===========================================================================
+  
+//   app.get("/api/user/websites", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       console.log(`🌐 Fetching websites for user: ${userId}`);
+      
+//       const websites = await storage.getUserWebsites(userId);
+//       console.log(`✅ Found ${websites.length} websites for user ${userId}`);
+      
+//       res.json(websites);
+//     } catch (error) {
+//       console.error("Failed to fetch user websites:", error);
+//       res.status(500).json({ message: "Failed to fetch websites" });
+//     }
+//   });
+
+//   app.get("/api/user/websites/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const website = await storage.getUserWebsite(req.params.id, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+//       res.json(website);
+//     } catch (error) {
+//       console.error("Failed to fetch user website:", error);
+//       res.status(500).json({ message: "Failed to fetch website" });
+//     }
+//   });
+
+//   app.post("/api/user/websites", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       console.log(`🌐 Creating website for user: ${userId}`, req.body);
+      
+//       const validatedData = insertWebsiteSchema.parse(req.body);
+//       const websiteWithUserId = { ...validatedData, userId };
+      
+//       const website = await storage.createWebsite(websiteWithUserId);
+//       console.log(`✅ Website created successfully:`, website.id);
+      
+//       res.status(201).json(website);
+//     } catch (error) {
+//       console.error("Failed to create website:", error);
+      
+//       if (error instanceof Error) {
+//         if (error.message.includes('authentication')) {
+//           res.status(401).json({ message: "WordPress authentication failed. Please check your credentials." });
+//           return;
+//         }
+//         if (error.message.includes('validation')) {
+//           res.status(400).json({ message: "Invalid website data: " + error.message });
+//           return;
+//         }
+//       }
+      
+//       res.status(400).json({ message: "Failed to create website" });
+//     }
+//   });
+
+//   app.put("/api/user/websites/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const existingWebsite = await storage.getUserWebsite(req.params.id, userId);
+//       if (!existingWebsite) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+      
+//       const website = await storage.updateWebsite(req.params.id, req.body);
+//       res.json(website);
+//     } catch (error) {
+//       console.error("Failed to update website:", error);
+//       res.status(500).json({ message: "Failed to update website" });
+//     }
+//   });
+
+//   app.delete("/api/user/websites/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const existingWebsite = await storage.getUserWebsite(req.params.id, userId);
+//       if (!existingWebsite) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+      
+//       const deleted = await storage.deleteWebsite(req.params.id);
+//       if (!deleted) {
+//         res.status(404).json({ message: "Website not found" });
+//         return;
+//       }
+//       res.status(204).send();
+//     } catch (error) {
+//       console.error("Failed to delete website:", error);
+//       res.status(500).json({ message: "Failed to delete website" });
+//     }
+//   });
+
+//   app.post("/api/user/websites/:id/validate-ownership", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const website = await storage.getUserWebsite(req.params.id, userId);
+//       if (!website) {
+//         res.status(403).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+//       res.json({ valid: true, websiteId: website.id, userId });
+//     } catch (error) {
+//       console.error("Website ownership validation failed:", error);
+//       res.status(500).json({ message: "Validation failed" });
+//     }
+//   });
+
+//   // ===========================================================================
+//   // CONTENT MANAGEMENT ROUTES
+//   // ===========================================================================
+  
+//   app.get("/api/user/websites/:id/content", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const website = await storage.getUserWebsite(req.params.id, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+      
+//       const content = await storage.getContentByWebsite(req.params.id);
+//       res.json(content);
+//     } catch (error) {
+//       console.error("Failed to fetch content:", error);
+//       res.status(500).json({ message: "Failed to fetch content" });
+//     }
+//   });
+
+//   app.get("/api/user/content/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const contentId = req.params.id;
+      
+//       const content = await storage.getContent(contentId);
+//       if (!content || content.userId !== userId) {
+//         res.status(404).json({ message: "Content not found or access denied" });
+//         return;
+//       }
+
+//       res.json({
+//         ...content,
+//         content: content.body,
+//         wordCount: content.body ? content.body.split(/\s+/).length : 0,
+//         readingTime: content.body ? Math.ceil(content.body.split(/\s+/).length / 200) : 0,
+//       });
+//     } catch (error) {
+//       console.error("Failed to fetch content:", error);
+//       res.status(500).json({ message: "Failed to fetch content" });
+//     }
+//   });
+
+//  app.post("/api/user/content/generate", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+//     const { websiteId, ...contentData } = req.body;
+
+    
+//     console.log('🔍 DEBUG: Raw request body:', {
+//       websiteId,
+//       contentData: {
+//         includeImages: contentData.includeImages,
+//         imageCount: contentData.imageCount,
+//         imageStyle: contentData.imageStyle,
+//         aiProvider: contentData.aiProvider,
+//         topic: contentData.topic
+//       }
+//     });
+    
+//     const website = await storage.getUserWebsite(websiteId, userId);
+//     if (!website) {
+//       res.status(403).json({ message: "Website not found or access denied" });
+//       return;
+//     }
+    
+//     const { 
+//       topic, 
+//       keywords, 
+//       tone, 
+//       wordCount, 
+//       brandVoice, 
+//       targetAudience, 
+//       eatCompliance,
+//       aiProvider = 'openai',
+//       includeImages = false,
+//       imageCount = 0,
+//       imageStyle = 'natural'
+//     } = contentData;
+    
+//     if (!topic) {
+//       res.status(400).json({ message: "Topic is required" });
+//       return;
+//     }
+
+//     // UPDATED: Check for user's OpenAI key OR environment key for images
+//     if (includeImages) {
+//       const userApiKeys = await storage.getUserApiKeys(userId);
+//       const hasUserOpenAIKey = userApiKeys.some(
+//         key => key.provider === 'openai' && 
+//                key.isActive && 
+//                key.validationStatus === 'valid'
+//       );
+//       const hasSystemOpenAIKey = !!(process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR);
+      
+//       if (!hasUserOpenAIKey && !hasSystemOpenAIKey) {
+//         res.status(400).json({ 
+//           message: "Image generation requires an OpenAI API key. Please add your OpenAI API key in settings or contact support." 
+//         });
+//         return;
+//       }
+      
+//       console.log(`🎨 Image generation available via ${hasUserOpenAIKey ? 'user' : 'system'} OpenAI key`);
+//     }
+
+//     if (includeImages && (imageCount < 1 || imageCount > 3)) {
+//       res.status(400).json({ 
+//         message: "Image count must be between 1 and 3" 
+//       });
+//       return;
+//     }
+
+//     if (aiProvider && !['openai', 'anthropic', 'gemini'].includes(aiProvider)) {
+//       res.status(400).json({ 
+//         message: "AI provider must be 'openai', 'anthropic', or 'gemini'" 
+//       });
+//       return;
+//     }
+
+//     console.log(`🤖 Generating content with ${aiProvider.toUpperCase()} for topic: ${topic}`);
+//     if (includeImages) {
+//       console.log(`🎨 Will also generate ${imageCount} images with DALL-E 3`);
+//     }
+
+//     let result;
+//     try {
+//       result = await aiService.generateContent({
+//         websiteId,
+//         topic,
+//         keywords: keywords || [],
+//         tone: tone || "professional", 
+//         wordCount: wordCount || 800,
+//         seoOptimized: true,
+//         brandVoice: brandVoice || "professional",
+//         targetAudience,
+//         eatCompliance: eatCompliance || false,
+//         aiProvider: aiProvider as 'openai' | 'anthropic' | 'gemini',
+//         userId: userId,  // CRITICAL: Pass userId for API key lookup
+//         includeImages,
+//         imageCount,
+//         imageStyle
+//       });
+//     } catch (error: any) {
+//       // Clear cache if API key error
+//       if (error.message?.includes('Invalid API key') || error.message?.includes('authentication')) {
+//         console.log('🔄 Clearing API key cache due to authentication error');
+//         aiService.clearApiKeyCache(userId, aiProvider as any);
+//         if (includeImages) {
+//           imageService.clearApiKeyCache(userId);
+//         }
+//       }
+//       throw error;
+//     }
+
+//     // CHECK IF CONTENT WAS ALREADY SAVED (it has a contentId from generateContent)
+//     let content;
+//     if (result.contentId) {
+//       // Content was already saved in generateContent (for auto-scheduling features)
+//       console.log(`✅ Using already saved content with ID: ${result.contentId}`);
+//       content = await storage.getContent(result.contentId);
+      
+//       if (!content) {
+//         throw new Error(`Content with ID ${result.contentId} not found after save`);
+//       }
+//     } else {
+//       // Fallback: Save content if it wasn't already saved (shouldn't happen with current code)
+//       console.log(`💾 Saving content (fallback path)...`);
+//       content = await storage.createContent({
+//         userId,
+//         websiteId,
+//         title: result.title,
+//         body: result.content,
+//         excerpt: result.excerpt,
+//         metaDescription: result.metaDescription,
+//         metaTitle: result.metaTitle,
+//         seoScore: Math.max(1, Math.min(100, Math.round(result.seoScore))),
+//         readabilityScore: Math.max(1, Math.min(100, Math.round(result.readabilityScore))), 
+//         brandVoiceScore: Math.max(1, Math.min(100, Math.round(result.brandVoiceScore))),
+//         tokensUsed: Math.max(1, result.tokensUsed),
+//         costUsd: Math.max(1, Math.round((result.costUsd || 0.001) * 100)),
+//         eatCompliance: result.eatCompliance,
+//         seoKeywords: result.keywords,
+//         aiModel: aiProvider === 'openai' ? 'gpt-4o' : aiProvider === 'anthropic' ? 'claude-3-5-sonnet-20250106' : 'gemini-1.5-pro',
+//         hasImages: includeImages && result.images?.length > 0,
+//         imageCount: result.images?.length || 0,
+//         imageCostCents: Math.round((result.totalImageCost || 0) * 100)
+//       });
+      
+//       console.log(`✅ Content saved with scores - SEO: ${content.seoScore}, Readability: ${content.readabilityScore}, Brand: ${content.brandVoiceScore}`);
+//     }
+
+//     // Save images to database if they exist (only if not already saved)
+//     if (result.images && result.images.length > 0 && !result.contentId) {
+//       for (const image of result.images) {
+//         await storage.createContentImage({
+//           contentId: content.id,
+//           userId,
+//           websiteId,
+//           originalUrl: image.cloudinaryUrl || image.url,  // Prefer Cloudinary URL
+//           cloudinaryUrl: image.cloudinaryUrl,
+//           cloudinaryPublicId: image.cloudinaryPublicId,
+//           filename: image.filename,
+//           altText: image.altText,
+//           generationPrompt: image.prompt,
+//           costCents: Math.round(image.cost * 100),
+//           imageStyle,
+//           size: '1024x1024',
+//           status: 'generated'
+//         });
+//       }
+//     }
+
+//     // Create activity log (only if not already created)
+//     if (!result.contentId) {
+//       await storage.createActivityLog({
+//         userId,
+//         websiteId,
+//         type: "content_generated",
+//         description: `AI content generated: "${result.title}" (${result.aiProvider.toUpperCase()}${result.images?.length ? ` + ${result.images.length} DALL-E images` : ''})`,
+//         metadata: { 
+//           contentId: content.id,
+//           contentAiProvider: result.aiProvider,
+//           imageAiProvider: result.images?.length ? 'dall-e-3' : null,
+//           tokensUsed: content.tokensUsed,
+//           textCostCents: content.costUsd,
+//           hasImages: !!result.images?.length,
+//           imageCount: result.images?.length || 0,
+//           imageCostCents: Math.round((result.totalImageCost || 0) * 100),
+//           apiKeySource: {
+//             content: 'user',  // Will be determined by AI service
+//             images: includeImages ? 'user' : null  // Will be determined by image service
+//           }
+//         }
+//       });
+//     }
+
+//     res.json({ content, aiResult: result });
+//   } catch (error) {
+//     console.error("Content generation error:", error);
+    
+//     let statusCode = 500;
+//     let errorMessage = error instanceof Error ? error.message : "Failed to generate content";
+    
+//     if (error instanceof Error) {
+//       if (error.name === 'AIProviderError') {
+//         statusCode = 400;
+//         // Provide helpful message for API key issues
+//         if (error.message.includes('No API key available')) {
+//           errorMessage = error.message; // Use the detailed message from AI service
+//         }
+//       } else if (error.name === 'AnalysisError') {
+//         statusCode = 422;
+//         errorMessage = `Content generated successfully, but analysis failed: ${error.message}`;
+//       } else if (error.message.includes('Image generation failed')) {
+//         statusCode = 422;
+//         errorMessage = `Content generated successfully, but image generation failed: ${error.message}`;
+//       }
+//     }
+    
+//     res.status(statusCode).json({ 
+//       message: errorMessage,
+//       error: error instanceof Error ? error.name : 'UnknownError'
+//     });
+//   }
+// });
+
+// // ADD: New endpoint to check image generation availability
+// app.get("/api/user/image-generation/status", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+    
+//     // Check for user's OpenAI key
+//     const userApiKeys = await storage.getUserApiKeys(userId);
+//     const hasUserOpenAIKey = userApiKeys.some(
+//       key => key.provider === 'openai' && 
+//              key.isActive && 
+//              key.validationStatus === 'valid'
+//     );
+    
+//     // Check for system OpenAI key
+//     const hasSystemKey = !!(process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR);
+    
+//     res.json({
+//       available: hasUserOpenAIKey || hasSystemKey,
+//       source: hasUserOpenAIKey ? 'user' : hasSystemKey ? 'system' : 'none',
+//       userKeyConfigured: hasUserOpenAIKey,
+//       systemKeyAvailable: hasSystemKey,
+//       message: !hasUserOpenAIKey && !hasSystemKey 
+//         ? 'Image generation requires an OpenAI API key. Please add one in settings.'
+//         : hasUserOpenAIKey
+//         ? 'Image generation available using your OpenAI API key'
+//         : 'Image generation available using system OpenAI API key'
+//     });
+//   } catch (error) {
+//     console.error("Failed to check image generation status:", error);
+//     res.status(500).json({ 
+//       available: false, 
+//       source: 'none',
+//       userKeyConfigured: false,
+//       systemKeyAvailable: false,
+//       message: 'Failed to check image generation status' 
+//     });
+//   }
+// });
+  
+
+//   app.put("/api/user/content/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const contentId = req.params.id;
+//       const { 
+//         websiteId, 
+//         aiProvider, 
+//         regenerateImages = false,
+//         includeImages = false,
+//         imageCount = 0,
+//         imageStyle = 'natural',
+//         ...updateData 
+//       } = req.body;
+      
+//       console.log('DEBUG: Content update parameters:', {
+//         contentAI: aiProvider,
+//         regenerateImages,
+//         includeImages,
+//         imageCount,
+//         imageStyle
+//       });
+      
+//       if (websiteId) {
+//         const website = await storage.getUserWebsite(websiteId, userId);
+//         if (!website) {
+//           res.status(403).json({ message: "Website not found or access denied" });
+//           return;
+//         }
+//       }
+      
+//       let regenerationResult = null;
+//       if (aiProvider && updateData.title && updateData.body) {
+//         try {
+//           console.log(`Content AI: ${aiProvider.toUpperCase()}, Image AI: ${(regenerateImages || includeImages) ? 'DALL-E 3' : 'None'}`);
+          
+//           const existingContent = await storage.getContent(contentId);
+//           const hasExistingImages = existingContent?.hasImages || false;
+//           const existingImageCount = existingContent?.imageCount || 0;
+          
+//           let shouldIncludeImages = false;
+//           let finalImageCount = 0;
+//           let finalImageStyle = imageStyle || 'natural';
+          
+//           if (regenerateImages) {
+//             if (!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
+//               throw new Error('Image regeneration requires OpenAI API key for DALL-E 3');
+//             }
+//             shouldIncludeImages = true;
+//             finalImageCount = imageCount || existingImageCount || 1;
+//             console.log('Will regenerate images with DALL-E:', { finalImageCount, finalImageStyle });
+//           } else if (!regenerateImages && hasExistingImages) {
+//             shouldIncludeImages = false;
+//             finalImageCount = 0;
+//             console.log('Will keep existing images');
+//           } else if (includeImages) {
+//             if (!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
+//               throw new Error('Image generation requires OpenAI API key for DALL-E 3');
+//             }
+//             shouldIncludeImages = true;
+//             finalImageCount = imageCount || 1;
+//             console.log('Will add new images with DALL-E:', { finalImageCount, finalImageStyle });
+//           }
+          
+//           const keywords = Array.isArray(updateData.seoKeywords) ? 
+//             updateData.seoKeywords : 
+//             (typeof updateData.seoKeywords === 'string' ? 
+//               updateData.seoKeywords.split(',').map(k => k.trim()) : []);
+
+//           console.log('Generation parameters:', {
+//             contentProvider: aiProvider,
+//             imageProvider: shouldIncludeImages ? 'dall-e-3' : 'none',
+//             topic: updateData.title,
+//             includeImages: shouldIncludeImages,
+//             imageCount: finalImageCount
+//           });
+
+//           regenerationResult = await aiService.generateContent({
+//             websiteId: websiteId || contentId,
+//             topic: updateData.title,
+//             keywords: keywords,
+//             tone: updateData.tone || 'professional',
+//             wordCount: updateData.body ? updateData.body.split(' ').length : 800,
+//             seoOptimized: true,
+//             brandVoice: updateData.brandVoice,
+//             targetAudience: updateData.targetAudience,
+//             eatCompliance: updateData.eatCompliance || false,
+//             aiProvider: aiProvider as 'openai' | 'anthropic' | 'gemini',
+//             userId: userId,
+//             includeImages: shouldIncludeImages,
+//             imageCount: finalImageCount,
+//             imageStyle: finalImageStyle
+//           });
+
+//           if (regenerationResult) {
+//             console.log('Regeneration completed:', {
+//               contentAI: aiProvider,
+//               imageAI: shouldIncludeImages ? 'dall-e-3' : 'none',
+//               hasImages: !!regenerationResult.images?.length,
+//               imageCount: regenerationResult.images?.length || 0,
+//               textCost: regenerationResult.costUsd,
+//               imageCost: regenerationResult.totalImageCost || 0
+//             });
+
+//             updateData.title = regenerationResult.title;
+//             updateData.body = regenerationResult.content;
+//             updateData.excerpt = regenerationResult.excerpt;
+//             updateData.metaDescription = regenerationResult.metaDescription;
+//             updateData.metaTitle = regenerationResult.metaTitle;
+//             updateData.seoKeywords = regenerationResult.keywords;
+
+//             updateData.seoScore = Math.max(1, Math.min(100, Math.round(regenerationResult.seoScore)));
+//             updateData.readabilityScore = Math.max(1, Math.min(100, Math.round(regenerationResult.readabilityScore)));
+//             updateData.brandVoiceScore = Math.max(1, Math.min(100, Math.round(regenerationResult.brandVoiceScore)));
+            
+//             updateData.tokensUsed = Math.max(1, Math.round(regenerationResult.tokensUsed));
+//             updateData.costUsd = Math.max(1, Math.round(regenerationResult.costUsd * 100));
+            
+//             updateData.hasImages = !!regenerationResult.images?.length;
+//             updateData.imageCount = regenerationResult.images?.length || 0;
+//             updateData.imageCostCents = Math.round((regenerationResult.totalImageCost || 0) * 100);
+
+//             updateData.aiModel = aiProvider === 'openai' ? 'gpt-4o' : 
+//                                   aiProvider === 'anthropic' ? 'claude-3-5-sonnet-20250106' : 
+//                                   'gemini-1.5-pro';
+
+//             console.log(`Content regenerated with ${aiProvider.toUpperCase()}, images with DALL-E - SEO: ${updateData.seoScore}%, Images: ${updateData.imageCount}`);
+            
+//             if (regenerationResult.images && regenerationResult.images.length > 0) {
+//               console.log(`Saving ${regenerationResult.images.length} DALL-E images to database`);
+              
+//               if (regenerateImages) {
+//                 await storage.deleteContentImages(contentId);
+//                 console.log('Deleted existing images for regeneration');
+//               }
+              
+//               for (const image of regenerationResult.images) {
+//                 await storage.createContentImage({
+//                   contentId: contentId,
+//                   userId,
+//                   websiteId: websiteId || existingContent.websiteId,
+//                   originalUrl: image.url,
+//                   filename: image.filename,
+//                   altText: image.altText,
+//                   generationPrompt: image.prompt,
+//                   costCents: Math.round(image.cost * 100),
+//                   imageStyle: finalImageStyle,
+//                   size: '1024x1024',
+//                   status: 'generated'
+//                 });
+//               }
+//             }
+//           }
+//         } catch (regenerationError) {
+//           console.error(`Content regeneration failed:`, regenerationError);
+//         }
+//       }
+      
+//       const updatedContent = await storage.updateContent(contentId, updateData);
+//       if (!updatedContent) {
+//         res.status(404).json({ message: "Content not found" });
+//         return;
+//       }
+
+//       if (regenerationResult && websiteId) {
+//         try {
+//           const hasImages = regenerationResult.images?.length > 0;
+//           const activityDescription = hasImages 
+//             ? `Content regenerated with ${aiProvider?.toUpperCase()}, images with DALL-E: "${updatedContent.title}"`
+//             : `Content regenerated with ${aiProvider?.toUpperCase()}: "${updatedContent.title}"`;
+            
+//           await storage.createActivityLog({
+//             userId,
+//             websiteId,
+//             type: "content_regenerated",
+//             description: activityDescription,
+//             metadata: { 
+//               contentId: updatedContent.id,
+//               contentAiProvider: aiProvider,
+//               imageAiProvider: hasImages ? 'dall-e-3' : null,
+//               tokensUsed: updateData.tokensUsed,
+//               textCostCents: updateData.costUsd,
+//               regenerated: !!regenerationResult,
+//               imagesRegenerated: regenerateImages,
+//               newImageCount: regenerationResult?.images?.length || 0,
+//               imageCostCents: Math.round((regenerationResult?.totalImageCost || 0) * 100)
+//             }
+//           });
+//         } catch (logError) {
+//           console.warn("Failed to log activity:", logError);
+//         }
+//       }
+
+//       res.json({ 
+//         content: updatedContent,
+//         regeneration: regenerationResult ? {
+//           success: true,
+//           contentAiProvider: aiProvider,
+//           imageAiProvider: regenerationResult.images?.length > 0 ? 'dall-e-3' : null,
+//           tokensUsed: regenerationResult.tokensUsed,
+//           costUsd: regenerationResult.costUsd,
+//           seoScore: regenerationResult.seoScore,
+//           readabilityScore: regenerationResult.readabilityScore,
+//           brandVoiceScore: regenerationResult.brandVoiceScore,
+//           imagesRegenerated: regenerateImages,
+//           newImageCount: regenerationResult.images?.length || 0,
+//           imageCostUsd: regenerationResult.totalImageCost || 0
+//         } : null
+//       });
+//     } catch (error) {
+//       console.error("Content update error:", error);
+      
+//       let statusCode = 500;
+//       let errorMessage = "Failed to update content";
+      
+//       if (error instanceof Error) {
+//         errorMessage = error.message;
+//         if (error.name === 'ValidationError') {
+//           statusCode = 400;
+//         } else if (error.name === 'AIProviderError') {
+//           statusCode = 400;
+//           errorMessage = `Content regeneration failed: ${error.message}`;
+//         }
+//       }
+      
+//       res.status(statusCode).json({ 
+//         message: errorMessage,
+//         error: error instanceof Error ? error.name : 'UnknownError'
+//       });
+//     }
+//   });
+
+//   app.post("/api/user/content/:id/publish", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const contentId = req.params.id;
+      
+//       console.log(`📢 Publishing content ${contentId} for user ${userId}`);
+      
+//       const content = await storage.getContent(contentId);
+//       if (!content || content.userId !== userId) {
+//         res.status(404).json({ message: "Content not found or access denied" });
+//         return;
+//       }
+
+//       const website = await storage.getUserWebsite(content.websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+
+//       if (content.wordpressPostId && content.status === "published") {
+//         res.status(400).json({ 
+//           message: "Content already published to WordPress",
+//           wordpressPostId: content.wordpressPostId,
+//           wordpressUrl: content.wordpressUrl || `${website.url}/?p=${content.wordpressPostId}`
+//         });
+//         return;
+//       }
+
+//       const wpCredentials = {
+//         applicationName: 'AI Content Manager',
+//         applicationPassword: 'nm48 i9wF QyBG 4ZzS AtOi FppB',
+//         username: website.wpUsername || 'info@murrayimmeubles.com'
+//       };
+
+//       console.log(`🔍 Using WordPress credentials:`);
+//       console.log(`- URL: ${website.url}`);
+//       console.log(`- Username: ${wpCredentials.username}`);
+//       console.log(`- Password: ${wpCredentials.applicationPassword.substring(0, 10)}...`);
+
+//       console.log(`🔗 Testing WordPress connection for ${website.url}...`);
+      
+//       const connectionTest = await wordPressAuthService.testConnectionWithDiagnostics(
+//         website.url,
+//         wpCredentials
+//       );
+
+//       if (!connectionTest.success) {
+//         console.error('⌠WordPress connection failed:', connectionTest.error);
+//         console.log('Full diagnostics:', connectionTest.diagnostics);
+        
+//         res.status(400).json({ 
+//           message: `Cannot connect to WordPress: ${connectionTest.error}`,
+//           error: 'WP_CONNECTION_FAILED',
+//           diagnostics: connectionTest.diagnostics,
+//           troubleshooting: connectionTest.diagnostics?.recommendations || [
+//             "Verify WordPress URL is correct and accessible",
+//             "Check Application Password is valid and not expired", 
+//             "Ensure WordPress REST API is enabled",
+//             "Check firewall/security plugin settings",
+//             "Verify user has publishing permissions"
+//           ]
+//         });
+//         return;
+//       }
+
+//       console.log(`✅ WordPress connection successful!`);
+//       console.log('User info:', connectionTest.userInfo);
+
+//       const postData = {
+//         title: content.title,
+//         content: content.body,
+//         excerpt: content.excerpt || '',
+//         status: 'publish' as const,
+//         meta: {
+//           description: content.metaDescription || content.excerpt || '',
+//           title: content.metaTitle || content.title
+//         }
+//       };
+
+//       let wpResult;
+//       try {
+//         if (content.wordpressPostId) {
+//           console.log(`📝 Updating existing WordPress post ${content.wordpressPostId}`);
+//           wpResult = await wordpressService.updatePost(
+//             {
+//               url: website.url,
+//               username: wpCredentials.username,
+//               applicationPassword: wpCredentials.applicationPassword
+//             }, 
+//             content.wordpressPostId, 
+//             postData
+//           );
+//         } else {
+//           console.log(`🆕 Creating new WordPress post`);
+//           wpResult = await wordpressService.publishPost(
+//             {
+//               url: website.url,
+//               username: wpCredentials.username,
+//               applicationPassword: wpCredentials.applicationPassword
+//             }, 
+//             postData
+//           );
+//         }
+//       } catch (wpError) {
+//         console.error("⌠WordPress publish error:", wpError);
+        
+//         await storage.updateContent(contentId, {
+//           status: "publish_failed",
+//           publishError: wpError instanceof Error ? wpError.message : 'Unknown WordPress error'
+//         });
+
+//         res.status(500).json({ 
+//           message: wpError instanceof Error ? wpError.message : "Failed to publish to WordPress",
+//           error: 'WP_PUBLISH_FAILED'
+//         });
+//         return;
+//       }
+
+//       const updatedContent = await storage.updateContent(contentId, {
+//         status: "published",
+//         publishDate: new Date(),
+//         wordpressPostId: wpResult.id,
+//         wordpressUrl: wpResult.link,
+//         publishError: null
+//       });
+
+//       await storage.createActivityLog({
+//         userId,
+//         websiteId: content.websiteId,
+//         type: "content_published", 
+//         description: `Content published to WordPress: "${content.title}"`,
+//         metadata: { 
+//           contentId: content.id,
+//           wordpressPostId: wpResult.id,
+//           wordpressUrl: wpResult.link,
+//           publishMethod: content.wordpressPostId ? 'update' : 'create'
+//         }
+//       });
+
+//       console.log(`🎉 Content published successfully! Post ID: ${wpResult.id}`);
+
+//       res.json({
+//         success: true,
+//         content: updatedContent,
+//         wordpress: {
+//           postId: wpResult.id,
+//           url: wpResult.link,
+//           status: wpResult.status
+//         },
+//         message: "Content published to WordPress successfully",
+//         debug: {
+//           connectionDiagnostics: connectionTest.diagnostics
+//         }
+//       });
+
+//     } catch (error) {
+//       console.error("⌠Publish endpoint error:", error);
+      
+//       const errorMessage = error instanceof Error ? error.message : "Failed to publish content";
+//       res.status(500).json({ 
+//         message: errorMessage,
+//         error: 'PUBLISH_FAILED'
+//       });
+//     }
+//   });
+
+//  app.post("/api/user/content/upload-images", 
+//   requireAuth, 
+//   upload.array('images', 10), 
+//   async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const { websiteId, contentId } = req.body;
+//       const files = req.files as Express.Multer.File[];
+      
+//       const uploadedImages = [];
+      
+//       for (const file of files) {
+//         try {
+//           // Optimize image
+//           const optimizedBuffer = await sharp(file.buffer)
+//             .resize(1920, 1080, { 
+//               fit: 'inside', 
+//               withoutEnlargement: true 
+//             })
+//             .jpeg({ quality: 85, progressive: true })
+//             .toBuffer();
+          
+//           const metadata = await sharp(optimizedBuffer).metadata();
+          
+//           // Upload to Cloudinary
+//           const cloudinaryResult = await cloudinaryStorage.uploadFromBuffer(
+//             optimizedBuffer,
+//             websiteId,
+//             contentId || 'user-upload',
+//             file.originalname
+//           );
+          
+//           // Try to save to database, but don't fail if it errors
+//           let imageRecord;
+//          try {
+//   imageRecord = await storage.createContentImage({
+//     userId,
+//     contentId: contentId || null,
+//     websiteId,
+//     url: cloudinaryResult.secureUrl,
+//     originalUrl: cloudinaryResult.secureUrl,  // Required field
+//     cloudinaryId: cloudinaryResult.publicId,
+//     altText: file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+//     filename: file.originalname,
+//     mimeType: 'image/jpeg',
+//     size: optimizedBuffer.length,
+//     width: metadata.width || 0,
+//     height: metadata.height || 0,
+//     source: 'user_upload',
+//     generationPrompt: 'User uploaded image - no prompt',
+//   costCents: 0,
+//   isAIGenerated: false,
+//   aiProvider: null,
+//   aiModel: null,
+//   stylePreset: 'natural'
+//   });
+//   console.log('✅ Image saved to database:', imageRecord.id);
+// } catch (dbError: any) {
+//   console.warn('Database save failed, using temporary record:', dbError.message);
+//   // Create temporary record without database
+//   imageRecord = {
+//     id: `temp_${Date.now()}_${uploadedImages.length}`,
+//     url: cloudinaryResult.secureUrl,
+//     originalUrl: cloudinaryResult.secureUrl,
+//     cloudinaryId: cloudinaryResult.publicId,
+//     altText: file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ')
+//   };
+// }
+          
+//           // IMPORTANT: Add to array regardless of database save
+//           uploadedImages.push({
+//             id: imageRecord.id,
+//             url: cloudinaryResult.secureUrl,
+//             publicId: cloudinaryResult.publicId,
+//             altText: imageRecord.altText,
+//             filename: file.originalname,
+//             size: optimizedBuffer.length,
+//             width: metadata.width,
+//             height: metadata.height
+//           });
+          
+//           console.log(`✅ Image processed and added to response:`, {
+//             filename: file.originalname,
+//             url: cloudinaryResult.secureUrl
+//           });
+          
+//         } catch (uploadError: any) {
+//           console.error(`Failed to process ${file.originalname}:`, uploadError);
+//           // Continue with next file
+//         }
+//       }
+      
+//       console.log(`📤 Returning ${uploadedImages.length} images to frontend`);
+      
+//       res.json({
+//         success: true,
+//         images: uploadedImages,
+//         message: `Uploaded ${uploadedImages.length} images`
+//       });
+      
+//     } catch (error: any) {
+//       console.error('❌ Upload error:', error);
+//       res.status(500).json({ 
+//         error: 'Upload failed',
+//         message: error.message 
+//       });
+//     }
+//   }
+// );
+
+//   // ===========================================================================
+//   // CONTENT SCHEDULING ROUTES
+//   // ===========================================================================
+  
+//   app.get("/api/user/websites/:id/content-schedule", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const websiteId = req.params.id;
+      
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+      
+//       const scheduledContent = await storage.getContentSchedule(websiteId);
+//       res.json(scheduledContent);
+//     } catch (error) {
+//       console.error("Failed to fetch content schedule:", error);
+//       res.status(500).json({ message: "Failed to fetch content schedule" });
+//     }
+//   });
+
+//   app.post("/api/user/websites/:id/schedule-content", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const websiteId = req.params.id;
+//       const { contentId, scheduledDate } = req.body;
+      
+//       console.log('📅 Scheduling existing content:', { websiteId, contentId, scheduledDate });
+      
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+      
+//       const content = await storage.getContent(contentId);
+//       if (!content || content.userId !== userId || content.websiteId !== websiteId) {
+//         res.status(404).json({ message: "Content not found or access denied" });
+//         return;
+//       }
+      
+//       if (content.status === 'published') {
+//         res.status(400).json({ message: "Content is already published" });
+//         return;
+//       }
+      
+//       if (!contentId || !scheduledDate) {
+//         res.status(400).json({ message: "Content ID and scheduled date are required" });
+//         return;
+//       }
+      
+//       const scheduleTime = new Date(scheduledDate);
+//       if (scheduleTime <= new Date()) {
+//         res.status(400).json({ message: "Scheduled date must be in the future" });
+//         return;
+//       }
+      
+//       const existingSchedule = await storage.getContentScheduleByContentId(contentId);
+//       if (existingSchedule) {
+//         res.status(400).json({ message: "This content is already scheduled for publication" });
+//         return;
+//       }
+      
+//       const scheduledContent = await storage.createContentSchedule({
+//         userId,
+//         websiteId,
+//         scheduledDate: scheduleTime,
+//         topic: content.title,
+//         keywords: content.seoKeywords || [],
+//         contentId,
+//         status: "scheduled"
+//       });
+      
+//       await storage.createActivityLog({
+//         userId,
+//         websiteId,
+//         type: "content_scheduled",
+//         description: `Content scheduled for publication: "${content.title}" on ${scheduleTime.toLocaleString()}`,
+//         metadata: { 
+//           scheduleId: scheduledContent.id,
+//           contentId,
+//           contentTitle: content.title,
+//           scheduledDate: scheduledDate
+//         }
+//       });
+      
+//       console.log('✅ Content scheduled successfully:', scheduledContent.id);
+//       res.status(201).json({
+//         ...scheduledContent,
+//         contentTitle: content.title,
+//         contentExcerpt: content.excerpt,
+//         seoKeywords: content.seoKeywords
+//       });
+      
+//     } catch (error) {
+//       console.error("Failed to schedule content:", error);
+//       res.status(500).json({ 
+//         message: "Failed to schedule content",
+//         error: error instanceof Error ? error.message : 'Unknown error'
+//       });
+//     }
+//   });
+
+//   app.put("/api/user/websites/:websiteId/content-schedule/:scheduleId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const { websiteId, scheduleId } = req.params;
+//       const { scheduledDate, status } = req.body;
+      
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+      
+//       const scheduleItem = await storage.getContentScheduleById(scheduleId);
+//       if (!scheduleItem || scheduleItem.userId !== userId) {
+//         res.status(404).json({ message: "Scheduled content not found or access denied" });
+//         return;
+//       }
+      
+//       const updates: any = {};
+//       if (scheduledDate !== undefined) {
+//         const scheduleTime = new Date(scheduledDate);
+//         if (scheduleTime <= new Date() && status !== 'cancelled') {
+//           res.status(400).json({ message: "Scheduled date must be in the future unless cancelling" });
+//           return;
+//         }
+//         updates.scheduledDate = scheduleTime;
+//       }
+//       if (status !== undefined) updates.status = status;
+      
+//       const updatedSchedule = await storage.updateContentSchedule(scheduleId, updates);
+      
+//       await storage.createActivityLog({
+//         userId,
+//         websiteId,
+//         type: "content_schedule_updated",
+//         description: `Publication schedule updated for content`,
+//         metadata: { 
+//           scheduleId,
+//           updates: Object.keys(updates)
+//         }
+//       });
+      
+//       res.json(updatedSchedule);
+      
+//     } catch (error) {
+//       console.error("Failed to update scheduled content:", error);
+//       res.status(500).json({ 
+//         message: "Failed to update scheduled content",
+//         error: error instanceof Error ? error.message : 'Unknown error'
+//       });
+//     }
+//   });
+
+//   app.delete("/api/user/websites/:websiteId/content-schedule/:scheduleId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const { websiteId, scheduleId } = req.params;
+      
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+      
+//       const scheduleItem = await storage.getContentScheduleById(scheduleId);
+//       if (!scheduleItem || scheduleItem.userId !== userId) {
+//         res.status(404).json({ message: "Scheduled content not found or access denied" });
+//         return;
+//       }
+      
+//       const content = await storage.getContent(scheduleItem.contentId);
+      
+//       const deleted = await storage.deleteContentSchedule(scheduleId);
+      
+//       if (!deleted) {
+//         res.status(404).json({ message: "Scheduled content not found" });
+//         return;
+//       }
+      
+//       await storage.createActivityLog({
+//         userId,
+//         websiteId,
+//         type: "content_schedule_deleted",
+//         description: `Publication schedule removed: "${content?.title || 'Unknown'}"`,
+//         metadata: { 
+//           scheduleId,
+//           contentId: scheduleItem.contentId,
+//           contentTitle: content?.title
+//         }
+//       });
+      
+//       res.status(204).send();
+      
+//     } catch (error) {
+//       console.error("Failed to delete scheduled content:", error);
+//       res.status(500).json({ 
+//         message: "Failed to delete scheduled content",
+//         error: error instanceof Error ? error.message : 'Unknown error'
+//       });
+//     }
+//   });
+
+//   app.get("/api/user/content-schedule", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+      
+//       const websites = await storage.getUserWebsites(userId);
+//       const allScheduledContent = [];
+      
+//       for (const website of websites) {
+//         const schedules = await storage.getContentScheduleWithDetails(website.id);
+//         const schedulesWithWebsite = schedules.map(schedule => ({
+//           ...schedule,
+//           websiteName: website.name,
+//           websiteUrl: website.url
+//         }));
+//         allScheduledContent.push(...schedulesWithWebsite);
+//       }
+      
+//       allScheduledContent.sort((a, b) => 
+//         new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
+//       );
+      
+//       res.json(allScheduledContent);
+//     } catch (error) {
+//       console.error("Failed to fetch user's scheduled content:", error);
+//       res.status(500).json({ message: "Failed to fetch scheduled content" });
+//     }
+//   });
+
+//   app.post("/api/system/publish-scheduled-content", async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       console.log('🕑 Running scheduled content publication check...');
+      
+//       const overdueContent = await storage.getPendingScheduledContent();
+      
+//       const results = [];
+      
+//       for (const schedule of overdueContent) {
+//         try {
+//           console.log(`📤 Publishing scheduled content: ${schedule.contentId}`);
+          
+//           const content = await storage.getContent(schedule.contentId);
+//           if (!content) {
+//             console.error(`Content not found: ${schedule.contentId}`);
+//             continue;
+//           }
+          
+//           const website = await storage.getUserWebsite(content.websiteId, content.userId);
+//           if (!website) {
+//             console.error(`Website not found: ${content.websiteId}`);
+//             continue;
+//           }
+          
+//           try {
+//             const wpCredentials = {
+//               url: website.url,
+//               username: website.wpUsername || 'admin',
+//               applicationPassword: website.wpApplicationPassword
+//             };
+            
+//             const postData = {
+//               title: content.title,
+//               content: content.body,
+//               excerpt: content.excerpt || '',
+//               status: 'publish' as const,
+//               meta: {
+//                 description: content.metaDescription || content.excerpt || '',
+//                 title: content.metaTitle || content.title
+//               }
+//             };
+            
+//             const wpResult = await wordpressService.publishPost(wpCredentials, postData);
+            
+//             await storage.updateContent(content.id, {
+//               status: "published",
+//               publishDate: new Date(),
+//               wordpressPostId: wpResult.id,
+//               wordpressUrl: wpResult.link,
+//               publishError: null
+//             });
+            
+//             await storage.updateContentSchedule(schedule.id, { status: 'published' });
+            
+//             await storage.createActivityLog({
+//               userId: content.userId,
+//               websiteId: content.websiteId,
+//               type: "scheduled_content_published",
+//               description: `Scheduled content published: "${content.title}"`,
+//               metadata: { 
+//                 scheduleId: schedule.id,
+//                 contentId: content.id,
+//                 wordpressPostId: wpResult.id,
+//                 wordpressUrl: wpResult.link
+//               }
+//             });
+            
+//             results.push({
+//               scheduleId: schedule.id,
+//               contentId: content.id,
+//               success: true,
+//               wordpressPostId: wpResult.id,
+//               wordpressUrl: wpResult.link
+//             });
+            
+//             console.log(`✅ Successfully published: ${content.title}`);
+            
+//           } catch (publishError) {
+//             console.error(`Failed to publish content ${content.id}:`, publishError);
+            
+//             await storage.updateContentSchedule(schedule.id, { status: 'failed' });
+            
+//             await storage.updateContent(content.id, {
+//               status: "publish_failed",
+//               publishError: publishError instanceof Error ? publishError.message : 'Unknown error'
+//             });
+            
+//             await storage.createActivityLog({
+//               userId: content.userId,
+//               websiteId: content.websiteId,
+//               type: "scheduled_content_failed",
+//               description: `Failed to publish scheduled content: "${content.title}"`,
+//               metadata: { 
+//                 scheduleId: schedule.id,
+//                 contentId: content.id,
+//                 error: publishError instanceof Error ? publishError.message : 'Unknown error'
+//               }
+//             });
+            
+//             results.push({
+//               scheduleId: schedule.id,
+//               contentId: content.id,
+//               success: false,
+//               error: publishError instanceof Error ? publishError.message : 'Unknown error'
+//             });
+//           }
+          
+//         } catch (error) {
+//           console.error(`Error processing schedule ${schedule.id}:`, error);
+//           results.push({
+//             scheduleId: schedule.id,
+//             success: false,
+//             error: error instanceof Error ? error.message : 'Unknown error'
+//           });
+//         }
+//       }
+      
+//       console.log(`🎯 Processed ${overdueContent.length} scheduled items, ${results.filter(r => r.success).length} published successfully`);
+      
+//       res.json({
+//         success: true,
+//         processed: overdueContent.length,
+//         published: results.filter(r => r.success).length,
+//         failed: results.filter(r => !r.success).length,
+//         results
+//       });
+      
+//     } catch (error) {
+//       console.error("Scheduled publishing process failed:", error);
+//       res.status(500).json({ 
+//         message: "Failed to process scheduled content",
+//         error: error instanceof Error ? error.message : 'Unknown error'
+//       });
+//     }
+//   });
+
+//   // ===========================================================================
+//   // SEO ANALYSIS & TRACKING ROUTES
+//   // ===========================================================================
+  
+//   app.get("/api/user/websites/:id/seo-reports", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const website = await storage.getUserWebsite(req.params.id, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+      
+//       const reports = await storage.getSeoReportsByWebsite(req.params.id);
+//       res.json(reports);
+//     } catch (error) {
+//       console.error("Failed to fetch SEO reports:", error);
+//       res.status(500).json({ message: "Failed to fetch SEO reports" });
+//     }
+//   });
+
+//  app.post("/api/user/websites/:id/seo-analysis", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+//     const websiteId = req.params.id;
+//     const { targetKeywords } = req.body;
+    
+//     const website = await storage.getUserWebsite(websiteId, userId);
+//     if (!website) {
+//       res.status(404).json({ message: "Website not found or access denied" });
+//       return;
+//     }
+
+//     console.log(`🔍 Starting SEO analysis for website: ${website.name} (${website.url})`);
+
+//     const analysis = await seoService.analyzeWebsite(
+//       website.url, 
+//       targetKeywords || [],
+//       userId,
+//       websiteId
+//     );
+    
+//     // Note: The report is already created inside seoService.analyzeWebsite()
+//     // No need to create it again here
+    
+//     // The activity log is also already created inside the service
+//     // Just return the analysis results
+
+//     console.log(`✅ SEO analysis completed. Score: ${analysis.score}, Issues: ${analysis.issues.length}`);
+
+//     res.json(analysis);
+//   } catch (error) {
+//     console.error("SEO analysis error:", error);
+    
+//     let statusCode = 500;
+//     let errorMessage = error instanceof Error ? error.message : "Failed to perform SEO analysis";
+    
+//     if (error instanceof Error) {
+//       if (error.message.includes('Cannot access website')) {
+//         statusCode = 400;
+//         errorMessage = `Website is not accessible: ${error.message}`;
+//       } else if (error.message.includes('timeout')) {
+//         statusCode = 408;
+//         errorMessage = "Website took too long to respond. Please try again.";
+//       }
+//     }
+    
+//     res.status(statusCode).json({ 
+//       message: errorMessage,
+//       error: 'SEO_ANALYSIS_FAILED'
+//     });
+//   }
+// });
+
+//   app.get("/api/user/websites/:websiteId/detailed-seo", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const { websiteId } = req.params;
+//       const userId = req.user?.id;
+
+//       if (!userId) {
+//         res.status(401).json({ message: "Authentication required" });
+//         return;
+//       }
+
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+
+//       console.log(`Getting detailed SEO data for website ${websiteId}`);
+
+//       const detailedData = await seoService.getDetailedSeoData(websiteId, userId);
+
+//       res.json(detailedData);
+//     } catch (error) {
+//       console.error("Error getting detailed SEO data:", error);
+//       res.status(500).json({ 
+//         message: "Failed to get detailed SEO data",
+//         error: error instanceof Error ? error.message : "Unknown error"
+//       });
+//     }
+//   });
+
+//   app.get("/api/user/websites/:websiteId/tracked-issues", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const { websiteId } = req.params;
+//       const userId = req.user?.id;
+//       const { status, autoFixableOnly, limit } = req.query;
+
+//       if (!userId) {
+//         res.status(401).json({ message: "Authentication required" });
+//         return;
+//       }
+
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+
+//       const options: any = {};
+      
+//       if (status && typeof status === 'string') {
+//         options.status = status.split(',');
+//       }
+      
+//       if (autoFixableOnly === 'true') {
+//         options.autoFixableOnly = true;
+//       }
+      
+//       if (limit && !isNaN(Number(limit))) {
+//         options.limit = Number(limit);
+//       }
+
+//       const trackedIssues = await storage.getTrackedSeoIssues(websiteId, userId, options);
+
+//       res.json(trackedIssues);
+//     } catch (error) {
+//       console.error("Error getting tracked issues:", error);
+//       res.status(500).json({ 
+//         message: "Failed to get tracked issues",
+//         error: error instanceof Error ? error.message : "Unknown error"
+//       });
+//     }
+//   });
+
+//   app.get("/api/user/websites/:websiteId/issue-summary", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const { websiteId } = req.params;
+//       const userId = req.user?.id;
+
+//       if (!userId) {
+//         res.status(401).json({ message: "Authentication required" });
+//         return;
+//       }
+
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+
+//       const summary = await storage.getSeoIssueTrackingSummary(websiteId, userId);
+
+//       res.json(summary);
+//     } catch (error) {
+//       console.error("Error getting issue summary:", error);
+//       res.status(500).json({ 
+//         message: "Failed to get issue summary",
+//         error: error instanceof Error ? error.message : "Unknown error"
+//       });
+//     }
+//   });
+
+//   app.put("/api/user/tracked-issues/:issueId/status", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const { issueId } = req.params;
+//       const { status, resolutionNotes, fixMethod } = req.body;
+//       const userId = req.user?.id;
+
+//       if (!userId) {
+//         res.status(401).json({ message: "Authentication required" });
+//         return;
+//       }
+
+//       const trackedIssues = await storage.getTrackedSeoIssues("", userId, { limit: 1000 });
+//       const issue = trackedIssues.find(i => i.id === issueId);
+      
+//       if (!issue) {
+//         res.status(404).json({ message: "Issue not found or access denied" });
+//         return;
+//       }
+
+//       const website = await storage.getUserWebsite(issue.websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+
+//       const validStatuses = ['detected', 'fixing', 'fixed', 'resolved', 'reappeared'];
+//       if (!validStatuses.includes(status)) {
+//         res.status(400).json({ message: "Invalid status" });
+//         return;
+//       }
+
+//       const updatedIssue = await storage.updateSeoIssueStatus(issueId, status, {
+//         fixMethod: fixMethod || 'manual',
+//         resolutionNotes
+//       });
+
+//       if (!updatedIssue) {
+//         res.status(404).json({ message: "Issue not found" });
+//         return;
+//       }
+
+//       res.json(updatedIssue);
+//     } catch (error) {
+//       console.error("Error updating issue status:", error);
+//       res.status(500).json({ 
+//         message: "Failed to update issue status",
+//         error: error instanceof Error ? error.message : "Unknown error"
+//       });
+//     }
+//   });
+
+//   // ===========================================================================
+//   // AI FIX ROUTES
+//   // ===========================================================================
+  
+//   app.post("/api/user/websites/:id/ai-fix", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const websiteId = req.params.id;
+//       const { dryRun = true, fixTypes, maxChanges, skipBackup } = req.body;
+
+//       console.log(`🔧 AI fix request for website ${websiteId} (dry run: ${dryRun})`);
+
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+
+//       const result = await aiFixService.analyzeAndFixWebsite(
+//         websiteId,
+//         userId,
+//         dryRun,
+//         { fixTypes, maxChanges, skipBackup }
+//       );
+
+//       console.log(`✅ AI fix completed. Success: ${result.success}, Applied: ${result.stats.fixesSuccessful} fixes`);
+
+//       res.json({
+//         success: result.success,
+//         message: result.message,
+//         dryRun: result.dryRun,
+//         stats: result.stats,
+//         applied: {
+//           imagesAltUpdated: result.fixesApplied.filter(f => f.type === 'missing_alt_text' && f.success).length,
+//           metaDescriptionUpdated: result.fixesApplied.some(f => f.type === 'missing_meta_description' && f.success),
+//           titleTagsUpdated: result.fixesApplied.filter(f => f.type === 'poor_title_tag' && f.success).length,
+//           headingStructureFixed: result.fixesApplied.some(f => f.type === 'heading_structure' && f.success)
+//         },
+//         fixes: result.fixesApplied,
+//         errors: result.errors,
+//         estimatedImpact: result.stats.estimatedImpact
+//       });
+
+//     } catch (error) {
+//       console.error("AI fix error:", error);
+      
+//       let statusCode = 500;
+//       let errorMessage = "Failed to apply AI fixes";
+      
+//       if (error instanceof Error) {
+//         errorMessage = error.message;
+//         if (error.message.includes('No SEO analysis found')) {
+//           statusCode = 400;
+//           errorMessage = "Please run SEO analysis first before applying AI fixes";
+//         } else if (error.message.includes('access denied')) {
+//           statusCode = 403;
+//         } else if (error.message.includes('Cannot access website')) {
+//           statusCode = 400;
+//           errorMessage = "Cannot access website for analysis. Please check if the website is online and accessible.";
+//         }
+//       }
+      
+//       res.status(statusCode).json({ 
+//         success: false,
+//         message: errorMessage,
+//         error: error instanceof Error ? error.name : 'AIFixError'
+//       });
+//     }
+//   });
+
+//   app.post("/api/user/websites/:id/iterative-ai-fix", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const websiteId = req.params.id;
+//       const { 
+//         targetScore = 85, 
+//         maxIterations = 5, 
+//         minImprovementThreshold = 2,
+//         fixTypes, 
+//         maxChangesPerIteration = 20, 
+//         skipBackup = false 
+//       } = req.body;
+
+//       console.log(`🔄 Starting iterative AI fix for website ${websiteId} (target: ${targetScore}, max iterations: ${maxIterations})`);
+
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+
+//       if (targetScore < 50 || targetScore > 100) {
+//         res.status(400).json({ 
+//           message: "Target score must be between 50 and 100",
+//           error: "INVALID_TARGET_SCORE"
+//         });
+//         return;
+//       }
+
+//       if (maxIterations < 1 || maxIterations > 10) {
+//         res.status(400).json({ 
+//           message: "Max iterations must be between 1 and 10",
+//           error: "INVALID_MAX_ITERATIONS"
+//         });
+//         return;
+//       }
+
+//       const result = await aiFixService.iterativelyFixUntilAcceptable(
+//         websiteId,
+//         userId,
+//         { 
+//           targetScore, 
+//           maxIterations, 
+//           minImprovementThreshold,
+//           fixTypes, 
+//           maxChangesPerIteration,
+//           skipBackup 
+//         }
+//       );
+
+//       console.log(`✅ Iterative AI fix completed. Final score: ${result.finalScore}, Iterations: ${result.iterationsCompleted}`);
+
+//       res.json({
+//         success: result.success,
+//         message: result.message,
+//         iterative: true,
+        
+//         initialScore: result.initialScore,
+//         finalScore: result.finalScore,
+//         scoreImprovement: result.scoreImprovement,
+//         targetScore: result.targetScore,
+//         targetReached: result.finalScore >= result.targetScore,
+        
+//         iterationsCompleted: result.iterationsCompleted,
+//         stoppedReason: result.stoppedReason,
+//         maxIterations,
+        
+//         iterations: result.iterations.map(iter => ({
+//           iteration: iter.iterationNumber,
+//           scoreBefore: iter.scoreBefore,
+//           scoreAfter: iter.scoreAfter,
+//           improvement: iter.improvement,
+//           fixesApplied: iter.fixesSuccessful,
+//           duration: `${iter.fixTime + iter.analysisTime}s`,
+//           timestamp: iter.timestamp
+//         })),
+        
+//         stats: {
+//           ...result.stats,
+//           scoreProgressionPercentage: result.initialScore > 0 
+//             ? Math.round((result.scoreImprovement / result.initialScore) * 100) 
+//             : 0,
+//           averageImprovementPerIteration: result.iterationsCompleted > 0 
+//             ? result.scoreImprovement / result.iterationsCompleted 
+//             : 0,
+//           totalProcessingTime: result.iterations.reduce((total, iter) => 
+//             total + iter.fixTime + iter.analysisTime, 0
+//           )
+//         },
+        
+//         applied: {
+//           totalFixesApplied: result.fixesApplied.filter(f => f.success).length,
+//           imagesAltUpdated: result.fixesApplied.filter(f => f.type === 'missing_alt_text' && f.success).length,
+//           metaDescriptionsUpdated: result.fixesApplied.filter(f => f.type === 'missing_meta_description' && f.success).length,
+//           titleTagsUpdated: result.fixesApplied.filter(f => f.type === 'poor_title_tag' && f.success).length,
+//           headingStructureFixed: result.fixesApplied.filter(f => f.type === 'heading_structure' && f.success).length
+//         },
+        
+//         fixes: result.fixesApplied,
+//         errors: result.errors,
+//         detailedLog: result.detailedLog,
+        
+//         recommendations: generateIterativeFixRecommendations(result)
+//       });
+
+//     } catch (error) {
+//       console.error("Iterative AI fix error:", error);
+      
+//       let statusCode = 500;
+//       let errorMessage = "Failed to complete iterative AI fixes";
+      
+//       if (error instanceof Error) {
+//         errorMessage = error.message;
+//         if (error.message.includes('No SEO analysis found')) {
+//           statusCode = 400;
+//           errorMessage = "Please run SEO analysis first before applying iterative AI fixes";
+//         } else if (error.message.includes('access denied')) {
+//           statusCode = 403;
+//         } else if (error.message.includes('Cannot access website')) {
+//           statusCode = 400;
+//           errorMessage = "Cannot access website for analysis. Please check if the website is online and accessible.";
+//         }
+//       }
+      
+//       res.status(statusCode).json({ 
+//         success: false,
+//         message: errorMessage,
+//         iterative: true,
+//         error: error instanceof Error ? error.name : 'IterativeAIFixError'
+//       });
+//     }
+//   });
+
+//   app.get("/api/user/websites/:id/available-fixes", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const websiteId = req.params.id;
+
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+
+//       const availableFixes = await aiFixService.getAvailableFixTypes(websiteId, userId);
+
+//       res.json({
+//         websiteId,
+//         websiteName: website.name,
+//         websiteUrl: website.url,
+//         ...availableFixes,
+//         fixTypes: {
+//           'missing_alt_text': 'Add missing alt text to images',
+//           'missing_meta_description': 'Optimize meta descriptions',
+//           'poor_title_tag': 'Improve title tags',
+//           'heading_structure': 'Fix heading hierarchy',
+//           'internal_linking': 'Add internal links',
+//           'image_optimization': 'Optimize images for SEO'
+//         }
+//       });
+
+//     } catch (error) {
+//       console.error("Get available fixes error:", error);
+//       res.status(500).json({ 
+//         message: "Failed to get available fixes",
+//         error: error instanceof Error ? error.message : 'Unknown error'
+//       });
+//     }
+//   });
+
+//   app.get("/api/user/websites/:id/ai-fix-history", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const websiteId = req.params.id;
+
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+
+//       const logs = await storage.getUserActivityLogs(userId, websiteId);
+//       const aiFixLogs = logs.filter(log => 
+//         log.type === 'ai_fixes_applied' || 
+//         log.type === 'ai_fix_attempted' ||
+//         log.type === 'ai_fix_failed'
+//       );
+
+//       res.json({
+//         websiteId,
+//         history: aiFixLogs.map(log => ({
+//           id: log.id,
+//           date: log.createdAt,
+//           type: log.type,
+//           description: log.description,
+//           metadata: log.metadata,
+//           success: log.type === 'ai_fixes_applied'
+//         }))
+//       });
+
+//     } catch (error) {
+//       console.error("Get AI fix history error:", error);
+//       res.status(500).json({ 
+//         message: "Failed to get AI fix history",
+//         error: error instanceof Error ? error.message : 'Unknown error'
+//       });
+//     }
+//   });
+
+//   // ===========================================================================
+//   // CLIENT REPORTS ROUTES
+//   // ===========================================================================
+  
+//   app.get("/api/user/reports", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       console.log(`📊 Fetching all reports for user: ${userId}`);
+      
+//       const websites = await storage.getUserWebsites(userId);
+//       const allReports = [];
+      
+//       for (const website of websites) {
+//         const reports = await storage.getClientReports(website.id);
+//         const reportsWithWebsite = reports.map(report => ({
+//           ...report,
+//           websiteName: website.name,
+//           websiteUrl: website.url
+//         }));
+//         allReports.push(...reportsWithWebsite);
+//       }
+      
+//       allReports.sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime());
+      
+//       console.log(`✅ Found ${allReports.length} reports for user ${userId}`);
+//       res.json(allReports);
+//     } catch (error) {
+//       console.error("Failed to fetch user reports:", error);
+//       res.status(500).json({ message: "Failed to fetch reports" });
+//     }
+//   });
+
+//   app.get("/api/user/websites/:id/reports", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const websiteId = req.params.id;
+      
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+      
+//       const reports = await storage.getClientReports(websiteId);
+//       const reportsWithWebsite = reports.map(report => ({
+//         ...report,
+//         websiteName: website.name,
+//         websiteUrl: website.url
+//       }));
+      
+//       res.json(reportsWithWebsite);
+//     } catch (error) {
+//       console.error("Failed to fetch client reports:", error);
+//       res.status(500).json({ message: "Failed to fetch client reports" });
+//     }
+//   });
+
+//   app.post("/api/user/websites/:id/reports/generate", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const websiteId = req.params.id;
+//       const { reportType = 'monthly' } = req.body;
+      
+//       console.log(`🔄 Generating ${reportType} report for website: ${websiteId}, user: ${userId}`);
+      
+//       const website = await storage.getUserWebsite(websiteId, userId);
+//       if (!website) {
+//         res.status(404).json({ message: "Website not found or access denied" });
+//         return;
+//       }
+      
+//       const now = new Date();
+//       let targetPeriod: string;
+      
+//       if (reportType === 'weekly') {
+//         const startOfYear = new Date(now.getFullYear(), 0, 1);
+//         const days = Math.floor((now.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
+//         const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
+//         targetPeriod = `Week ${weekNumber}, ${now.getFullYear()}`;
+//       } else if (reportType === 'monthly') {
+//         targetPeriod = `${now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`;
+//       } else {
+//         const quarter = Math.floor(now.getMonth() / 3) + 1;
+//         targetPeriod = `Q${quarter} ${now.getFullYear()}`;
+//       }
+      
+//       const existingReports = await storage.getClientReports(websiteId);
+//       const existingReport = existingReports.find(report => 
+//         report.reportType === reportType && report.period === targetPeriod
+//       );
+      
+//       if (existingReport) {
+//         console.log(`⚠️ Report already exists for ${targetPeriod}, ${reportType}. Updating existing report.`);
+        
+//         const reportData = await generateReportData(websiteId, reportType, userId);
+        
+//         const updatedReport = await storage.updateClientReport(existingReport.id, {
+//           data: reportData.data,
+//           insights: reportData.insights,
+//           roiData: reportData.roiData,
+//           generatedAt: new Date()
+//         });
+        
+//         console.log(`✅ Report updated successfully: ${updatedReport.id}`);
+        
+//         await storage.createActivityLog({
+//           userId,
+//           websiteId,
+//           type: "report_updated",
+//           description: `${reportType} report updated for ${website.name} (${targetPeriod})`,
+//           metadata: { reportId: updatedReport.id, reportType, period: targetPeriod, action: 'update' }
+//         });
+        
+//         res.json({
+//           ...updatedReport,
+//           websiteName: website.name,
+//           websiteUrl: website.url,
+//           updated: true,
+//           message: `Updated existing ${reportType} report for ${targetPeriod}`
+//         });
+//         return;
+//       }
+      
+//       const reportData = await generateReportData(websiteId, reportType, userId);
+      
+//       const report = await storage.createClientReport({
+//         userId,
+//         websiteId,
+//         reportType,
+//         period: reportData.period,
+//         data: reportData.data,
+//         insights: reportData.insights,
+//         roiData: reportData.roiData
+//       });
+      
+//       console.log(`✅ New report generated successfully: ${report.id}`);
+      
+//       await storage.createActivityLog({
+//         userId,
+//         websiteId,
+//         type: "report_generated",
+//         description: `${reportType} report generated for ${website.name} (${reportData.period})`,
+//         metadata: { reportId: report.id, reportType, period: reportData.period, action: 'create' }
+//       });
+      
+//       res.json({
+//         ...report,
+//         websiteName: website.name,
+//         websiteUrl: website.url,
+//         updated: false,
+//         message: `Generated new ${reportType} report for ${reportData.period}`
+//       });
+      
+//     } catch (error) {
+//       console.error("Report generation error:", error);
+//       res.status(500).json({ 
+//         message: "Failed to generate report",
+//         error: error instanceof Error ? error.message : 'Unknown error'
+//       });
+//     }
+//   });
+
+//   app.post('/api/user/reports', requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const { websiteId, reportType, reportId } = req.body;
+//       const userId = req.user!.id;
+      
+//       console.log('📥 Report endpoint called with:', { websiteId, reportType, reportId, userId });
+      
+//       if (!websiteId || !reportType) {
+//         res.status(400).json({ 
+//           error: 'Missing required fields: websiteId and reportType' 
+//         });
+//         return;
+//       }
+      
+//       const websites = await storage.getUserWebsites(userId);
+//       const website = websites.find(w => w.id === websiteId);
+      
+//       if (!website) {
+//         res.status(404).json({ error: 'Website not found' });
+//         return;
+//       }
+      
+//       const period = generatePeriodString(reportType);
+//       const reportData = {
+//         data: {
+//           seoScoreChange: Math.floor(Math.random() * 20) - 5,
+//           contentPublished: Math.floor(Math.random() * 10),
+//           avgSeoScore: Math.floor(Math.random() * 100),
+//           totalCostUsd: Math.random() * 100,
+//           activeDays: Math.floor(Math.random() * 30),
+//           avgReadabilityScore: Math.floor(Math.random() * 100),
+//           avgBrandVoiceScore: Math.floor(Math.random() * 100),
+//           totalTokens: Math.floor(Math.random() * 100000),
+//         },
+//         insights: [
+//           "SEO performance improved this period",
+//           "Content quality remains consistent"
+//         ]
+//       };
+      
+//       let report;
+      
+//       if (reportId) {
+//         console.log('✅ Updating existing report:', reportId);
+        
+//         const existingReports = await storage.getClientReports(userId);
+//         const duplicateReport = existingReports.find(r => 
+//           r.websiteId === websiteId && 
+//           r.reportType === reportType && 
+//           r.period === period &&
+//           r.id !== reportId
+//         );
+        
+//         if (duplicateReport) {
+//           console.log('⚠️ Another report exists for this period, returning it instead');
+//           report = duplicateReport;
+//         } else {
+//           report = {
+//             id: reportId,
+//             userId: userId,
+//             websiteId: websiteId,
+//             websiteName: website.name,
+//             reportType: reportType,
+//             period: period,
+//             data: reportData.data,
+//             insights: reportData.insights,
+//             generatedAt: new Date()
+//           };
+          
+//           console.log('✅ Report updated (simulated):', reportId);
+//         }
+        
+//       } else {
+//         console.log('➕ Creating new report');
+        
+//         const existingReports = await storage.getClientReports(userId);
+//         const duplicateReport = existingReports.find(r => 
+//           r.websiteId === websiteId && 
+//           r.reportType === reportType && 
+//           r.period === period
+//         );
+        
+//         if (duplicateReport) {
+//           console.log('⚠️ Report already exists for this period, returning it');
+//           report = duplicateReport;
+//         } else {
+//           report = await storage.createClientReport({
+//             userId: userId,
+//             websiteId: websiteId,
+//             websiteName: website.name,
+//             reportType: reportType,
+//             period: period,
+//             data: reportData.data,
+//             insights: reportData.insights,
+//             generatedAt: new Date()
+//           });
+          
+//           console.log('✅ New report created:', report.id);
+//         }
+//       }
+      
+//       await storage.createActivityLog({
+//         userId,
+//         type: reportId ? "report_updated" : "report_created",
+//         description: `${reportId ? 'Updated' : 'Generated'} ${reportType} report for ${website.name}`,
+//         metadata: { 
+//           reportId: report.id,
+//           websiteId,
+//           reportType
+//         }
+//       });
+      
+//       res.json({
+//         id: report.id,
+//         websiteId: report.websiteId,
+//         websiteName: report.websiteName || website.name,
+//         reportType: report.reportType,
+//         period: report.period,
+//         data: report.data,
+//         insights: report.insights,
+//         generatedAt: report.generatedAt
+//       });
+      
+//     } catch (error) {
+//       console.error('⌠Error in report generation:', error);
+//       res.status(500).json({ 
+//         error: 'Failed to generate report',
+//         message: error instanceof Error ? error.message : 'Unknown error'
+//       });
+//     }
+//   });
+
+//   // ===========================================================================
+//   // IMAGE MANAGEMENT & BATCH PROCESSING ROUTES
+//   // ===========================================================================
+  
+//   app.get("/api/images/content-images", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const { websiteId } = req.query;
+      
+//       console.log('🖼️ Fetching images for user:', userId);
+//       console.log('Website ID:', websiteId || 'all');
+      
+//       const images: any[] = [];
+      
+//       const websites = await storage.getUserWebsites(userId);
+      
+//       const websitesToProcess = websiteId && websiteId !== 'undefined' 
+//         ? websites.filter(w => w.id === websiteId)
+//         : websites;
+      
+//       console.log(`Processing ${websitesToProcess.length} websites`);
+      
+//       for (const website of websitesToProcess) {
+//         console.log(`\n📌 Processing: ${website.name}`);
+//         console.log(`URL: ${website.url}`);
+        
+//         if (!website.url) {
+//           console.log('No URL configured, skipping');
+//           continue;
+//         }
+        
+//         const baseUrl = website.url.replace(/\/$/, '');
+        
+//         let decryptedPassword = website.wpApplicationPassword;
+        
+//         try {
+//           const postsUrl = `${baseUrl}/wp-json/wp/v2/posts?_embed&per_page=100`;
+//           console.log(`Fetching posts from: ${postsUrl}`);
+          
+//           const headers: any = { 
+//             'Content-Type': 'application/json',
+//             'User-Agent': 'WordPress-Image-Manager/1.0'
+//           };
+          
+//           if (decryptedPassword) {
+//             const username = website.wpUsername || website.wpApplicationName || 'admin';
+//             const authString = `${username}:${decryptedPassword}`;
+//             headers['Authorization'] = `Basic ${Buffer.from(authString).toString('base64')}`;
+//             console.log(`Using auth for: ${username}`);
+//           }
+          
+//           const postsResponse = await fetch(postsUrl, { headers });
+//           console.log(`Response status: ${postsResponse.status}`);
+          
+//           if (postsResponse.ok) {
+//             const posts = await postsResponse.json();
+//             console.log(`✅ Found ${posts.length} posts`);
+            
+//             for (const post of posts) {
+//               const postTitle = post.title?.rendered?.replace(/<[^>]*>/g, '').trim() || 'Untitled';
+              
+//               if (post._embedded?.['wp:featuredmedia']?.[0]) {
+//                 const media = post._embedded['wp:featuredmedia'][0];
+//                 if (media.media_type === 'image' && media.source_url) {
+//                   images.push({
+//                     id: `wp_${website.id}_${post.id}_featured`,
+//                     url: media.source_url,
+//                     contentId: `post_${post.id}`,
+//                     contentTitle: postTitle,
+//                     websiteId: website.id,
+//                     websiteName: website.name,
+//                     hasMetadata: !!(media.alt_text || media.caption?.rendered),
+//                     metadataDetails: {
+//                       altText: media.alt_text || '',
+//                       caption: media.caption?.rendered?.replace(/<[^>]*>/g, '') || '',
+//                       isFeatured: true
+//                     },
+//                     size: media.media_details?.filesize || 0,
+//                     createdAt: post.date,
+//                     isAIGenerated: false,
+//                     processedAt: post.modified,
+//                     costCents: 0
+//                   });
+//                 }
+//               }
+              
+//               if (post.content?.rendered) {
+//                 const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+//                 let match;
+                
+//                 while ((match = imgRegex.exec(post.content.rendered)) !== null) {
+//                   const url = match[1];
+                  
+//                   if (url.startsWith('data:') || 
+//                       url.includes('emoji') || 
+//                       images.some(img => img.url === url)) {
+//                     continue;
+//                   }
+                  
+//                   const altMatch = match[0].match(/alt=["']([^"']*?)["']/i);
+                  
+//                   images.push({
+//                     id: `wp_${website.id}_${post.id}_${images.length}`,
+//                     url: url,
+//                     contentId: `post_${post.id}`,
+//                     contentTitle: postTitle,
+//                     websiteId: website.id,
+//                     websiteName: website.name,
+//                     hasMetadata: !!altMatch,
+//                     metadataDetails: {
+//                       altText: altMatch ? altMatch[1] : ''
+//                     },
+//                     size: 0,
+//                     createdAt: post.date,
+//                     isAIGenerated: false,
+//                     processedAt: post.modified,
+//                     costCents: 0
+//                   });
+//                 }
+//               }
+//             }
+//           } else if (postsResponse.status === 401) {
+//             console.log('⚠️ Auth failed, trying public access...');
+            
+//             const publicResponse = await fetch(postsUrl);
+//             if (publicResponse.ok) {
+//               const posts = await publicResponse.json();
+//               console.log(`✅ Found ${posts.length} public posts`);
+//             }
+//           }
+//         } catch (error: any) {
+//           console.error('⌠Error fetching posts:', error.message);
+//         }
+        
+//         try {
+//           const mediaUrl = `${baseUrl}/wp-json/wp/v2/media?per_page=100`;
+//           console.log(`Fetching media from: ${mediaUrl}`);
+          
+//           const mediaResponse = await fetch(mediaUrl);
+          
+//           if (mediaResponse.ok) {
+//             const mediaItems = await mediaResponse.json();
+//             console.log(`✅ Found ${mediaItems.length} media items`);
+            
+//             for (const media of mediaItems) {
+//               if (media.mime_type?.startsWith('image/') && media.source_url) {
+//                 if (!images.some(img => img.url === media.source_url)) {
+//                   images.push({
+//                     id: `media_${website.id}_${media.id}`,
+//                     url: media.source_url,
+//                     contentId: `media_${media.id}`,
+//                     contentTitle: media.title?.rendered?.replace(/<[^>]*>/g, '') || 'Media',
+//                     websiteId: website.id,
+//                     websiteName: website.name,
+//                     hasMetadata: !!(media.alt_text || media.caption?.rendered),
+//                     metadataDetails: {
+//                       altText: media.alt_text || '',
+//                       caption: media.caption?.rendered?.replace(/<[^>]*>/g, '') || ''
+//                     },
+//                     size: media.media_details?.filesize || 0,
+//                     createdAt: media.date,
+//                     isAIGenerated: false,
+//                     processedAt: media.modified,
+//                     costCents: 0
+//                   });
+//                 }
+//               }
+//             }
+//           }
+//         } catch (error: any) {
+//           console.error('⌠Error fetching media:', error.message);
+//         }
+//       }
+      
+//       console.log(`\n📊 Total images found: ${images.length}`);
+//       res.json(images);
+      
+//     } catch (error: any) {
+//       console.error("⌠Failed to fetch images:", error);
+//       res.status(500).json({ 
+//         error: 'Failed to fetch images',
+//         message: error.message 
+//       });
+//     }
+//   });
+
+//   app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+//     const { imageIds, options, imageUrls } = req.body; // Accept imageUrls
+    
+//     console.log(`🔄 Batch processing ${imageIds.length} images for user ${userId}`);
+//     console.log('Processing options:', options);
+//     console.log('Image URLs provided:', Object.keys(imageUrls || {}).length);
+    
+//     if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
+//       res.status(400).json({ 
+//         error: 'Invalid request',
+//         message: 'No images selected' 
+//       });
+//       return;
+//     }
+    
+//     if (!options || !options.action) {
+//       res.status(400).json({ 
+//         error: 'Invalid request',
+//         message: 'Processing options required' 
+//       });
+//       return;
+//     }
+    
+//     const results = {
+//       success: [] as any[],
+//       failed: [] as string[],
+//       errors: [] as any[]
+//     };
+    
+//     const websites = await storage.getUserWebsites(userId);
+//     const websiteMap = new Map(websites.map(w => [w.id, w]));
+    
+//     for (const imageId of imageIds) {
+//       const startTime = Date.now();
+      
+//       try {
+//         console.log(`Processing image: ${imageId}`);
+        
+//         const parts = imageId.split('_');
+        
+//         // Handle crawled images
+//         if (parts[0] === 'crawled' || imageId.startsWith('crawled')) {
+//           console.log(`  Processing crawled image: ${imageId}`);
+          
+//           // Get URL from the imageUrls mapping
+//           const imageUrl = imageUrls?.[imageId];
+          
+//           if (!imageUrl) {
+//             throw new Error(`No URL provided for crawled image: ${imageId}`);
+//           }
+          
+//           console.log(`  Downloading crawled image from: ${imageUrl}`);
+          
+//           try {
+//             // Download the image
+//             const imageResponse = await fetch(imageUrl);
+            
+//             if (!imageResponse.ok) {
+//               throw new Error(`Failed to download image: ${imageResponse.status} ${imageResponse.statusText}`);
+//             }
+            
+//             const arrayBuffer = await imageResponse.arrayBuffer();
+//             const imageBuffer = Buffer.from(arrayBuffer);
+            
+//             // Process the image with Sharp according to options
+//             const processedBuffer = await processImageWithSharp(imageBuffer, options);
+            
+//             // For crawled images, we can't upload back to WordPress
+//             // but we've successfully processed the image
+//             results.success.push({
+//               imageId,
+//               processingTime: `${Date.now() - startTime}ms`,
+//               message: 'Crawled image processed successfully (download processed image for use)',
+//               size: processedBuffer.length,
+//               uploaded: false,
+//               originalUrl: imageUrl,
+//               // You could optionally return base64 data for download
+//               // processedData: `data:image/jpeg;base64,${processedBuffer.toString('base64')}`
+//             });
+            
+//           } catch (downloadError: any) {
+//             throw new Error(`Failed to process crawled image: ${downloadError.message}`);
+//           }
+          
+//         } else if (parts[0] === 'wp' || parts[0] === 'media') {
+//           // Existing WordPress image handling code
+//           const websiteId = parts[1];
+//           const website = websiteMap.get(websiteId);
+          
+//           if (!website || !website.url) {
+//             throw new Error('Website not found or URL not configured');
+//           }
+          
+//           const baseUrl = website.url.replace(/\/$/, '');
+//           let imageUrl: string | null = null;
+//           let mediaId: string | null = null;
+//           let imageName: string = 'processed-image.jpg';
+          
+//           if (parts[0] === 'media') {
+//             mediaId = parts[2];
+//             const mediaUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
+            
+//             const response = await fetch(mediaUrl);
+//             if (response.ok) {
+//               const media = await response.json();
+//               imageUrl = media.source_url;
+//               imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
+//             }
+//           } else if (parts[0] === 'wp') {
+//             const postId = parts[2];
+//             const postUrl = `${baseUrl}/wp-json/wp/v2/posts/${postId}?_embed`;
+            
+//             const headers: any = {};
+//             if (website.wpApplicationPassword) {
+//               const username = website.wpUsername || website.wpApplicationName || 'admin';
+//               const authString = `${username}:${website.wpApplicationPassword}`;
+//               headers['Authorization'] = `Basic ${Buffer.from(authString).toString('base64')}`;
+//             }
+            
+//             const response = await fetch(postUrl, { headers });
+//             if (response.ok) {
+//               const post = await response.json();
+              
+//               if (parts[3] === 'featured' && post._embedded?.['wp:featuredmedia']?.[0]) {
+//                 const media = post._embedded['wp:featuredmedia'][0];
+//                 imageUrl = media.source_url;
+//                 mediaId = media.id;
+//                 imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
+//               } else {
+//                 const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+//                 const matches = [...(post.content?.rendered || '').matchAll(imgRegex)];
+//                 const imageIndex = parseInt(parts[3] || '0');
+                
+//                 if (matches[imageIndex]) {
+//                   imageUrl = matches[imageIndex][1];
+                  
+//                   const authString = website.wpApplicationPassword && website.wpUsername
+//                     ? `Basic ${Buffer.from(`${website.wpUsername}:${website.wpApplicationPassword}`).toString('base64')}`
+//                     : undefined;
+                  
+//                   mediaId = await findMediaIdFromUrl(baseUrl, imageUrl, authString);
+                  
+//                   if (mediaId) {
+//                     console.log(`  Found media ID ${mediaId} for content image`);
+//                     const mediaResponse = await fetch(`${baseUrl}/wp-json/wp/v2/media/${mediaId}`);
+//                     if (mediaResponse.ok) {
+//                       const media = await mediaResponse.json();
+//                       imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
+//                     }
+//                   } else {
+//                     console.log(`  Could not find media ID for content image`);
+//                   }
+//                 }
+//               }
+//             }
+//           }
+          
+//           if (imageUrl) {
+//             console.log(`  Downloading image from: ${imageUrl}`);
+//             const imageResponse = await fetch(imageUrl);
+            
+//             if (!imageResponse.ok) {
+//               throw new Error(`Failed to download image: ${imageResponse.statusText}`);
+//             }
+            
+//             const arrayBuffer = await imageResponse.arrayBuffer();
+//             const imageBuffer = Buffer.from(arrayBuffer);
+            
+//             const processedBuffer = await processImageWithSharp(imageBuffer, options);
+            
+//             let uploadSuccess = false;
+//             let newImageUrl = imageUrl;
+            
+//             // WordPress upload code (existing)...
+//             if (mediaId && website.wpApplicationPassword && website.wpUsername) {
+//               console.log(`  Uploading processed image back to WordPress (Media ID: ${mediaId})`);
+              
+//               try {
+//                 const username = website.wpUsername || website.wpApplicationName || 'admin';
+//                 const authString = `${username}:${website.wpApplicationPassword}`;
+//                 const authHeader = `Basic ${Buffer.from(authString).toString('base64')}`;
+                
+//                 const form = new FormData();
+//                 form.append('file', processedBuffer, {
+//                   filename: imageName,
+//                   contentType: 'image/jpeg'
+//                 });
+                
+//                 const uploadUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
+//                 console.log(`  Step 1: Uploading file to: ${uploadUrl}`);
+                
+//                 const uploadResponse = await fetch(uploadUrl, {
+//                   method: 'POST',
+//                   headers: {
+//                     'Authorization': authHeader,
+//                     ...form.getHeaders()
+//                   },
+//                   body: form as any
+//                 });
+                
+//                 if (uploadResponse.ok) {
+//                   const updatedMedia = await uploadResponse.json();
+//                   newImageUrl = updatedMedia.source_url || updatedMedia.guid?.rendered || imageUrl;
+                  
+//                   console.log(`  ✅ File uploaded successfully`);
+                  
+//                   // Metadata update code (existing)...
+//                   if (options.action !== 'strip') {
+//                     console.log(`  Step 2: Updating metadata fields...`);
+                    
+//                     await new Promise(resolve => setTimeout(resolve, 500));
+                    
+//                     const metadataPayload = {
+//                       alt_text: options.author ? `Image by ${options.author}` : '',
+//                       caption: options.copyright ? `<p>${options.copyright}</p>` : '',
+//                       description: `<p>Processed by AI Content Manager on ${new Date().toLocaleDateString()}.<br>Copyright: ${options.copyright || 'N/A'}<br>Author: ${options.author || 'N/A'}</p>`,
+//                       title: imageName.replace(/-processed\.jpg$/, '').replace(/-/g, ' ')
+//                     };
+                    
+//                     const metadataResponse = await fetch(uploadUrl, {
+//                       method: 'POST',
+//                       headers: {
+//                         'Authorization': authHeader,
+//                         'Content-Type': 'application/json'
+//                       },
+//                       body: JSON.stringify(metadataPayload)
+//                     });
+                    
+//                     if (metadataResponse.ok) {
+//                       console.log(`  ✅ Metadata fields updated!`);
+//                     } else {
+//                       console.error(`  ⚠️ Metadata update failed: ${metadataResponse.status}`);
+//                     }
+//                   }
+                  
+//                   uploadSuccess = true;
+//                   console.log(`  ✅ WordPress update complete!`);
+                  
+//                 } else {
+//                   const errorText = await uploadResponse.text();
+//                   console.error(`  ⚠️ WordPress upload failed: ${uploadResponse.status} - ${errorText}`);
+//                 }
+//               } catch (uploadError: any) {
+//                 console.error(`  ⚠️ Upload error: ${uploadError.message}`);
+//               }
+//             } else if (!mediaId) {
+//               console.log(`  ℹ️ No media ID - cannot update WordPress`);
+//             } else if (!website.wpApplicationPassword || !website.wpUsername) {
+//               console.log(`  ⚠️ WordPress credentials not configured - cannot upload`);
+//             }
+            
+//             results.success.push({
+//               imageId,
+//               processingTime: `${Date.now() - startTime}ms`,
+//               message: uploadSuccess 
+//                 ? 'Image processed and uploaded to WordPress' 
+//                 : 'Image processed successfully (WordPress update requires manual upload)',
+//               size: processedBuffer.length,
+//               uploaded: uploadSuccess,
+//               wordpressUrl: newImageUrl
+//             });
+//           } else {
+//             throw new Error('Could not determine image URL');
+//           }
+//         } else {
+//           throw new Error(`Unknown image type: ${parts[0]}`);
+//         }
+        
+//       } catch (error: any) {
+//         console.error(`Failed to process ${imageId}:`, error.message);
+//         results.failed.push(imageId);
+//         results.errors.push({
+//           imageId,
+//           message: error.message || 'Unknown error'
+//         });
+//       }
+//     }
+    
+//     const successCount = results.success.length;
+//     const uploadedCount = results.success.filter(r => r.uploaded).length;
+//     const failedCount = results.failed.length;
+//     const successRate = `${Math.round((successCount / imageIds.length) * 100)}%`;
+    
+//     const response = {
+//       total: imageIds.length,
+//       processed: successCount,
+//       uploaded: uploadedCount,
+//       failed: failedCount,
+//       successRate,
+//       processingTime: `${Date.now()}ms`,
+//       results: {
+//         success: results.success,
+//         failed: results.failed
+//       },
+//       message: uploadedCount > 0 
+//         ? `Processed ${successCount} images, uploaded ${uploadedCount} to WordPress`
+//         : `Processed ${successCount} of ${imageIds.length} images`,
+//       errors: results.errors.length > 0 ? results.errors : undefined
+//     };
+    
+//     console.log(`✅ Batch processing complete: ${successCount}/${imageIds.length} successful, ${uploadedCount} uploaded to WordPress`);
+    
+//     res.json(response);
+    
+//   } catch (error: any) {
+//     console.error("❌ Failed to process images:", error);
+//     res.status(500).json({ 
+//       error: 'Failed to process images',
+//       message: error.message,
+//       details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+//     });
+//   }
+// });
+//   app.get("/api/images/batch-process", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const { contentId } = req.query;
+      
+//       if (!contentId) {
+//         res.status(400).json({ 
+//           error: 'Content ID required' 
+//         });
+//         return;
+//       }
+      
+//       res.json({
+//         status: 'ready',
+//         contentId: contentId,
+//         message: 'Image processing available'
+//       });
+      
+//     } catch (error: any) {
+//       console.error("⌠Failed to get image status:", error);
+//       res.status(500).json({ 
+//         error: 'Failed to get image status',
+//         message: error.message
+//       });
+//     }
+//   });
+
+//  app.post("/api/user/content/upload-images", 
+//   requireAuth, 
+//   upload.array('images', 10), 
+//   async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const { websiteId, contentId } = req.body;
+//       const files = req.files as Express.Multer.File[];
+      
+//       const uploadedImages = [];
+      
+//       for (const file of files) {
+//         try {
+//           // Step 3: Optimize image with Sharp
+//           const optimizedBuffer = await sharp(file.buffer)
+//             .resize(1920, 1080, { 
+//               fit: 'inside', 
+//               withoutEnlargement: true 
+//             })
+//             .jpeg({ 
+//               quality: 85, 
+//               progressive: true 
+//             })
+//             .toBuffer();
+          
+//           // Get metadata for dimensions
+//           const metadata = await sharp(optimizedBuffer).metadata();
+          
+//           // Upload optimized image to Cloudinary
+//           const cloudinaryResult = await cloudinaryStorage.uploadFromBuffer(
+//             optimizedBuffer,  // Use optimized buffer instead of original
+//             websiteId,
+//             contentId || 'user-upload',
+//             file.originalname
+//           );
+          
+//           // Step 2: Save to database
+//           const imageRecord = await storage.createContentImage({
+//             userId,
+//             contentId: contentId || null,
+//             websiteId,
+//             url: cloudinaryResult.secureUrl,
+//             cloudinaryId: cloudinaryResult.publicId,
+//             altText: file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+//             filename: file.originalname,
+//             mimeType: 'image/jpeg',  // We converted to JPEG
+//             size: optimizedBuffer.length,
+//             width: metadata.width || 0,
+//             height: metadata.height || 0,
+//             source: 'user_upload'
+//           });
+          
+//           uploadedImages.push({
+//             id: imageRecord.id,
+//             url: cloudinaryResult.secureUrl,
+//             publicId: cloudinaryResult.publicId,
+//             altText: imageRecord.altText,
+//             filename: file.originalname,
+//             size: optimizedBuffer.length,
+//             width: metadata.width,
+//             height: metadata.height
+//           });
+          
+//         } catch (uploadError: any) {
+//           console.error(`Failed to process ${file.originalname}:`, uploadError);
+//         }
+//       }
+      
+//       res.json({
+//         success: true,
+//         images: uploadedImages,
+//         message: `Uploaded ${uploadedImages.length} images`
+//       });
+      
+//     } catch (error: any) {
+//       console.error('❌ Upload error:', error);
+//       res.status(500).json({ 
+//         error: 'Upload failed',
+//         message: error.message 
+//       });
+//     }
+//   }
+// );
+
+// app.post("/api/user/content/replace-image", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+//     const { contentId, oldImageUrl, newImageUrl, newAltText } = req.body;
+    
+//     // Validate content ownership
+//     const content = await storage.getContent(contentId);
+//     if (!content || content.userId !== userId) {
+//       res.status(403).json({ error: 'Access denied' });
+//       return;
+//     }
+    
+//     // Replace image in content body
+//     const imgRegex = new RegExp(
+//       `<img[^>]*src=["']${escapeRegExp(oldImageUrl)}["'][^>]*>`, 
+//       'gi'
+//     );
+    
+//     const updatedBody = content.body.replace(imgRegex, (match) => {
+//       return match
+//         .replace(/src=["'][^"']+["']/, `src="${newImageUrl}"`)
+//         .replace(/alt=["'][^"']*["']/, `alt="${newAltText}"`);
+//     });
+    
+//     // Update content
+//     await storage.updateContent(contentId, {
+//       body: updatedBody,
+//       updatedAt: new Date()
+//     });
+    
+//     res.json({
+//       success: true,
+//       message: 'Image replaced successfully'
+//     });
+    
+//   } catch (error: any) {
+//     console.error('Failed to replace image:', error);
+//     res.status(500).json({ error: 'Failed to replace image' });
+//   }
+// });
+
+// // Get user's image library
+// app.get("/api/user/content/images", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+//     const { websiteId, contentId, limit = "50", offset = "0" } = req.query;
+    
+//     const images = await storage.getUserContentImages(userId, {
+//       websiteId: websiteId as string,
+//       contentId: contentId as string,
+//       limit: parseInt(limit as string),
+//       offset: parseInt(offset as string)
+//     });
+    
+//     res.json({
+//       images,
+//       total: images.length,
+//       hasMore: images.length === parseInt(limit as string)
+//     });
+    
+//   } catch (error: any) {
+//     console.error('Failed to fetch images:', error);
+//     res.status(500).json({ error: 'Failed to fetch images' });
+//   }
+// });
+
+// // Delete image
+// app.delete("/api/user/content/images/:imageId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+//     const { imageId } = req.params;
+    
+//     // Get image to verify ownership and get cloudinary ID
+//     const image = await storage.getContentImage(imageId);
+//     if (!image || image.userId !== userId) {
+//       res.status(403).json({ error: 'Access denied' });
+//       return;
+//     }
+    
+//     // Delete from Cloudinary if it has a public ID
+//     if (image.cloudinaryId) {
+//       await cloudinaryStorage.deleteImage(image.cloudinaryId);
+//     }
+    
+//     // Delete from database
+//     await storage.deleteContentImage(imageId);
+    
+//     res.json({
+//       success: true,
+//       message: 'Image deleted successfully'
+//     });
+    
+//   } catch (error: any) {
+//     console.error('Failed to delete image:', error);
+//     res.status(500).json({ error: 'Failed to delete image' });
+//   }
+// });
+
+  
+
+// ///=======================GOOGLE SEARCH CONSOLE==========================//
+// app.use('/api/gsc', requireAuth, gscRouter);
+
+
+
+
+//   // ===========================================================================
+//   // DASHBOARD & ACTIVITY ROUTES
+//   // ===========================================================================
+  
+//   app.get("/api/user/dashboard/stats", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const stats = await storage.getUserDashboardStats(userId);
+//       res.json(stats);
+//     } catch (error) {
+//       console.error("Failed to fetch dashboard stats:", error);
+//       res.status(500).json({ message: "Failed to fetch dashboard stats" });
+//     }
+//   });
+
+//   app.get("/api/user/dashboard/performance", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const days = 7;
+//       const data = [];
+//       const baseScore = 75;
+      
+//       for (let i = days - 1; i >= 0; i--) {
+//         const date = new Date();
+//         date.setDate(date.getDate() - i);
+//         const variation = Math.random() * 10 - 5;
+//         const score = Math.max(70, Math.min(100, baseScore + variation + (i * 2)));
+        
+//         data.push({
+//           date: date.toISOString().split('T')[0],
+//           score: Math.round(score)
+//         });
+//       }
+
+//       res.json(data);
+//     } catch (error) {
+//       console.error("Failed to fetch performance data:", error);
+//       res.status(500).json({ message: "Failed to fetch performance data" });
+//     }
+//   });
+
+//   app.get("/api/user/activity-logs", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const userId = req.user!.id;
+//       const websiteId = req.query.websiteId as string;
+      
+//       if (websiteId) {
+//         const website = await storage.getUserWebsite(websiteId, userId);
+//         if (!website) {
+//           res.status(404).json({ message: "Website not found or access denied" });
+//           return;
+//         }
+//       }
+      
+//       const logs = await storage.getUserActivityLogs(userId, websiteId);
+//       res.json(logs);
+//     } catch (error) {
+//       console.error("Failed to fetch activity logs:", error);
+//       res.status(500).json({ message: "Failed to fetch activity logs" });
+//     }
+//   });
+
+//   // ===========================================================================
+//   // SYSTEM/GLOBAL ROUTES (No authentication required)
+//   // ===========================================================================
+  
+//   app.get("/api/ai-providers/status", async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const status = {
+//         openai: {
+//           available: !!(process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR),
+//           model: 'gpt-4o',
+//           pricing: { input: 0.005, output: 0.015 }
+//         },
+//         anthropic: {
+//           available: !!process.env.ANTHROPIC_API_KEY,
+//           model: 'claude-3-5-sonnet-20241022',
+//           pricing: { input: 0.003, output: 0.015 }
+//         },
+//         gemini: {
+//           available: !!process.env.GOOGLE_GEMINI_API_KEY,
+//           model: 'gemini-1.5-pro',
+//           pricing: { input: 0.0025, output: 0.0075 }
+//         },
+//         pagespeed: {
+//           available: !!process.env.GOOGLE_PAGESPEED_API_KEY
+//         }
+//       };
+
+//       res.json({
+//         success: true,
+//         providers: status
+//       });
+//     } catch (error) {
+//       console.error('Provider status check error:', error);
+//       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+//       res.status(500).json({
+//         success: false,
+//         error: 'Failed to check provider status',
+//         message: errorMessage
+//       });
+//     }
+//   });
+
+//   app.get("/api/seo/health", async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const hasGoogleApiKey = !!process.env.GOOGLE_PAGESPEED_API_KEY;
+//       const hasOpenAI = !!process.env.OPENAI_API_KEY;
+//       const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+//       const hasGemini = !!process.env.GOOGLE_GEMINI_API_KEY;
+      
+//       const availableProviders = [];
+//       if (hasOpenAI) availableProviders.push('OpenAI GPT-4');
+//       if (hasAnthropic) availableProviders.push('Anthropic Claude');
+//       if (hasGemini) availableProviders.push('Google Gemini');
+      
+//       res.json({
+//         status: "healthy",
+//         services: {
+//           pageSpeedInsights: {
+//             configured: hasGoogleApiKey,
+//             message: hasGoogleApiKey 
+//               ? "Google PageSpeed Insights API is configured" 
+//               : "Using fallback speed estimation (configure GOOGLE_PAGESPEED_API_KEY for better results)"
+//           },
+//           technicalAnalysis: {
+//             configured: true,
+//             message: "Technical SEO analysis is fully operational"
+//           },
+//           aiContentAnalysis: {
+//             configured: hasOpenAI || hasAnthropic || hasGemini,
+//             providers: {
+//               openai: hasOpenAI,
+//               anthropic: hasAnthropic,
+//               gemini: hasGemini
+//             },
+//             message: availableProviders.length > 0
+//               ? `AI content analysis available via ${availableProviders.join(', ')}` 
+//               : "Configure OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_GEMINI_API_KEY for AI-powered content analysis"
+//           }
+//         },
+//         capabilities: {
+//           basicSEO: true,
+//           technicalSEO: true,
+//           pageSpeed: hasGoogleApiKey,
+//           contentQuality: hasOpenAI || hasAnthropic || hasGemini,
+//           keywordOptimization: hasOpenAI || hasAnthropic || hasGemini,
+//           eatScoring: hasOpenAI || hasAnthropic || hasGemini,
+//           contentGapAnalysis: hasOpenAI || hasAnthropic || hasGemini,
+//           semanticAnalysis: hasOpenAI || hasAnthropic || hasGemini,
+//           userIntentAlignment: hasOpenAI || hasAnthropic || hasGemini
+//         }
+//       });
+//     } catch (error) {
+//       console.error("SEO health check failed:", error);
+//       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+//       res.status(500).json({ 
+//         status: "unhealthy", 
+//         error: errorMessage 
+//       });
+//     }
+//   });
+
+//   app.post("/api/validate-url", async (req: Request, res: Response): Promise<void> => {
+//     try {
+//       const { url } = req.body;
+      
+//       if (!url) {
+//         res.status(400).json({ 
+//           valid: false, 
+//           error: "URL is required" 
+//         });
+//         return;
+//       }
+
+//       try {
+//         new URL(url);
+//         res.json({
+//           valid: true,
+//           url: url,
+//           message: "URL format is valid"
+//         });
+//       } catch {
+//         res.json({
+//           valid: false,
+//           error: "Invalid URL format",
+//           message: "Please enter a valid URL starting with http:// or https://"
+//         });
+//       }
+//     } catch (error) {
+//       console.error("URL validation error:", error);
+//       res.status(500).json({ 
+//         valid: false, 
+//         error: "URL validation failed" 
+//       });
+//     }
+//   });
+
+// //=====================METADATA==================================//
+// app.get("/api/images/content-images", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+//     const { websiteId } = req.query;
+    
+//     console.log('🖼️ Fetching images for user:', userId);
+//     console.log('Website ID:', websiteId || 'all');
+    
+//     const images: any[] = [];
+    
+//     // Get websites using your existing storage method
+//     const websites = await storage.getUserWebsites(userId);
+    
+//     // Filter by websiteId if provided
+//     const websitesToProcess = websiteId && websiteId !== 'undefined' 
+//       ? websites.filter(w => w.id === websiteId)
+//       : websites;
+    
+//     console.log(`Processing ${websitesToProcess.length} websites`);
+    
+//     // Process each website to get images from WordPress
+//     for (const website of websitesToProcess) {
+//       console.log(`\n📌 Processing: ${website.name}`);
+//       console.log(`URL: ${website.url}`);
+      
+//       if (!website.url) {
+//         console.log('No URL configured, skipping');
+//         continue;
+//       }
+      
+//       const baseUrl = website.url.replace(/\/$/, '');
+      
+//       // Decrypt the application password if you have encryption
+//       let decryptedPassword = website.wpApplicationPassword;
+//       // Fetch WordPress Posts
+//       try {
+//         const postsUrl = `${baseUrl}/wp-json/wp/v2/posts?_embed&per_page=100`;
+//         console.log(`Fetching posts from: ${postsUrl}`);
+        
+//         const headers: any = { 
+//           'Content-Type': 'application/json',
+//           'User-Agent': 'WordPress-Image-Manager/1.0'
+//         };
+        
+//         // Add authentication if available
+//         if (decryptedPassword) {
+//           const username = website.wpUsername || website.wpApplicationName || 'admin';
+//           const authString = `${username}:${decryptedPassword}`;
+//           headers['Authorization'] = `Basic ${Buffer.from(authString).toString('base64')}`;
+//           console.log(`Using auth for: ${username}`);
+//         }
+        
+//         const postsResponse = await fetch(postsUrl, { headers });
+//         console.log(`Response status: ${postsResponse.status}`);
+        
+//         if (postsResponse.ok) {
+//           const posts = await postsResponse.json();
+//           console.log(`✅ Found ${posts.length} posts`);
+          
+//           for (const post of posts) {
+//             const postTitle = post.title?.rendered?.replace(/<[^>]*>/g, '').trim() || 'Untitled';
+            
+//             // Featured image
+//             if (post._embedded?.['wp:featuredmedia']?.[0]) {
+//               const media = post._embedded['wp:featuredmedia'][0];
+//               if (media.media_type === 'image' && media.source_url) {
+//                 images.push({
+//                   id: `wp_${website.id}_${post.id}_featured`,
+//                   url: media.source_url,
+//                   contentId: `post_${post.id}`,
+//                   contentTitle: postTitle,
+//                   websiteId: website.id,
+//                   websiteName: website.name,
+//                   hasMetadata: !!(media.alt_text || media.caption?.rendered),
+//                   metadataDetails: {
+//                     altText: media.alt_text || '',
+//                     caption: media.caption?.rendered?.replace(/<[^>]*>/g, '') || '',
+//                     isFeatured: true
+//                   },
+//                   size: media.media_details?.filesize || 0,
+//                   createdAt: post.date,
+//                   isAIGenerated: false,
+//                   processedAt: post.modified,
+//                   costCents: 0
+//                 });
+//               }
+//             }
+            
+//             // Content images
+//             if (post.content?.rendered) {
+//               const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+//               let match;
+              
+//               while ((match = imgRegex.exec(post.content.rendered)) !== null) {
+//                 const url = match[1];
+                
+//                 // Skip data URLs and emojis
+//                 if (url.startsWith('data:') || 
+//                     url.includes('emoji') || 
+//                     images.some(img => img.url === url)) {
+//                   continue;
+//                 }
+                
+//                 const altMatch = match[0].match(/alt=["']([^"']*?)["']/i);
+                
+//                 images.push({
+//                   id: `wp_${website.id}_${post.id}_${images.length}`,
+//                   url: url,
+//                   contentId: `post_${post.id}`,
+//                   contentTitle: postTitle,
+//                   websiteId: website.id,
+//                   websiteName: website.name,
+//                   hasMetadata: !!altMatch,
+//                   metadataDetails: {
+//                     altText: altMatch ? altMatch[1] : ''
+//                   },
+//                   size: 0,
+//                   createdAt: post.date,
+//                   isAIGenerated: false,
+//                   processedAt: post.modified,
+//                   costCents: 0
+//                 });
+//               }
+//             }
+//           }
+//         } else if (postsResponse.status === 401) {
+//           console.log('⚠️ Auth failed, trying public access...');
+          
+//           // Try without auth
+//           const publicResponse = await fetch(postsUrl);
+//           if (publicResponse.ok) {
+//             const posts = await publicResponse.json();
+//             console.log(`✅ Found ${posts.length} public posts`);
+//             // Process posts (same as above)
+//           }
+//         }
+//       } catch (error: any) {
+//         console.error('❌ Error fetching posts:', error.message);
+//       }
+      
+//       // Fetch Media Library
+//       try {
+//         const mediaUrl = `${baseUrl}/wp-json/wp/v2/media?per_page=100`;
+//         console.log(`Fetching media from: ${mediaUrl}`);
+        
+//         const mediaResponse = await fetch(mediaUrl);
+        
+//         if (mediaResponse.ok) {
+//           const mediaItems = await mediaResponse.json();
+//           console.log(`✅ Found ${mediaItems.length} media items`);
+          
+//           for (const media of mediaItems) {
+//             if (media.mime_type?.startsWith('image/') && media.source_url) {
+//               if (!images.some(img => img.url === media.source_url)) {
+//                 images.push({
+//                   id: `media_${website.id}_${media.id}`,
+//                   url: media.source_url,
+//                   contentId: `media_${media.id}`,
+//                   contentTitle: media.title?.rendered?.replace(/<[^>]*>/g, '') || 'Media',
+//                   websiteId: website.id,
+//                   websiteName: website.name,
+//                   hasMetadata: !!(media.alt_text || media.caption?.rendered),
+//                   metadataDetails: {
+//                     altText: media.alt_text || '',
+//                     caption: media.caption?.rendered?.replace(/<[^>]*>/g, '') || ''
+//                   },
+//                   size: media.media_details?.filesize || 0,
+//                   createdAt: media.date,
+//                   isAIGenerated: false,
+//                   processedAt: media.modified,
+//                   costCents: 0
+//                 });
+//               }
+//             }
+//           }
+//         }
+//       } catch (error: any) {
+//         console.error('❌ Error fetching media:', error.message);
+//       }
+//     }
+    
+//     console.log(`\n📊 Total images found: ${images.length}`);
+//     res.json(images);
+    
+//   } catch (error: any) {
+//     console.error("❌ Failed to fetch images:", error);
+//     res.status(500).json({ 
+//       error: 'Failed to fetch images',
+//       message: error.message 
+//     });
+//   }
+// });
+
+// async function findMediaIdFromUrl(baseUrl: string, imageUrl: string, authHeader?: string): Promise<string | null> {
+//   try {
+//     // Extract filename from URL
+//     const urlParts = imageUrl.split('/');
+//     const filename = urlParts[urlParts.length - 1];
+    
+//     // Remove size suffix if present (e.g., -1024x682)
+//     const originalFilename = filename.replace(/-\d+x\d+(\.\w+)$/, '$1');
+    
+//     console.log(`  Searching for media with filename: ${originalFilename}`);
+    
+//     // Search media library
+//     const searchUrl = `${baseUrl}/wp-json/wp/v2/media?search=${encodeURIComponent(originalFilename)}&per_page=100`;
+    
+//     const headers: any = {};
+//     if (authHeader) {
+//       headers['Authorization'] = authHeader;
+//     }
+    
+//     const response = await fetch(searchUrl, { headers });
+    
+//     if (response.ok) {
+//       const mediaItems = await response.json();
+      
+//       // Find exact match or closest match
+//       for (const media of mediaItems) {
+//         // Check if this media's URL matches or contains our image
+//         if (media.source_url && (
+//           media.source_url === imageUrl ||
+//           media.source_url.includes(originalFilename) ||
+//           imageUrl.includes(media.slug)
+//         )) {
+//           console.log(`  Found media ID: ${media.id}`);
+//           return media.id.toString();
+//         }
+//       }
+//     }
+    
+//     return null;
+//   } catch (error) {
+//     console.error('  Error searching for media ID:', error);
+//     return null;
+//   }
+// }
+
+// // Process image with Sharp
+// //BAGO
+// async function processImageWithSharp(
+//   imageBuffer: Buffer,
+//   options: any
+// ): Promise<Buffer> {
+//   let pipeline = sharp(imageBuffer);
+  
+//   // Get current metadata
+//   const metadata = await pipeline.metadata();
+  
+//   // Handle scrambling action
+//   if (options.action === 'scramble') {
+//     console.log(`  Applying scramble: ${options.scrambleType} at ${options.scrambleIntensity}% intensity`);
+    
+//     switch (options.scrambleType) {
+//       case 'pixel-shift':
+//         pipeline = await applyPixelShift(pipeline, metadata, options.scrambleIntensity || 50);
+//         break;
+        
+//       case 'watermark':
+//         pipeline = await applyWatermark(pipeline, metadata, options);
+//         break;
+        
+//       case 'blur-regions':
+//         pipeline = await applyBlurRegions(pipeline, metadata, options);
+//         break;
+        
+//       case 'color-shift':
+//         pipeline = await applyColorShift(pipeline, metadata, options.scrambleIntensity || 50);
+//         break;
+        
+//       case 'noise':
+//         pipeline = await applyNoise(pipeline, metadata, options.scrambleIntensity || 50);
+//         break;
+//     }
+    
+//     // Remove metadata after scrambling for privacy
+//     pipeline = pipeline.withMetadata({
+//       orientation: metadata.orientation
+//     });
+    
+//   } else if (options.action === 'strip') {
+//     // Remove all metadata except orientation
+//     console.log('  Stripping metadata');
+//     pipeline = pipeline.withMetadata({
+//       orientation: metadata.orientation
+//     });
+    
+//   } else if (options.action === 'add' || options.action === 'update') {
+//     // Add or update metadata
+//     console.log('  Adding/updating metadata');
+    
+//     const metadataOptions: any = {
+//       orientation: metadata.orientation
+//     };
+    
+//     // Sharp's EXIF writing capabilities - all values must be strings
+//     if (options.copyright || options.author) {
+//       try {
+//         const now = new Date();
+//         const dateStr = now.toISOString().split('T')[0].replace(/-/g, ':') + ' ' + 
+//                        now.toISOString().split('T')[1].split('.')[0];
+        
+//         metadataOptions.exif = {
+//           IFD0: {
+//             ImageDescription: `Property of ${options.author || 'Murray Group'}. ${options.copyright || ''}`,
+//             Make: 'AI Content Manager',
+//             Model: 'Image Processor v1.0',
+//             Software: 'AI Content Manager - Murray Group',
+//             DateTime: dateStr,
+//             Artist: options.author || '',
+//             Copyright: options.copyright || '',
+//             HostComputer: 'Murray Group Real Estate System'
+//           }
+//         };
+        
+//         // Try to preserve existing EXIF
+//         if (metadata.exif) {
+//           try {
+//             const existingExif = await sharp(metadata.exif).metadata();
+//             metadataOptions.exif = {
+//               ...existingExif,
+//               IFD0: {
+//                 ...existingExif,
+//                 ...metadataOptions.exif.IFD0
+//               }
+//             };
+//           } catch (e) {
+//             console.log('  Could not preserve existing EXIF');
+//           }
+//         }
+        
+//         console.log(`  Added Copyright: ${options.copyright}`);
+//         console.log(`  Added Artist: ${options.author}`);
+        
+//       } catch (e) {
+//         console.log('  Warning: Could not add full metadata:', e);
+//       }
+//     }
+    
+//     pipeline = pipeline.withMetadata(metadataOptions);
+//   }
+  
+//   // Apply optimizations
+//   if (options.optimize) {
+//     console.log('  Optimizing image');
+    
+//     if (options.maxWidth && metadata.width && metadata.width > options.maxWidth) {
+//       console.log(`  Resizing from ${metadata.width}px to ${options.maxWidth}px`);
+//       pipeline = pipeline.resize(options.maxWidth, null, {
+//         withoutEnlargement: true,
+//         fit: 'inside'
+//       });
+//     }
+    
+//     const quality = options.quality || 85;
+    
+//     if (metadata.format === 'png') {
+//       const stats = await sharp(imageBuffer).stats();
+//       const channels = stats.channels.length;
+//       const hasTransparency = channels === 4;
+      
+//       if (!hasTransparency && metadata.density && metadata.density > 72) {
+//         console.log('  Converting PNG photo to JPEG');
+//         pipeline = pipeline.jpeg({
+//           quality,
+//           progressive: true,
+//           mozjpeg: true
+//         });
+//       } else {
+//         console.log('  Optimizing PNG');
+//         pipeline = pipeline.png({
+//           quality,
+//           compressionLevel: 9,
+//           palette: true
+//         });
+//       }
+//     } else if (metadata.format === 'webp') {
+//       console.log('  Optimizing WebP');
+//       pipeline = pipeline.webp({
+//         quality,
+//         effort: 6,
+//         lossless: false
+//       });
+//     } else {
+//       console.log('  Optimizing JPEG');
+//       pipeline = pipeline.jpeg({
+//         quality,
+//         progressive: true,
+//         mozjpeg: true
+//       });
+//     }
+//   }
+  
+//   // Remove GPS data if requested
+//   if (options.removeGPS && options.action !== 'strip') {
+//     console.log('  Removing GPS data');
+//     const currentMeta = await pipeline.metadata();
+//     pipeline = pipeline.withMetadata({
+//       orientation: currentMeta.orientation
+//     });
+//   }
+  
+//   // Handle color profile
+//   if (!options.keepColorProfile) {
+//     console.log('  Converting to sRGB');
+//     pipeline = pipeline.toColorspace('srgb');
+//   }
+  
+//   const processedBuffer = await pipeline.toBuffer();
+//   console.log(`  Processed size: ${(processedBuffer.length / 1024).toFixed(1)}KB`);
+  
+//   return processedBuffer;
+// }
+
+
+
+// // NEW: Scrambling helper functions
+// async function applyPixelShift(
+//   pipeline: sharp.Sharp, 
+//   metadata: sharp.Metadata, 
+//   intensity: number
+// ): Promise<sharp.Sharp> {
+//   const { width = 100, height = 100 } = metadata;
+  
+//   const shiftAmount = Math.floor((intensity / 100) * Math.min(width, height) * 0.1);
+  
+//   const { data, info } = await pipeline
+//     .raw()
+//     .toBuffer({ resolveWithObject: true });
+  
+//   const blockSize = Math.max(4, Math.floor(Math.min(width, height) / 20));
+//   const scrambledData = Buffer.from(data);
+  
+//   for (let y = 0; y < height - blockSize; y += blockSize) {
+//     for (let x = 0; x < width - blockSize; x += blockSize) {
+//       if (Math.random() < intensity / 100) {
+//         const targetX = Math.floor(Math.random() * (width - blockSize));
+//         const targetY = Math.floor(Math.random() * (height - blockSize));
+        
+//         for (let by = 0; by < blockSize; by++) {
+//           for (let bx = 0; bx < blockSize; bx++) {
+//             const sourceIdx = ((y + by) * width + (x + bx)) * info.channels;
+//             const targetIdx = ((targetY + by) * width + (targetX + bx)) * info.channels;
+            
+//             if (sourceIdx < scrambledData.length && targetIdx < scrambledData.length) {
+//               for (let c = 0; c < info.channels; c++) {
+//                 const temp = scrambledData[sourceIdx + c];
+//                 scrambledData[sourceIdx + c] = scrambledData[targetIdx + c];
+//                 scrambledData[targetIdx + c] = temp;
+//               }
+//             }
+//           }
+//         }
+//       }
+//     }
+//   }
+  
+//   return sharp(scrambledData, {
+//     raw: {
+//       width,
+//       height,
+//       channels: info.channels
+//     }
+//   });
+// }
+
+// async function applyWatermark(
+//   pipeline: sharp.Sharp, 
+//   metadata: sharp.Metadata, 
+//   options: any
+// ): Promise<sharp.Sharp> {
+//   const { width = 800, height = 600 } = metadata;
+//   const text = options.watermarkText || 'CONFIDENTIAL';
+//   const fontSize = Math.floor(Math.min(width, height) / 10);
+  
+//   const watermarkSvg = `
+//     <svg width="${width}" height="${height}">
+//       <style>
+//         .watermark { 
+//           fill: rgba(255, 0, 0, 0.4); 
+//           font-size: ${fontSize}px; 
+//           font-family: Arial, sans-serif; 
+//           font-weight: bold;
+//         }
+//       </style>
+//       <text x="50%" y="50%" 
+//         text-anchor="middle" 
+//         dominant-baseline="middle" 
+//         transform="rotate(-45, ${width/2}, ${height/2})"
+//         class="watermark">
+//         ${text}
+//       </text>
+//     </svg>
+//   `;
+  
+//   return pipeline.composite([{
+//     input: Buffer.from(watermarkSvg),
+//     gravity: options.watermarkPosition === 'top-left' ? 'northwest' :
+//              options.watermarkPosition === 'top-right' ? 'northeast' :
+//              options.watermarkPosition === 'bottom-left' ? 'southwest' :
+//              options.watermarkPosition === 'bottom-right' ? 'southeast' : 'center',
+//     blend: 'over'
+//   }]);
+// }
+
+// async function applyBlurRegions(
+//   pipeline: sharp.Sharp, 
+//   metadata: sharp.Metadata, 
+//   options: any
+// ): Promise<sharp.Sharp> {
+//   const { width = 800, height = 600 } = metadata;
+//   const numRegions = Math.floor((options.scrambleIntensity || 50) / 10);
+  
+//   const baseBuffer = await pipeline.toBuffer();
+//   let compositePipeline = sharp(baseBuffer);
+  
+//   const overlays: sharp.OverlayOptions[] = [];
+  
+//   for (let i = 0; i < numRegions; i++) {
+//     const regionWidth = Math.floor(width * (0.1 + Math.random() * 0.2));
+//     const regionHeight = Math.floor(height * (0.1 + Math.random() * 0.2));
+//     const x = Math.floor(Math.random() * (width - regionWidth));
+//     const y = Math.floor(Math.random() * (height - regionHeight));
+    
+//     const blurredRegion = await sharp(baseBuffer)
+//       .extract({ left: x, top: y, width: regionWidth, height: regionHeight })
+//       .blur(20)
+//       .toBuffer();
+    
+//     overlays.push({
+//       input: blurredRegion,
+//       left: x,
+//       top: y
+//     });
+//   }
+  
+//   if (overlays.length > 0) {
+//     compositePipeline = compositePipeline.composite(overlays);
+//   }
+  
+//   return compositePipeline;
+// }
+
+// async function applyColorShift(
+//   pipeline: sharp.Sharp, 
+//   metadata: sharp.Metadata, 
+//   intensity: number
+// ): Promise<sharp.Sharp> {
+//   const shift = (intensity / 100) * 180;
+  
+//   return pipeline
+//     .modulate({
+//       hue: shift,
+//       saturation: 1 + (Math.random() - 0.5) * (intensity / 100),
+//       brightness: 1 + (Math.random() - 0.5) * (intensity / 200)
+//     })
+//     .tint({
+//       r: Math.floor(Math.random() * intensity),
+//       g: Math.floor(Math.random() * intensity),
+//       b: Math.floor(Math.random() * intensity)
+//     });
+// }
+
+// async function applyNoise(
+//   pipeline: sharp.Sharp, 
+//   metadata: sharp.Metadata, 
+//   intensity: number
+// ): Promise<sharp.Sharp> {
+//   const { width = 800, height = 600 } = metadata;
+  
+//   const noiseIntensity = Math.floor((intensity / 100) * 50);
+//   const noiseBuffer = Buffer.alloc(width * height * 4);
+  
+//   for (let i = 0; i < noiseBuffer.length; i += 4) {
+//     const noise = Math.floor(Math.random() * noiseIntensity);
+//     noiseBuffer[i] = noise;
+//     noiseBuffer[i + 1] = noise;
+//     noiseBuffer[i + 2] = noise;
+//     noiseBuffer[i + 3] = 128;
+//   }
+  
+//   const noiseImage = await sharp(noiseBuffer, {
+//     raw: {
+//       width,
+//       height,
+//       channels: 4
+//     }
+//   }).png().toBuffer();
+  
+//   return pipeline.composite([{
+//     input: noiseImage,
+//     blend: 'overlay'
+//   }]);
+// }
+
+// // NEW: Web Crawler endpoint
+// app.post("/api/images/crawl", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const { url, options } = req.body;
+    
+//     console.log(`🕷️ Starting web crawl for: ${url}`);
+    
+//     // Validate URL
+//     let validUrl: URL;
+//     try {
+//       validUrl = new URL(url);
+//       if (!['http:', 'https:'].includes(validUrl.protocol)) {
+//         throw new Error('Invalid protocol');
+//       }
+//     } catch {
+//       res.status(400).json({
+//         error: 'Invalid URL',
+//         message: 'Please provide a valid HTTP(S) URL',
+//       });
+//       return;
+//     }
+    
+//     // Crawl options
+//     const maxDepth = options?.maxDepth || 2;
+//     const maxImages = options?.maxImages || 50;
+//     const minWidth = options?.minWidth || 200;
+//     const minHeight = options?.minHeight || 200;
+    
+//     const visitedUrls = new Set<string>();
+//     const crawledImages: any[] = [];
+    
+//     async function crawlPage(pageUrl: string, depth: number): Promise<void> {
+//       if (depth > maxDepth) return;
+//       if (crawledImages.length >= maxImages) return;
+//       if (visitedUrls.has(pageUrl)) return;
+      
+//       visitedUrls.add(pageUrl);
+      
+//       try {
+//         console.log(`  Crawling: ${pageUrl} (depth: ${depth})`);
+        
+//         const response = await fetch(pageUrl, {
+//           headers: {
+//             'User-Agent': 'Mozilla/5.0 (compatible; ImageCrawler/1.0)',
+//           },
+//           signal: AbortSignal.timeout(10000),
+//         });
+        
+//         if (!response.ok) return;
+        
+//         const contentType = response.headers.get('content-type') || '';
+//         if (!contentType.includes('text/html')) return;
+        
+//         const html = await response.text();
+//         const dom = new JSDOM(html, { url: pageUrl });
+//         const document = dom.window.document;
+        
+//         // Get page title
+//         const pageTitle = document.querySelector('title')?.textContent || '';
+        
+//         // Extract images
+//         const images = document.querySelectorAll('img');
+//         for (const img of images) {
+//           if (crawledImages.length >= maxImages) break;
+          
+//           const imgSrc = img.src;
+//           if (!imgSrc || imgSrc.startsWith('data:')) continue;
+          
+//           // Resolve relative URLs
+//           let imgUrl: string;
+//           try {
+//             imgUrl = new URL(imgSrc, pageUrl).href;
+//           } catch {
+//             continue;
+//           }
+          
+//           // Skip if already crawled
+//           if (crawledImages.some(ci => ci.url === imgUrl)) continue;
+          
+//           // Check dimensions if specified in HTML
+//           const width = parseInt(img.getAttribute('width') || '0');
+//           const height = parseInt(img.getAttribute('height') || '0');
+          
+//           // Only skip if both minWidth and minHeight are set AND image doesn't meet them
+//           if (minWidth > 0 && width > 0 && width < minWidth) continue;
+//           if (minHeight > 0 && height > 0 && height < minHeight) continue;
+          
+//           // Skip data URLs if they're too small (but still allow them)
+//           if (imgSrc.startsWith('data:') && imgSrc.length < 100) continue;
+          
+//           crawledImages.push({
+//             url: imgUrl,
+//             alt: img.alt || undefined,
+//             title: img.title || undefined,
+//             width: width || undefined,
+//             height: height || undefined,
+//             pageUrl,
+//             pageTitle,
+//             depth,
+//           });
+          
+//           console.log(`    Found image: ${imgUrl}`);
+//         }
+        
+//         // Extract links for further crawling
+//         if (depth < maxDepth) {
+//           const links = document.querySelectorAll('a[href]');
+//           const uniqueLinks = new Set<string>();
+          
+//           for (const link of links) {
+//             const href = link.getAttribute('href');
+//             if (!href) continue;
+            
+//             try {
+//               const linkUrl = new URL(href, pageUrl);
+              
+//               // Only follow same-origin links by default
+//               if (linkUrl.origin !== validUrl.origin && !options?.followExternal) continue;
+              
+//               // Skip non-HTTP(S) protocols
+//               if (!['http:', 'https:'].includes(linkUrl.protocol)) continue;
+              
+//               // Skip common non-content URLs but KEEP WordPress post/page URLs
+//               const skipPatterns = [
+//                 '/wp-admin', '/wp-login', '/feed/', '.pdf', '.zip', '.doc',
+//                 'mailto:', 'javascript:', '/wp-json/', '#respond', '#comments'
+//               ];
+              
+//               let shouldSkip = false;
+//               for (const pattern of skipPatterns) {
+//                 if (linkUrl.href.includes(pattern)) {
+//                   shouldSkip = true;
+//                   break;
+//                 }
+//               }
+              
+//               if (!shouldSkip) {
+//                 // Clean up URL (remove fragments)
+//                 linkUrl.hash = '';
+//                 uniqueLinks.add(linkUrl.href);
+//               }
+//             } catch {
+//               continue;
+//             }
+//           }
+          
+//           // Prioritize post/page URLs
+//           const sortedLinks = Array.from(uniqueLinks).sort((a, b) => {
+//             // Prioritize individual posts/pages
+//             const aIsPost = a.match(/\/([\w-]+)\/?$/);
+//             const bIsPost = b.match(/\/([\w-]+)\/?$/);
+//             if (aIsPost && !bIsPost) return -1;
+//             if (!aIsPost && bIsPost) return 1;
+//             return 0;
+//           });
+          
+//           // Crawl discovered links
+//           for (const linkUrl of sortedLinks) {
+//             if (crawledImages.length >= maxImages) break;
+//             await crawlPage(linkUrl, depth + 1);
+//           }
+//         }
+        
+//       } catch (error: any) {
+//         console.error(`  Error crawling ${pageUrl}:`, error.message);
+//       }
+//     }
+    
+//     // Start crawling
+//     await crawlPage(validUrl.href, 0);
+    
+//     console.log(`✅ Crawl complete: Found ${crawledImages.length} images`);
+    
+//     // Transform to match frontend format
+//     const transformedImages = crawledImages.map((img, index) => ({
+//       id: `crawled_${Date.now()}_${index}`,
+//       url: img.url,
+//       contentId: `crawl_${index}`,
+//       contentTitle: img.pageTitle || `Page: ${new URL(img.pageUrl).pathname}`,
+//       websiteId: 'crawled',
+//       websiteName: validUrl.hostname,
+//       hasMetadata: false,
+//       metadataDetails: {
+//         alt: img.alt,
+//         title: img.title,
+//         width: img.width,
+//         height: img.height,
+//       },
+//       size: 0,
+//       createdAt: new Date().toISOString(),
+//       isAIGenerated: false,
+//       isCrawled: true,
+//       source: img.pageUrl,
 //     }));
     
-//     console.log(`✅ Performance data fetched: ${performanceData.length} days`);
-//     res.json(performanceData);
-    
-//   } catch (error) {
-//     console.error('Performance data error:', error);
-//     res.status(500).json({ error: 'Failed to fetch performance data' });
-//   }
-// });
-
-// // Refresh GSC token
-// app.post("/api/gsc/refresh-token", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId, refreshToken } = req.body;
-    
-//     console.log(`🔄 Refreshing GSC token for account: ${accountId}`);
-    
-//     gscOAuth2Client.setCredentials({ refresh_token: refreshToken });
-//     const { credentials } = await gscOAuth2Client.refreshAccessToken();
-    
-//     // Update stored tokens in memory
-//     gscUserTokens.set(`${userId}_${accountId}`, credentials);
-    
-//     // Update in database
-//     await gscStorage.updateGscAccount(userId, accountId, {
-//       accessToken: credentials.access_token!,
-//       tokenExpiry: credentials.expiry_date!
-//     });
-    
-//     console.log(`✅ GSC token refreshed for account: ${accountId}`);
 //     res.json({
-//       accessToken: credentials.access_token,
-//       tokenExpiry: credentials.expiry_date
-//     });
-    
-//   } catch (error) {
-//     console.error('Token refresh error:', error);
-//     res.status(500).json({ error: 'Failed to refresh token' });
-//   }
-// });
-
-// // OAuth callback handler
-// app.get("/api/gsc/oauth-callback", async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const { code, state, error } = req.query;
-    
-//     if (error) {
-//       res.send(`
-//         <!DOCTYPE html>
-//         <html>
-//         <head><title>Authentication Error</title></head>
-//         <body>
-//           <script>
-//             if (window.opener) {
-//               window.opener.postMessage({
-//                 type: 'GOOGLE_AUTH_ERROR',
-//                 error: '${error}'
-//               }, '*');
-//               window.close();
-//             } else {
-//               window.location.href = '/google-search-console?error=${error}';
-//             }
-//           </script>
-//         </body>
-//         </html>
-//       `);
-//       return;
-//     }
-    
-//     if (!code) {
-//       res.send(`
-//         <!DOCTYPE html>
-//         <html>
-//         <head><title>Authentication Error</title></head>
-//         <body>
-//           <script>
-//             if (window.opener) {
-//               window.opener.postMessage({
-//                 type: 'GOOGLE_AUTH_ERROR',
-//                 error: 'No authorization code received'
-//               }, '*');
-//               window.close();
-//             } else {
-//               window.location.href = '/google-search-console?error=no_code';
-//             }
-//           </script>
-//         </body>
-//         </html>
-//       `);
-//       return;
-//     }
-    
-//     // Send success message to opener window
-//     res.send(`
-//       <!DOCTYPE html>
-//       <html>
-//       <head><title>Authentication Successful</title></head>
-//       <body>
-//         <script>
-//           if (window.opener) {
-//             window.opener.postMessage({
-//               type: 'GOOGLE_AUTH_SUCCESS',
-//               code: '${code}',
-//               state: '${state || ''}'
-//             }, '*');
-//             window.close();
-//           } else {
-//             window.location.href = '/google-search-console?code=${code}';
-//           }
-//         </script>
-//         <p>Authentication successful! This window should close automatically...</p>
-//       </body>
-//       </html>
-//     `);
-//   } catch (error) {
-//     console.error('OAuth callback error:', error);
-//     res.status(500).send('Authentication failed');
-//   }
-// });
-
-// // Get all GSC accounts for a user
-// app.get("/api/gsc/accounts", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const accounts = await gscStorage.getAllGscAccounts(userId);
-//     res.json(accounts);
-//   } catch (error) {
-//     console.error('Error fetching GSC accounts:', error);
-//     res.status(500).json({ error: 'Failed to fetch accounts' });
-//   }
-// });
-
-// // Remove GSC account
-// app.post("/api/gsc/remove-account", requireAuth, async (req: Request, res: Response): Promise<void> => {
-//   try {
-//     const userId = req.user!.id;
-//     const { accountId } = req.body;
-    
-//     if (!accountId) {
-//       res.status(400).json({ error: 'Account ID required' });
-//       return;
-//     }
-    
-//     await gscStorage.deleteGscAccount(userId, accountId);
-    
-//     // Remove from memory cache
-//     gscUserTokens.delete(`${userId}_${accountId}`);
-    
-//     console.log(`🗑️ GSC account removed: ${accountId}`);
-//     res.json({ success: true });
-//   } catch (error) {
-//     console.error('Error removing GSC account:', error);
-//     res.status(500).json({ error: 'Failed to remove account' });
-//   }
-// });
-
-
-// // server/routes/gsc.routes.ts
-
-// import { Router, Request, Response } from 'express';
-// import { gscService } from '../services/gsc.service';
-// import { storage } from '../storage';
-
-// export const gscRouter = Router();
-
-// // Configuration endpoints
-// gscRouter.get('/configuration', async (req: Request, res: Response) => {
-//   try {
-//     const userId = req.user!.id;
-//     const config = await storage.getGscConfiguration(userId);
-    
-//     res.json(config ? {
-//       ...config,
-//       clientSecret: '***HIDDEN***' // Mask secret in response
-//     } : null);
-//   } catch (error) {
-//     res.status(500).json({ error: 'Failed to get configuration' });
-//   }
-// });
-
-// gscRouter.post('/configuration', async (req: Request, res: Response) => {
-//   try {
-//     const userId = req.user!.id;
-//     const { clientId, clientSecret, redirectUri } = req.body;
-
-//     if (!clientId || !clientSecret || !redirectUri) {
-//       return res.status(400).json({ error: 'All fields are required' });
-//     }
-
-//     const config = await storage.saveGscConfiguration(userId, {
-//       clientId,
-//       clientSecret,
-//       redirectUri
-//     });
-
-//     res.json({
-//       ...config,
-//       clientSecret: '***HIDDEN***'
-//     });
-//   } catch (error) {
-//     res.status(500).json({ error: 'Failed to save configuration' });
-//   }
-// });
-
-// // OAuth endpoints
-// gscRouter.get('/auth-url', async (req: Request, res: Response) => {
-//   try {
-//     const userId = req.user!.id;
-//     const authUrl = await gscService.generateAuthUrl(userId);
-    
-//     if (!authUrl) {
-//       return res.status(400).json({ error: 'Configuration required' });
-//     }
-
-//     res.json({ authUrl });
-//   } catch (error) {
-//     res.status(500).json({ error: 'Failed to generate auth URL' });
-//   }
-// });
-
-// gscRouter.post('/auth', async (req: Request, res: Response) => {
-//   try {
-//     const userId = req.user!.id;
-//     const { code } = req.body;
-
-//     if (!code) {
-//       return res.status(400).json({ error: 'Authorization code required' });
-//     }
-
-//     const tokens = await gscService.exchangeCodeForTokens(userId, code);
-//     const userInfo = await gscService.getUserInfo(tokens.access_token!);
-
-//     const account = await storage.saveGscAccount(userId, {
-//       id: userInfo.id!,
-//       email: userInfo.email!,
-//       name: userInfo.name || userInfo.email!,
-//       picture: userInfo.picture,
-//       accessToken: tokens.access_token!,
-//       refreshToken: tokens.refresh_token || '',
-//       tokenExpiry: tokens.expiry_date || Date.now() + 3600000
-//     });
-
-//     res.json({ account });
-//   } catch (error) {
-//     res.status(500).json({ error: 'Authentication failed' });
-//   }
-// });
-
-// // Add to your main server file:
-// // app.use('/api/gsc', requireAuth, gscRouter);
-
-
-
-
-
-
-
-
-// import React, { useState, useEffect, useCallback, useRef } from 'react';
-// import {
-//   Globe,
-//   Plus,
-//   RefreshCw,
-//   Send,
-//   CheckCircle,
-//   AlertCircle,
-//   ExternalLink,
-//   User,
-//   Trash2,
-//   FileText,
-//   Link,
-//   TrendingUp,
-//   Clock,
-//   Search,
-//   BarChart,
-//   LogOut,
-//   Settings,
-//   Shield,
-//   X,
-//   ChevronDown,
-//   ChevronRight,
-//   Loader2,
-//   Info,
-//   Copy,
-//   Check,
-//   AlertTriangle
-// } from 'lucide-react';
-
-// // Types
-// interface GoogleAccount {
-//   id: string;
-//   email: string;
-//   name: string;
-//   picture?: string;
-//   accessToken: string;
-//   refreshToken: string;
-//   tokenExpiry: number;
-//   isActive: boolean;
-// }
-
-// interface SearchConsoleProperty {
-//   siteUrl: string;
-//   permissionLevel: string;
-//   siteType: 'SITE' | 'DOMAIN';
-//   verified: boolean;
-//   accountId: string;
-// }
-
-// interface IndexingRequest {
-//   url: string;
-//   type: 'URL_UPDATED' | 'URL_DELETED';
-//   notifyTime?: string;
-//   status?: 'pending' | 'success' | 'error';
-//   message?: string;
-// }
-
-// interface PerformanceData {
-//   clicks: number;
-//   impressions: number;
-//   ctr: number;
-//   position: number;
-//   date?: string;
-// }
-
-// interface URLInspectionResult {
-//   url: string;
-//   indexStatus: 'INDEXED' | 'NOT_INDEXED' | 'CRAWLED' | 'DISCOVERED';
-//   lastCrawlTime?: string;
-//   pageFetchState?: string;
-//   googleCanonical?: string;
-//   userCanonical?: string;
-//   sitemap?: string[];
-//   referringUrls?: string[];
-//   mobileUsability?: 'MOBILE_FRIENDLY' | 'NOT_MOBILE_FRIENDLY' | 'NEUTRAL';
-//   richResultsStatus?: string;
-// }
-
-// // API Service Class with proper integration
-// class SearchConsoleAPI {
-//   private static baseURL = '/api/gsc';
-  
-//   private static async fetchWithAuth(url: string, options: RequestInit = {}) {
-//     const response = await fetch(url, {
-//       ...options,
-//       credentials: 'include',
-//       headers: {
-//         'Content-Type': 'application/json',
-//         ...options.headers,
+//       success: true,
+//       images: transformedImages,
+//       stats: {
+//         totalImages: crawledImages.length,
+//         pagesVisited: visitedUrls.size,
+//         maxDepthReached: Math.max(...crawledImages.map(i => i.depth), 0),
 //       },
 //     });
     
-//     if (!response.ok) {
-//       const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-//       throw new Error(error.error || error.message || `Request failed with status ${response.status}`);
+//   } catch (error: any) {
+//     console.error('Crawl error:', error);
+//     res.status(500).json({
+//       error: 'Crawl failed',
+//       message: error.message,
+//     });
+//   }
+// });
+
+
+// // Complete batch processing route with WordPress upload and metadata update
+// app.post("/api/images/batch-process", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+//     const { imageIds, options, imageUrls } = req.body; // ADD imageUrls from frontend
+    
+//     console.log(`🔄 Batch processing ${imageIds.length} images for user ${userId}`);
+//     console.log('Processing options:', options);
+    
+//     // Validate input
+//     if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
+//       res.status(400).json({ 
+//         error: 'Invalid request',
+//         message: 'No images selected' 
+//       });
+//       return;
 //     }
     
-//     return response.json();
-//   }
-
-//   static async getAuthUrl(): Promise<string> {
-//     const data = await this.fetchWithAuth(`${this.baseURL}/auth-url`);
-//     return data.authUrl;
-//   }
-
-//   static async authenticateAccount(code: string): Promise<GoogleAccount> {
-//     const data = await this.fetchWithAuth(`${this.baseURL}/auth`, {
-//       method: 'POST',
-//       body: JSON.stringify({ code })
+//     if (!options || !options.action) {
+//       res.status(400).json({ 
+//         error: 'Invalid request',
+//         message: 'Processing options required' 
+//       });
+//       return;
+//     }
+    
+//     const results = {
+//       success: [] as any[],
+//       failed: [] as string[],
+//       errors: [] as any[]
+//     };
+    
+//     // Get user's websites for authentication
+//     const websites = await storage.getUserWebsites(userId);
+//     const websiteMap = new Map(websites.map(w => [w.id, w]));
+    
+//     // Process each image
+//     for (const imageId of imageIds) {
+//       const startTime = Date.now();
+      
+//       try {
+//         console.log(`Processing image: ${imageId}`);
+        
+//         // Parse the image ID to understand its source
+//         const parts = imageId.split('_');
+        
+//         // ADD HANDLING FOR CRAWLED IMAGES
+//         if (parts[0] === 'crawled' || parts[0] === 'direct' || parts[0] === 'crawled-bg') {
+//           console.log(`  Processing crawled/external image: ${imageId}`);
+          
+//           // Get the URL from the imageUrls map passed from frontend
+//           const imageUrl = imageUrls && imageUrls[imageId];
+          
+//           if (!imageUrl) {
+//             throw new Error(`No URL provided for crawled image ${imageId}`);
+//           }
+          
+//           console.log(`  Downloading crawled image from: ${imageUrl}`);
+          
+//           try {
+//             // Download the image
+//             const imageResponse = await fetch(imageUrl, {
+//               headers: {
+//                 'User-Agent': 'Mozilla/5.0 (compatible; ImageProcessor/1.0)',
+//                 'Accept': 'image/*'
+//               },
+//               timeout: 30000 // 30 second timeout
+//             });
+            
+//             if (!imageResponse.ok) {
+//               throw new Error(`Failed to download image: ${imageResponse.status} ${imageResponse.statusText}`);
+//             }
+            
+//             const contentType = imageResponse.headers.get('content-type');
+//             if (!contentType || !contentType.startsWith('image/')) {
+//               throw new Error(`Invalid content type: ${contentType}`);
+//             }
+            
+//             const arrayBuffer = await imageResponse.arrayBuffer();
+//             const imageBuffer = Buffer.from(arrayBuffer);
+            
+//             console.log(`  Downloaded ${imageBuffer.length} bytes`);
+            
+//             // Process with Sharp
+//             const processedBuffer = await processImageWithSharp(imageBuffer, options);
+            
+//             // For crawled images, we can't upload back to WordPress
+//             // But we can return the processed data for download or further use
+//             results.success.push({
+//               imageId,
+//               processingTime: `${Date.now() - startTime}ms`,
+//               message: 'Crawled image processed successfully',
+//               size: processedBuffer.length,
+//               originalSize: imageBuffer.length,
+//               originalUrl: imageUrl,
+//               processed: true,
+//               type: 'crawled',
+//               // Optionally include base64 for frontend download
+//               // data: `data:image/jpeg;base64,${processedBuffer.toString('base64')}`
+//             });
+            
+//             console.log(`  ✅ Crawled image processed successfully`);
+            
+//           } catch (downloadError: any) {
+//             console.error(`  ❌ Failed to process crawled image: ${downloadError.message}`);
+//             throw new Error(`Failed to process crawled image: ${downloadError.message}`);
+//           }
+          
+//         } else if (parts[0] === 'wp' || parts[0] === 'media') {
+//           // EXISTING WORDPRESS IMAGE HANDLING
+//           const websiteId = parts[1];
+//           const website = websiteMap.get(websiteId);
+          
+//           if (!website || !website.url) {
+//             throw new Error('Website not found or URL not configured');
+//           }
+          
+//           const baseUrl = website.url.replace(/\/$/, '');
+//           let imageUrl: string | null = null;
+//           let mediaId: string | null = null;
+//           let imageName: string = 'processed-image.jpg';
+          
+//           // Get image details based on type
+//           if (parts[0] === 'media') {
+//             // Media library image
+//             mediaId = parts[2];
+//             const mediaUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
+            
+//             const response = await fetch(mediaUrl);
+//             if (response.ok) {
+//               const media = await response.json();
+//               imageUrl = media.source_url;
+//               imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
+//             }
+//           } else if (parts[0] === 'wp') {
+//             // WordPress post image
+//             const postId = parts[2];
+//             const postUrl = `${baseUrl}/wp-json/wp/v2/posts/${postId}?_embed`;
+            
+//             const headers: any = {};
+//             if (website.wpApplicationPassword) {
+//               const username = website.wpUsername || website.wpApplicationName || 'admin';
+//               const authString = `${username}:${website.wpApplicationPassword}`;
+//               headers['Authorization'] = `Basic ${Buffer.from(authString).toString('base64')}`;
+//             }
+            
+//             const response = await fetch(postUrl, { headers });
+//             if (response.ok) {
+//               const post = await response.json();
+              
+//               if (parts[3] === 'featured' && post._embedded?.['wp:featuredmedia']?.[0]) {
+//                 const media = post._embedded['wp:featuredmedia'][0];
+//                 imageUrl = media.source_url;
+//                 mediaId = media.id;
+//                 imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
+//               } else {
+//                 // Content images - try to find media ID
+//                 const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+//                 const matches = [...(post.content?.rendered || '').matchAll(imgRegex)];
+//                 const imageIndex = parseInt(parts[3] || '0');
+                
+//                 if (matches[imageIndex]) {
+//                   imageUrl = matches[imageIndex][1];
+                  
+//                   // Try to find the media ID for this content image
+//                   const authString = website.wpApplicationPassword && website.wpUsername
+//                     ? `Basic ${Buffer.from(`${website.wpUsername}:${website.wpApplicationPassword}`).toString('base64')}`
+//                     : undefined;
+                  
+//                   mediaId = await findMediaIdFromUrl(baseUrl, imageUrl, authString);
+                  
+//                   if (mediaId) {
+//                     console.log(`  Found media ID ${mediaId} for content image`);
+//                     // Get the media details for the filename
+//                     const mediaResponse = await fetch(`${baseUrl}/wp-json/wp/v2/media/${mediaId}`);
+//                     if (mediaResponse.ok) {
+//                       const media = await mediaResponse.json();
+//                       imageName = media.slug ? `${media.slug}-processed.jpg` : 'processed-image.jpg';
+//                     }
+//                   } else {
+//                     console.log(`  Could not find media ID for content image`);
+//                   }
+//                 }
+//               }
+//             }
+//           }
+          
+//           if (imageUrl) {
+//             // Download the image
+//             console.log(`  Downloading image from: ${imageUrl}`);
+//             const imageResponse = await fetch(imageUrl);
+            
+//             if (!imageResponse.ok) {
+//               throw new Error(`Failed to download image: ${imageResponse.statusText}`);
+//             }
+            
+//             const arrayBuffer = await imageResponse.arrayBuffer();
+//             const imageBuffer = Buffer.from(arrayBuffer);
+            
+//             // Process with Sharp
+//             const processedBuffer = await processImageWithSharp(imageBuffer, options);
+            
+//             // UPLOAD BACK TO WORDPRESS (if we have a media ID)
+//             let uploadSuccess = false;
+//             let newImageUrl = imageUrl; // Default to original if upload fails
+            
+//             if (mediaId && website.wpApplicationPassword && website.wpUsername) {
+//               console.log(`  Uploading processed image back to WordPress (Media ID: ${mediaId})`);
+              
+//               try {
+//                 // Prepare authentication
+//                 const username = website.wpUsername || website.wpApplicationName || 'admin';
+//                 const authString = `${username}:${website.wpApplicationPassword}`;
+//                 const authHeader = `Basic ${Buffer.from(authString).toString('base64')}`;
+                
+//                 // STEP 1: Upload the processed image file
+//                 const form = new FormData();
+//                 form.append('file', processedBuffer, {
+//                   filename: imageName,
+//                   contentType: 'image/jpeg'
+//                 });
+                
+//                 const uploadUrl = `${baseUrl}/wp-json/wp/v2/media/${mediaId}`;
+//                 console.log(`  Step 1: Uploading file to: ${uploadUrl}`);
+                
+//                 const uploadResponse = await fetch(uploadUrl, {
+//                   method: 'POST',
+//                   headers: {
+//                     'Authorization': authHeader,
+//                     ...form.getHeaders()
+//                   },
+//                   body: form as any
+//                 });
+                
+//                 if (uploadResponse.ok) {
+//                   const updatedMedia = await uploadResponse.json();
+//                   newImageUrl = updatedMedia.source_url || updatedMedia.guid?.rendered || imageUrl;
+                  
+//                   console.log(`  ✅ File uploaded successfully`);
+                  
+//                   // STEP 2: Update metadata fields with a separate JSON request
+//                   if (options.action !== 'strip') {
+//                     console.log(`  Step 2: Updating metadata fields...`);
+                    
+//                     // Wait a moment for WordPress to process the file
+//                     await new Promise(resolve => setTimeout(resolve, 500));
+                    
+//                     const metadataPayload = {
+//                       alt_text: options.author ? `Image by ${options.author}` : '',
+//                       caption: options.copyright ? `<p>${options.copyright}</p>` : '',
+//                       description: `<p>Processed by AI Content Manager on ${new Date().toLocaleDateString()}.<br>Copyright: ${options.copyright || 'N/A'}<br>Author: ${options.author || 'N/A'}</p>`,
+//                       title: imageName.replace(/-processed\.jpg$/, '').replace(/-/g, ' ')
+//                     };
+                    
+//                     console.log(`  Sending metadata:`, {
+//                       alt_text: metadataPayload.alt_text,
+//                       caption: options.copyright
+//                     });
+                    
+//                     const metadataResponse = await fetch(uploadUrl, {
+//                       method: 'POST',
+//                       headers: {
+//                         'Authorization': authHeader,
+//                         'Content-Type': 'application/json'
+//                       },
+//                       body: JSON.stringify(metadataPayload)
+//                     });
+                    
+//                     if (metadataResponse.ok) {
+//                       const metadataResult = await metadataResponse.json();
+//                       console.log(`  ✅ Metadata fields updated!`);
+                      
+//                       // Log what was actually saved
+//                       if (metadataResult.alt_text) {
+//                         console.log(`  ✅ Alt text saved: "${metadataResult.alt_text}"`);
+//                       }
+//                       if (metadataResult.caption?.rendered) {
+//                         console.log(`  ✅ Caption saved: "${metadataResult.caption.rendered}"`);
+//                       }
+//                     } else {
+//                       const errorText = await metadataResponse.text();
+//                       console.error(`  ⚠️ Metadata update failed: ${metadataResponse.status}`);
+//                       console.error(`  Error details: ${errorText}`);
+                      
+//                       // Try alternative field names (WordPress can be inconsistent)
+//                       console.log(`  Trying alternative field format...`);
+                      
+//                       const altPayload = {
+//                         meta: {
+//                           alt_text: options.author ? `Image by ${options.author}` : ''
+//                         },
+//                         caption: {
+//                           raw: options.copyright || '',
+//                           rendered: options.copyright ? `<p>${options.copyright}</p>` : ''
+//                         },
+//                         description: {
+//                           raw: `Processed on ${new Date().toLocaleDateString()}`,
+//                           rendered: `<p>Processed on ${new Date().toLocaleDateString()}</p>`
+//                         }
+//                       };
+                      
+//                       const altResponse = await fetch(uploadUrl, {
+//                         method: 'PATCH', // Try PATCH instead of POST
+//                         headers: {
+//                           'Authorization': authHeader,
+//                           'Content-Type': 'application/json'
+//                         },
+//                         body: JSON.stringify(altPayload)
+//                       });
+                      
+//                       if (altResponse.ok) {
+//                         console.log(`  ✅ Metadata updated with alternative format`);
+//                       } else {
+//                         console.log(`  ⚠️ Alternative format also failed`);
+//                       }
+//                     }
+//                   }
+                  
+//                   uploadSuccess = true;
+//                   console.log(`  ✅ WordPress update complete!`);
+//                   console.log(`  New URL: ${newImageUrl}`);
+                  
+//                 } else {
+//                   const errorText = await uploadResponse.text();
+//                   console.error(`  ⚠️ WordPress upload failed: ${uploadResponse.status} - ${errorText}`);
+//                 }
+//               } catch (uploadError: any) {
+//                 console.error(`  ⚠️ Upload error: ${uploadError.message}`);
+//               }
+//             } else if (!mediaId) {
+//               console.log(`  ℹ️ No media ID - cannot update WordPress (content images need manual update)`);
+//             } else if (!website.wpApplicationPassword || !website.wpUsername) {
+//               console.log(`  ⚠️ WordPress credentials not configured - cannot upload`);
+//             }
+            
+//             results.success.push({
+//               imageId,
+//               processingTime: `${Date.now() - startTime}ms`,
+//               message: uploadSuccess 
+//                 ? 'Image processed and uploaded to WordPress' 
+//                 : 'Image processed successfully (WordPress update requires manual upload)',
+//               size: processedBuffer.length,
+//               uploaded: uploadSuccess,
+//               wordpressUrl: newImageUrl
+//             });
+//           } else {
+//             throw new Error('Could not determine image URL');
+//           }
+//         } else {
+//           throw new Error(`Unknown image type: ${parts[0]}`);
+//         }
+        
+//       } catch (error: any) {
+//         console.error(`Failed to process ${imageId}:`, error.message);
+//         results.failed.push(imageId);
+//         results.errors.push({
+//           imageId,
+//           message: error.message || 'Unknown error'
+//         });
+//       }
+//     }
+    
+//     // Calculate statistics
+//     const successCount = results.success.length;
+//     const uploadedCount = results.success.filter(r => r.uploaded).length;
+//     const failedCount = results.failed.length;
+//     const successRate = `${Math.round((successCount / imageIds.length) * 100)}%`;
+    
+//     // Return response
+//     const response = {
+//       total: imageIds.length,
+//       processed: successCount,
+//       uploaded: uploadedCount,
+//       failed: failedCount,
+//       successRate,
+//       processingTime: `${Date.now()}ms`,
+//       results: {
+//         success: results.success,
+//         failed: results.failed
+//       },
+//       message: uploadedCount > 0 
+//         ? `Processed ${successCount} images, uploaded ${uploadedCount} to WordPress`
+//         : `Processed ${successCount} of ${imageIds.length} images`,
+//       errors: results.errors.length > 0 ? results.errors : undefined
+//     };
+    
+//     console.log(`✅ Batch processing complete: ${successCount}/${imageIds.length} successful, ${uploadedCount} uploaded to WordPress`);
+    
+//     res.json(response);
+    
+//   } catch (error: any) {
+//     console.error("❌ Failed to process images:", error);
+//     res.status(500).json({ 
+//       error: 'Failed to process images',
+//       message: error.message,
+//       details: process.env.NODE_ENV === 'development' ? error.stack : undefined
 //     });
-//     return data.account;
 //   }
-
-//   static async getProperties(accountId: string): Promise<SearchConsoleProperty[]> {
-//     return this.fetchWithAuth(`${this.baseURL}/properties?accountId=${accountId}`);
-//   }
-
-//   static async requestIndexing(accountId: string, request: IndexingRequest): Promise<any> {
-//     return this.fetchWithAuth(`${this.baseURL}/index`, {
-//       method: 'POST',
-//       body: JSON.stringify({ accountId, ...request })
+// });
+// // GET endpoint for checking image status
+// app.get("/api/images/batch-process", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const { contentId } = req.query;
+    
+//     if (!contentId) {
+//       res.status(400).json({ 
+//         error: 'Content ID required' 
+//       });
+//       return;
+//     }
+    
+//     // In a real implementation, you'd check the actual processing status
+//     // For now, return a simple ready status
+//     res.json({
+//       status: 'ready',
+//       contentId: contentId,
+//       message: 'Image processing available'
+//     });
+    
+//   } catch (error: any) {
+//     console.error("❌ Failed to get image status:", error);
+//     res.status(500).json({ 
+//       error: 'Failed to get image status',
+//       message: error.message
 //     });
 //   }
+// });
 
-//   static async inspectURL(accountId: string, siteUrl: string, inspectionUrl: string): Promise<URLInspectionResult> {
-//     return this.fetchWithAuth(`${this.baseURL}/inspect`, {
-//       method: 'POST',
-//       body: JSON.stringify({ accountId, siteUrl, inspectionUrl })
-//     });
-//   }
-
-//   static async submitSitemap(accountId: string, siteUrl: string, sitemapUrl: string): Promise<any> {
-//     return this.fetchWithAuth(`${this.baseURL}/sitemap`, {
-//       method: 'POST',
-//       body: JSON.stringify({ accountId, siteUrl, sitemapUrl })
-//     });
-//   }
-
-//   static async getPerformance(accountId: string, siteUrl: string, days: number = 28): Promise<PerformanceData[]> {
-//     return this.fetchWithAuth(
-//       `${this.baseURL}/performance?accountId=${accountId}&siteUrl=${encodeURIComponent(siteUrl)}&days=${days}`
-//     );
-//   }
-
-//   static async refreshToken(accountId: string, refreshToken: string): Promise<any> {
-//     return this.fetchWithAuth(`${this.baseURL}/refresh-token`, {
-//       method: 'POST',
-//       body: JSON.stringify({ accountId, refreshToken })
-//     });
-//   }
+//   // ===========================================================================
+//   // CREATE HTTP SERVER
+//   // ===========================================================================
+  
+//   const httpServer = createServer(app);
+//   return httpServer;
 // }
 
-// // Main Component
-// const GoogleSearchConsole: React.FC = () => {
-//   const [accounts, setAccounts] = useState<GoogleAccount[]>([]);
-//   const [properties, setProperties] = useState<SearchConsoleProperty[]>([]);
-//   const [selectedAccount, setSelectedAccount] = useState<GoogleAccount | null>(null);
-//   const [selectedProperty, setSelectedProperty] = useState<SearchConsoleProperty | null>(null);
-//   const [indexingQueue, setIndexingQueue] = useState<IndexingRequest[]>([]);
-//   const [loading, setLoading] = useState<boolean>(false);
-//   const [activeTab, setActiveTab] = useState<'index' | 'inspect' | 'sitemap' | 'performance'>('index');
-//   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info' | 'warning'; message: string } | null>(null);
-  
-//   // Form states
-//   const [urlToIndex, setUrlToIndex] = useState<string>('');
-//   const [urlToInspect, setUrlToInspect] = useState<string>('');
-//   const [sitemapUrl, setSitemapUrl] = useState<string>('');
-//   const [bulkUrls, setBulkUrls] = useState<string>('');
-//   const [inspectionResult, setInspectionResult] = useState<URLInspectionResult | null>(null);
-//   const [performanceData, setPerformanceData] = useState<PerformanceData[]>([]);
-//   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
-//   const [quotaUsage, setQuotaUsage] = useState<{ used: number; limit: number }>({ used: 0, limit: 200 });
-//   const [accountDropdownOpen, setAccountDropdownOpen] = useState<boolean>(false);
-  
-//   // Refs for managing auth window and preventing duplicates
-//   const authWindowRef = useRef<Window | null>(null);
-//   const messageHandlerRef = useRef<((event: MessageEvent) => void) | null>(null);
-
-//   // Load saved accounts on mount
-//   useEffect(() => {
-//     const loadAccounts = () => {
-//       try {
-//         const savedAccounts = localStorage.getItem('gsc_accounts');
-//         if (savedAccounts) {
-//           const parsed = JSON.parse(savedAccounts);
-//           setAccounts(parsed);
-//           if (parsed.length > 0 && !selectedAccount) {
-//             setSelectedAccount(parsed[0]);
-//           }
-//         }
-//       } catch (error) {
-//         console.error('Failed to load saved accounts:', error);
-//         showNotification('error', 'Failed to load saved accounts');
-//       }
-//     };
-    
-//     loadAccounts();
-    
-//     // Check for code in URL (OAuth callback fallback)
-//     const urlParams = new URLSearchParams(window.location.search);
-//     const code = urlParams.get('code');
-//     if (code) {
-//       handleOAuthCallback(code);
-//       // Clean URL
-//       window.history.replaceState({}, document.title, window.location.pathname);
-//     }
-//   }, []);
-
-//   // Load properties when account changes
-//   useEffect(() => {
-//     if (selectedAccount) {
-//       loadProperties(selectedAccount.id);
-//       loadQuotaUsage(selectedAccount.id);
-//     }
-//   }, [selectedAccount]);
-
-//   // Save accounts to localStorage whenever they change
-//   useEffect(() => {
-//     if (accounts.length > 0) {
-//       localStorage.setItem('gsc_accounts', JSON.stringify(accounts));
-//     }
-//   }, [accounts]);
-
-//   // Auto-refresh tokens when needed
-//   useEffect(() => {
-//     const refreshTokensIfNeeded = async () => {
-//       for (const account of accounts) {
-//         const timeUntilExpiry = account.tokenExpiry - Date.now();
-        
-//         // Refresh if token expires in less than 5 minutes
-//         if (account.refreshToken && timeUntilExpiry < 300000) {
-//           try {
-//             const result = await SearchConsoleAPI.refreshToken(account.id, account.refreshToken);
-            
-//             const updatedAccounts = accounts.map(acc => 
-//               acc.id === account.id 
-//                 ? { ...acc, accessToken: result.accessToken, tokenExpiry: result.tokenExpiry }
-//                 : acc
-//             );
-            
-//             setAccounts(updatedAccounts);
-//             console.log(`Token refreshed for ${account.email}`);
-//           } catch (error) {
-//             console.error(`Failed to refresh token for ${account.email}:`, error);
-//             showNotification('warning', `Token refresh failed for ${account.email}. Please re-authenticate.`);
-            
-//             // Mark account as inactive
-//             const updatedAccounts = accounts.map(acc => 
-//               acc.id === account.id ? { ...acc, isActive: false } : acc
-//             );
-//             setAccounts(updatedAccounts);
-//           }
-//         }
-//       }
-//     };
-
-//     // Initial check
-//     refreshTokensIfNeeded();
-    
-//     // Set up interval for periodic checks
-//     const interval = setInterval(refreshTokensIfNeeded, 60000); // Check every minute
-    
-//     return () => clearInterval(interval);
-//   }, [accounts]);
-
-//   // Cleanup auth window on unmount
-//   useEffect(() => {
-//     return () => {
-//       if (authWindowRef.current && !authWindowRef.current.closed) {
-//         authWindowRef.current.close();
-//       }
-//       if (messageHandlerRef.current) {
-//         window.removeEventListener('message', messageHandlerRef.current);
-//       }
-//     };
-//   }, []);
-
-//   const showNotification = (type: 'success' | 'error' | 'info' | 'warning', message: string) => {
-//     setNotification({ type, message });
-//     setTimeout(() => setNotification(null), 5000);
-//   };
-
-//   const loadProperties = async (accountId: string) => {
-//     setLoading(true);
-//     try {
-//       const props = await SearchConsoleAPI.getProperties(accountId);
-//       setProperties(props);
-//       if (props.length > 0 && !selectedProperty) {
-//         setSelectedProperty(props[0]);
-//       }
-//     } catch (error: any) {
-//       showNotification('error', error.message || 'Failed to load properties');
-//       console.error('Load properties error:', error);
-      
-//       // If authentication error, mark account as inactive
-//       if (error.message?.includes('authenticated') || error.message?.includes('401')) {
-//         const updatedAccounts = accounts.map(acc => 
-//           acc.id === accountId ? { ...acc, isActive: false } : acc
-//         );
-//         setAccounts(updatedAccounts);
-//       }
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   const loadQuotaUsage = async (accountId: string) => {
-//     const today = new Date().toDateString();
-//     const quotaKey = `gsc_quota_${accountId}_${today}`;
-//     const used = parseInt(localStorage.getItem(quotaKey) || '0', 10);
-//     setQuotaUsage({ used, limit: 200 });
-//   };
-
-//   const updateQuotaUsage = (accountId: string, increment: number = 1) => {
-//     const today = new Date().toDateString();
-//     const quotaKey = `gsc_quota_${accountId}_${today}`;
-//     const currentUsage = parseInt(localStorage.getItem(quotaKey) || '0', 10);
-//     const newUsage = currentUsage + increment;
-//     localStorage.setItem(quotaKey, newUsage.toString());
-//     setQuotaUsage({ used: newUsage, limit: 200 });
-//   };
-
-//   const handleOAuthCallback = async (code: string) => {
-//     if (isAuthenticating) return;
-    
-//     setIsAuthenticating(true);
-//     try {
-//       const account = await SearchConsoleAPI.authenticateAccount(code);
-      
-//       // Check if account already exists
-//       const existingIndex = accounts.findIndex(acc => acc.id === account.id);
-//       let updatedAccounts;
-      
-//       if (existingIndex >= 0) {
-//         // Update existing account
-//         updatedAccounts = [...accounts];
-//         updatedAccounts[existingIndex] = account;
-//         showNotification('success', `Account ${account.email} re-authenticated`);
-//       } else {
-//         // Add new account
-//         updatedAccounts = [...accounts, account];
-//         showNotification('success', `Account ${account.email} connected successfully`);
-//       }
-      
-//       setAccounts(updatedAccounts);
-//       setSelectedAccount(account);
-//     } catch (error: any) {
-//       console.error('OAuth callback error:', error);
-//       showNotification('error', error.message || 'Failed to authenticate account');
-//     } finally {
-//       setIsAuthenticating(false);
-//     }
-//   };
-
-//   const handleAddAccount = async () => {
-//     if (isAuthenticating) {
-//       showNotification('info', 'Authentication already in progress');
-//       return;
-//     }
-    
-//     try {
-//       setIsAuthenticating(true);
-      
-//       // Close any existing auth window
-//       if (authWindowRef.current && !authWindowRef.current.closed) {
-//         authWindowRef.current.close();
-//       }
-      
-//       // Remove any existing message handler
-//       if (messageHandlerRef.current) {
-//         window.removeEventListener('message', messageHandlerRef.current);
-//       }
-      
-//       const authUrl = await SearchConsoleAPI.getAuthUrl();
-      
-//       // Open auth window
-//       const width = 500;
-//       const height = 600;
-//       const left = window.screen.width / 2 - width / 2;
-//       const top = window.screen.height / 2 - height / 2;
-      
-//       authWindowRef.current = window.open(
-//         authUrl,
-//         'google-auth',
-//         `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`
-//       );
-      
-//       // Create message handler for OAuth callback
-//       const handleMessage = async (event: MessageEvent) => {
-//         // Security: validate origin
-//         if (event.origin !== window.location.origin) return;
-        
-//         if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
-//           const { code } = event.data;
-          
-//           // Remove handler immediately
-//           window.removeEventListener('message', handleMessage);
-//           messageHandlerRef.current = null;
-          
-//           // Close auth window
-//           if (authWindowRef.current && !authWindowRef.current.closed) {
-//             authWindowRef.current.close();
-//           }
-//           authWindowRef.current = null;
-          
-//           // Handle the OAuth callback
-//           await handleOAuthCallback(code);
-//           setIsAuthenticating(false);
-//         } else if (event.data.type === 'GOOGLE_AUTH_ERROR') {
-//           window.removeEventListener('message', handleMessage);
-//           messageHandlerRef.current = null;
-          
-//           if (authWindowRef.current && !authWindowRef.current.closed) {
-//             authWindowRef.current.close();
-//           }
-//           authWindowRef.current = null;
-          
-//           showNotification('error', event.data.error || 'Authentication failed');
-//           setIsAuthenticating(false);
-//         }
-//       };
-      
-//       messageHandlerRef.current = handleMessage;
-//       window.addEventListener('message', handleMessage);
-      
-//       // Check if window was closed
-//       const checkWindow = setInterval(() => {
-//         if (authWindowRef.current && authWindowRef.current.closed) {
-//           clearInterval(checkWindow);
-//           if (messageHandlerRef.current) {
-//             window.removeEventListener('message', messageHandlerRef.current);
-//             messageHandlerRef.current = null;
-//           }
-//           setIsAuthenticating(false);
-//         }
-//       }, 1000);
-      
-//     } catch (error: any) {
-//       showNotification('error', error.message || 'Failed to initiate authentication');
-//       setIsAuthenticating(false);
-//     }
-//   };
-
-//   const handleRemoveAccount = (accountId: string) => {
-//     const updatedAccounts = accounts.filter(acc => acc.id !== accountId);
-//     setAccounts(updatedAccounts);
-    
-//     if (updatedAccounts.length === 0) {
-//       localStorage.removeItem('gsc_accounts');
-//     }
-    
-//     if (selectedAccount?.id === accountId) {
-//       setSelectedAccount(updatedAccounts[0] || null);
-//       setProperties([]);
-//       setSelectedProperty(null);
-//     }
-    
-//     showNotification('info', 'Account removed');
-//   };
-
-//   const handleIndexUrl = async () => {
-//     if (!urlToIndex || !selectedAccount || !selectedProperty) return;
-    
-//     // Check quota
-//     if (quotaUsage.used >= quotaUsage.limit) {
-//       showNotification('error', 'Daily quota exceeded (200 URLs/day). Try again tomorrow.');
-//       return;
-//     }
-    
-//     // Validate URL
-//     try {
-//       const url = new URL(urlToIndex);
-//       if (!url.protocol.startsWith('http')) {
-//         showNotification('error', 'Invalid URL: must start with http:// or https://');
-//         return;
-//       }
-//     } catch {
-//       showNotification('error', 'Invalid URL format');
-//       return;
-//     }
-    
-//     const request: IndexingRequest = {
-//       url: urlToIndex,
-//       type: 'URL_UPDATED',
-//       status: 'pending'
-//     };
-    
-//     setIndexingQueue([...indexingQueue, request]);
-//     setLoading(true);
-    
-//     try {
-//       const result = await SearchConsoleAPI.requestIndexing(selectedAccount.id, request);
-      
-//       setIndexingQueue(queue => 
-//         queue.map(item => 
-//           item.url === urlToIndex 
-//             ? { ...item, status: 'success', notifyTime: result.notifyTime }
-//             : item
-//         )
-//       );
-      
-//       updateQuotaUsage(selectedAccount.id, 1);
-//       showNotification('success', `URL submitted for indexing: ${urlToIndex}`);
-//       setUrlToIndex('');
-//     } catch (error: any) {
-//       setIndexingQueue(queue => 
-//         queue.map(item => 
-//           item.url === urlToIndex 
-//             ? { ...item, status: 'error', message: error.message }
-//             : item
-//         )
-//       );
-      
-//       if (error.message?.includes('quota')) {
-//         loadQuotaUsage(selectedAccount.id); // Refresh quota count
-//       }
-      
-//       showNotification('error', error.message || 'Failed to submit URL for indexing');
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   const handleBulkIndex = async () => {
-//     if (!bulkUrls || !selectedAccount || !selectedProperty) return;
-    
-//     const urls = bulkUrls.split('\n').filter(url => url.trim());
-    
-//     if (urls.length === 0) {
-//       showNotification('error', 'No valid URLs found');
-//       return;
-//     }
-    
-//     if (quotaUsage.used + urls.length > quotaUsage.limit) {
-//       showNotification('warning', `Only ${quotaUsage.limit - quotaUsage.used} URLs can be submitted today`);
-//       return;
-//     }
-    
-//     setLoading(true);
-//     let successCount = 0;
-//     let errorCount = 0;
-    
-//     for (const url of urls) {
-//       const trimmedUrl = url.trim();
-//       if (!trimmedUrl) continue;
-      
-//       const request: IndexingRequest = {
-//         url: trimmedUrl,
-//         type: 'URL_UPDATED',
-//         status: 'pending'
-//       };
-      
-//       setIndexingQueue(prev => [...prev, request]);
-      
-//       try {
-//         await SearchConsoleAPI.requestIndexing(selectedAccount.id, request);
-//         successCount++;
-        
-//         setIndexingQueue(queue => 
-//           queue.map(item => 
-//             item.url === trimmedUrl 
-//               ? { ...item, status: 'success' }
-//               : item
-//           )
-//         );
-//       } catch (error: any) {
-//         errorCount++;
-        
-//         setIndexingQueue(queue => 
-//           queue.map(item => 
-//             item.url === trimmedUrl 
-//               ? { ...item, status: 'error', message: error.message }
-//               : item
-//           )
-//         );
-        
-//         if (error.message?.includes('quota')) {
-//           break; // Stop if quota exceeded
-//         }
-//       }
-      
-//       // Add delay between requests to avoid rate limiting
-//       await new Promise(resolve => setTimeout(resolve, 500));
-//     }
-    
-//     updateQuotaUsage(selectedAccount.id, successCount);
-    
-//     if (successCount > 0) {
-//       showNotification('success', `Successfully submitted ${successCount} URL(s)`);
-//     }
-//     if (errorCount > 0) {
-//       showNotification('warning', `Failed to submit ${errorCount} URL(s)`);
-//     }
-    
-//     setBulkUrls('');
-//     setLoading(false);
-//   };
-
-//   const handleInspectUrl = async () => {
-//     if (!urlToInspect || !selectedAccount || !selectedProperty) return;
-    
-//     // Validate URL
-//     try {
-//       const url = new URL(urlToInspect);
-//       if (!url.protocol.startsWith('http')) {
-//         showNotification('error', 'Invalid URL: must start with http:// or https://');
-//         return;
-//       }
-//     } catch {
-//       showNotification('error', 'Invalid URL format');
-//       return;
-//     }
-    
-//     setLoading(true);
-//     setInspectionResult(null);
-    
-//     try {
-//       const result = await SearchConsoleAPI.inspectURL(
-//         selectedAccount.id, 
-//         selectedProperty.siteUrl, 
-//         urlToInspect
-//       );
-      
-//       setInspectionResult(result);
-//       showNotification('success', 'URL inspection completed');
-//     } catch (error: any) {
-//       showNotification('error', error.message || 'Failed to inspect URL');
-//       console.error('Inspect URL error:', error);
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   const handleSubmitSitemap = async () => {
-//     if (!sitemapUrl || !selectedAccount || !selectedProperty) return;
-    
-//     // Validate sitemap URL
-//     try {
-//       const url = new URL(sitemapUrl);
-//       if (!url.protocol.startsWith('http')) {
-//         showNotification('error', 'Invalid URL: must start with http:// or https://');
-//         return;
-//       }
-//       if (!sitemapUrl.includes('.xml')) {
-//         showNotification('warning', 'Warning: Sitemap URL typically ends with .xml');
-//       }
-//     } catch {
-//       showNotification('error', 'Invalid URL format');
-//       return;
-//     }
-    
-//     setLoading(true);
-//     try {
-//       await SearchConsoleAPI.submitSitemap(
-//         selectedAccount.id,
-//         selectedProperty.siteUrl,
-//         sitemapUrl
-//       );
-      
-//       showNotification('success', `Sitemap submitted: ${sitemapUrl}`);
-//       setSitemapUrl('');
-//     } catch (error: any) {
-//       showNotification('error', error.message || 'Failed to submit sitemap');
-//       console.error('Submit sitemap error:', error);
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   const loadPerformanceData = async () => {
-//     if (!selectedAccount || !selectedProperty) return;
-    
-//     setLoading(true);
-//     try {
-//       const data = await SearchConsoleAPI.getPerformance(
-//         selectedAccount.id,
-//         selectedProperty.siteUrl,
-//         28
-//       );
-      
-//       setPerformanceData(data);
-//     } catch (error: any) {
-//       showNotification('error', error.message || 'Failed to load performance data');
-//       console.error('Load performance error:', error);
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   const copyToClipboard = async (text: string) => {
-//     try {
-//       await navigator.clipboard.writeText(text);
-//       showNotification('info', 'Copied to clipboard');
-//     } catch (err) {
-//       showNotification('error', 'Failed to copy');
-//     }
-//   };
-
-//   const clearIndexingQueue = () => {
-//     setIndexingQueue([]);
-//     showNotification('info', 'Indexing queue cleared');
-//   };
-
-//   return (
-//     <div className="min-h-screen bg-gray-50">
-//       {/* Header */}
-//       <div className="bg-white border-b border-gray-200">
-//         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-//           <div className="flex items-center justify-between h-16">
-//             <div className="flex items-center">
-//               <Globe className="w-8 h-8 text-blue-600 mr-3" />
-//               <h1 className="text-xl font-semibold text-gray-900">
-//                 Google Search Console Manager
-//               </h1>
-//             </div>
-            
-//             <div className="flex items-center space-x-4">
-//               {/* Quota Display */}
-//               {selectedAccount && (
-//                 <div className="flex items-center space-x-2 px-3 py-1 bg-gray-100 rounded-lg">
-//                   <Clock className="w-4 h-4 text-gray-500" />
-//                   <span className="text-sm text-gray-700">
-//                     Quota: {quotaUsage.used}/{quotaUsage.limit}
-//                   </span>
-//                 </div>
-//               )}
-              
-//               {/* Account Selector */}
-//               <div className="relative">
-//                 <button
-//                   className="flex items-center space-x-2 px-4 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-//                   onClick={() => setAccountDropdownOpen(!accountDropdownOpen)}
-//                 >
-//                   {selectedAccount ? (
-//                     <>
-//                       <User className="w-4 h-4" />
-//                       <span className="text-sm">{selectedAccount.email}</span>
-//                       <ChevronDown className="w-4 h-4" />
-//                     </>
-//                   ) : (
-//                     <>
-//                       <User className="w-4 h-4" />
-//                       <span className="text-sm">Select Account</span>
-//                       <ChevronDown className="w-4 h-4" />
-//                     </>
-//                   )}
-//                 </button>
-                
-//                 {accountDropdownOpen && (
-//                   <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-//                     {accounts.map(account => (
-//                       <div
-//                         key={account.id}
-//                         className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 cursor-pointer"
-//                         onClick={() => {
-//                           setSelectedAccount(account);
-//                           setAccountDropdownOpen(false);
-//                         }}
-//                       >
-//                         <div className="flex items-center space-x-3">
-//                           {account.picture ? (
-//                             <img src={account.picture} alt={account.name} className="w-8 h-8 rounded-full" />
-//                           ) : (
-//                             <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm">
-//                               {account.name[0]}
-//                             </div>
-//                           )}
-//                           <div>
-//                             <p className="text-sm font-medium text-gray-900">{account.name}</p>
-//                             <p className="text-xs text-gray-500">{account.email}</p>
-//                           </div>
-//                         </div>
-//                         <div className="flex items-center space-x-2">
-//                           {!account.isActive && (
-//                             <AlertTriangle className="w-4 h-4 text-yellow-500" title="Token expired" />
-//                           )}
-//                           {selectedAccount?.id === account.id && (
-//                             <CheckCircle className="w-4 h-4 text-green-500" />
-//                           )}
-//                         </div>
-//                       </div>
-//                     ))}
-                    
-//                     <div className="border-t border-gray-200">
-//                       <button
-//                         onClick={(e) => {
-//                           e.stopPropagation();
-//                           handleAddAccount();
-//                           setAccountDropdownOpen(false);
-//                         }}
-//                         disabled={isAuthenticating}
-//                         className="w-full flex items-center space-x-2 px-4 py-3 text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
-//                       >
-//                         {isAuthenticating ? (
-//                           <Loader2 className="w-4 h-4 animate-spin" />
-//                         ) : (
-//                           <Plus className="w-4 h-4" />
-//                         )}
-//                         <span className="text-sm">
-//                           {isAuthenticating ? 'Authenticating...' : 'Add Google Account'}
-//                         </span>
-//                       </button>
-//                     </div>
-//                   </div>
-//                 )}
-//               </div>
-              
-//               <button
-//                 onClick={handleAddAccount}
-//                 disabled={isAuthenticating}
-//                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50"
-//               >
-//                 {isAuthenticating ? (
-//                   <Loader2 className="w-4 h-4 animate-spin" />
-//                 ) : (
-//                   <Plus className="w-4 h-4" />
-//                 )}
-//                 <span className="text-sm">Add Account</span>
-//               </button>
-//             </div>
-//           </div>
-//         </div>
-//       </div>
-
-//       {/* Property Selector */}
-//       {selectedAccount && (
-//         <div className="bg-white border-b border-gray-200">
-//           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-//             <div className="flex items-center space-x-4 py-3">
-//               <label className="text-sm font-medium text-gray-700">Property:</label>
-//               <select
-//                 value={selectedProperty?.siteUrl || ''}
-//                 onChange={(e) => {
-//                   const prop = properties.find(p => p.siteUrl === e.target.value);
-//                   setSelectedProperty(prop || null);
-//                 }}
-//                 className="flex-1 max-w-md px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-//                 disabled={loading || properties.length === 0}
-//               >
-//                 <option value="">
-//                   {loading ? 'Loading properties...' : 'Select a property'}
-//                 </option>
-//                 {properties.map(property => (
-//                   <option key={property.siteUrl} value={property.siteUrl}>
-//                     {property.siteUrl} ({property.siteType})
-//                   </option>
-//                 ))}
-//               </select>
-              
-//               {selectedProperty && (
-//                 <div className="flex items-center space-x-2">
-//                   {selectedProperty.verified ? (
-//                     <span className="flex items-center text-green-600 text-sm">
-//                       <CheckCircle className="w-4 h-4 mr-1" />
-//                       Verified
-//                     </span>
-//                   ) : (
-//                     <span className="flex items-center text-yellow-600 text-sm">
-//                       <AlertCircle className="w-4 h-4 mr-1" />
-//                       Not Verified
-//                     </span>
-//                   )}
-//                 </div>
-//               )}
-              
-//               <button
-//                 onClick={() => loadProperties(selectedAccount.id)}
-//                 disabled={loading}
-//                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-//                 title="Refresh properties"
-//               >
-//                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-//               </button>
-//             </div>
-//           </div>
-//         </div>
-//       )}
-
-//       {/* Notification */}
-//       {notification && (
-//         <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top duration-300">
-//           <div className={`flex items-center space-x-2 px-4 py-3 rounded-lg shadow-lg ${
-//             notification.type === 'success' ? 'bg-green-500 text-white' :
-//             notification.type === 'error' ? 'bg-red-500 text-white' :
-//             notification.type === 'warning' ? 'bg-yellow-500 text-white' :
-//             'bg-blue-500 text-white'
-//           }`}>
-//             {notification.type === 'success' && <CheckCircle className="w-5 h-5" />}
-//             {notification.type === 'error' && <AlertCircle className="w-5 h-5" />}
-//             {notification.type === 'warning' && <AlertTriangle className="w-5 h-5" />}
-//             {notification.type === 'info' && <Info className="w-5 h-5" />}
-//             <span>{notification.message}</span>
-//             <button
-//               onClick={() => setNotification(null)}
-//               className="ml-4 hover:opacity-80"
-//             >
-//               <X className="w-4 h-4" />
-//             </button>
-//           </div>
-//         </div>
-//       )}
-
-//       {/* Main Content */}
-//       {selectedAccount && selectedProperty ? (
-//         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-//           {/* Tabs */}
-//           <div className="bg-white rounded-lg shadow mb-6">
-//             <div className="border-b border-gray-200">
-//               <nav className="flex -mb-px">
-//                 <button
-//                   onClick={() => setActiveTab('index')}
-//                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-//                     activeTab === 'index'
-//                       ? 'border-blue-500 text-blue-600'
-//                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-//                   }`}
-//                 >
-//                   <Send className="w-4 h-4 inline mr-2" />
-//                   URL Indexing
-//                 </button>
-//                 <button
-//                   onClick={() => setActiveTab('inspect')}
-//                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-//                     activeTab === 'inspect'
-//                       ? 'border-blue-500 text-blue-600'
-//                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-//                   }`}
-//                 >
-//                   <Search className="w-4 h-4 inline mr-2" />
-//                   URL Inspection
-//                 </button>
-//                 <button
-//                   onClick={() => setActiveTab('sitemap')}
-//                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-//                     activeTab === 'sitemap'
-//                       ? 'border-blue-500 text-blue-600'
-//                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-//                   }`}
-//                 >
-//                   <FileText className="w-4 h-4 inline mr-2" />
-//                   Sitemaps
-//                 </button>
-//                 <button
-//                   onClick={() => {
-//                     setActiveTab('performance');
-//                     loadPerformanceData();
-//                   }}
-//                   className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-//                     activeTab === 'performance'
-//                       ? 'border-blue-500 text-blue-600'
-//                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-//                   }`}
-//                 >
-//                   <TrendingUp className="w-4 h-4 inline mr-2" />
-//                   Performance
-//                 </button>
-//               </nav>
-//             </div>
-
-//             {/* Tab Content */}
-//             <div className="p-6">
-//               {/* URL Indexing Tab */}
-//               {activeTab === 'index' && (
-//                 <div className="space-y-6">
-//                   <div>
-//                     <h3 className="text-lg font-medium text-gray-900 mb-4">Request URL Indexing</h3>
-//                     <p className="text-sm text-gray-600 mb-4">
-//                       Submit URLs to Google for indexing. This tells Google that your content is new or updated and should be crawled.
-//                     </p>
-                    
-//                     {/* Single URL */}
-//                     <div className="bg-gray-50 rounded-lg p-4 mb-4">
-//                       <label className="block text-sm font-medium text-gray-700 mb-2">
-//                         Single URL
-//                       </label>
-//                       <div className="flex space-x-2">
-//                         <input
-//                           type="url"
-//                           value={urlToIndex}
-//                           onChange={(e) => setUrlToIndex(e.target.value)}
-//                           placeholder="https://example.com/new-page"
-//                           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-//                         />
-//                         <button
-//                           onClick={handleIndexUrl}
-//                           disabled={loading || !urlToIndex || quotaUsage.used >= quotaUsage.limit}
-//                           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors flex items-center space-x-2"
-//                         >
-//                           {loading ? (
-//                             <Loader2 className="w-4 h-4 animate-spin" />
-//                           ) : (
-//                             <Send className="w-4 h-4" />
-//                           )}
-//                           <span>Submit</span>
-//                         </button>
-//                       </div>
-//                     </div>
-
-//                     {/* Bulk URLs */}
-//                     <div className="bg-gray-50 rounded-lg p-4">
-//                       <label className="block text-sm font-medium text-gray-700 mb-2">
-//                         Bulk URLs (one per line)
-//                       </label>
-//                       <textarea
-//                         value={bulkUrls}
-//                         onChange={(e) => setBulkUrls(e.target.value)}
-//                         placeholder={`https://example.com/page1\nhttps://example.com/page2\nhttps://example.com/page3`}
-//                         rows={5}
-//                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-//                       />
-//                       <button
-//                         onClick={handleBulkIndex}
-//                         disabled={loading || !bulkUrls || quotaUsage.used >= quotaUsage.limit}
-//                         className="mt-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 transition-colors flex items-center space-x-2"
-//                       >
-//                         <Send className="w-4 h-4" />
-//                         <span>Submit All</span>
-//                       </button>
-//                     </div>
-//                   </div>
-
-//                   {/* Indexing Queue */}
-//                   {indexingQueue.length > 0 && (
-//                     <div>
-//                       <div className="flex items-center justify-between mb-4">
-//                         <h3 className="text-lg font-medium text-gray-900">Indexing Queue</h3>
-//                         <button
-//                           onClick={clearIndexingQueue}
-//                           className="text-sm text-gray-500 hover:text-gray-700"
-//                         >
-//                           Clear Queue
-//                         </button>
-//                       </div>
-//                       <div className="space-y-2 max-h-96 overflow-y-auto">
-//                         {indexingQueue.map((item, index) => (
-//                           <div key={index} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-3">
-//                             <div className="flex items-center space-x-3">
-//                               {item.status === 'pending' && <Clock className="w-4 h-4 text-yellow-500 animate-pulse" />}
-//                               {item.status === 'success' && <CheckCircle className="w-4 h-4 text-green-500" />}
-//                               {item.status === 'error' && <AlertCircle className="w-4 h-4 text-red-500" />}
-//                               <span className="text-sm text-gray-900 truncate max-w-md">{item.url}</span>
-//                             </div>
-//                             <div className="text-sm text-gray-500">
-//                               {item.status === 'pending' && 'Submitting...'}
-//                               {item.status === 'success' && 'Submitted'}
-//                               {item.status === 'error' && (item.message || 'Failed')}
-//                             </div>
-//                           </div>
-//                         ))}
-//                       </div>
-//                     </div>
-//                   )}
-
-//                   {/* API Quota Info */}
-//                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-//                     <div className="flex items-start space-x-2">
-//                       <Info className="w-5 h-5 text-blue-600 mt-0.5" />
-//                       <div>
-//                         <p className="text-sm font-medium text-blue-900">Indexing API Quota</p>
-//                         <p className="text-sm text-blue-800 mt-1">
-//                           You can submit up to 200 URLs per day using the Indexing API. 
-//                           URLs are typically crawled within minutes to hours of submission.
-//                         </p>
-//                         <div className="mt-2">
-//                           <div className="w-full bg-blue-200 rounded-full h-2">
-//                             <div 
-//                               className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-//                               style={{ width: `${Math.min((quotaUsage.used / quotaUsage.limit) * 100, 100)}%` }}
-//                             />
-//                           </div>
-//                           <p className="text-xs text-blue-700 mt-1">
-//                             {quotaUsage.used} of {quotaUsage.limit} URLs used today
-//                           </p>
-//                         </div>
-//                       </div>
-//                     </div>
-//                   </div>
-//                 </div>
-//               )}
-
-//               {/* URL Inspection Tab */}
-//               {activeTab === 'inspect' && (
-//                 <div className="space-y-6">
-//                   <div>
-//                     <h3 className="text-lg font-medium text-gray-900 mb-4">URL Inspection Tool</h3>
-//                     <p className="text-sm text-gray-600 mb-4">
-//                       Check the index status of any URL on your property and see how Google sees your page.
-//                     </p>
-                    
-//                     <div className="bg-gray-50 rounded-lg p-4">
-//                       <div className="flex space-x-2">
-//                         <input
-//                           type="url"
-//                           value={urlToInspect}
-//                           onChange={(e) => setUrlToInspect(e.target.value)}
-//                           placeholder="https://example.com/page-to-inspect"
-//                           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-//                         />
-//                         <button
-//                           onClick={handleInspectUrl}
-//                           disabled={loading || !urlToInspect}
-//                           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors flex items-center space-x-2"
-//                         >
-//                           {loading ? (
-//                             <Loader2 className="w-4 h-4 animate-spin" />
-//                           ) : (
-//                             <Search className="w-4 h-4" />
-//                           )}
-//                           <span>Inspect</span>
-//                         </button>
-//                       </div>
-//                     </div>
-//                   </div>
-
-//                   {/* Inspection Results */}
-//                   {inspectionResult && (
-//                     <div className="bg-white border border-gray-200 rounded-lg p-6">
-//                       <h4 className="text-lg font-medium text-gray-900 mb-4">Inspection Results</h4>
-                      
-//                       <div className="space-y-4">
-//                         {/* Index Status */}
-//                         <div className="flex items-center justify-between pb-4 border-b border-gray-200">
-//                           <span className="text-sm font-medium text-gray-700">Index Status</span>
-//                           <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-//                             inspectionResult.indexStatus === 'INDEXED'
-//                               ? 'bg-green-100 text-green-800'
-//                               : inspectionResult.indexStatus === 'CRAWLED'
-//                               ? 'bg-blue-100 text-blue-800'
-//                               : inspectionResult.indexStatus === 'DISCOVERED'
-//                               ? 'bg-yellow-100 text-yellow-800'
-//                               : 'bg-red-100 text-red-800'
-//                           }`}>
-//                             {inspectionResult.indexStatus.replace('_', ' ')}
-//                           </span>
-//                         </div>
-
-//                         {/* Last Crawl */}
-//                         {inspectionResult.lastCrawlTime && (
-//                           <div className="flex items-center justify-between pb-4 border-b border-gray-200">
-//                             <span className="text-sm font-medium text-gray-700">Last Crawled</span>
-//                             <span className="text-sm text-gray-900">
-//                               {new Date(inspectionResult.lastCrawlTime).toLocaleDateString()}
-//                             </span>
-//                           </div>
-//                         )}
-
-//                         {/* Mobile Usability */}
-//                         {inspectionResult.mobileUsability && (
-//                           <div className="flex items-center justify-between pb-4 border-b border-gray-200">
-//                             <span className="text-sm font-medium text-gray-700">Mobile Usability</span>
-//                             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-//                               inspectionResult.mobileUsability === 'MOBILE_FRIENDLY'
-//                                 ? 'bg-green-100 text-green-800'
-//                                 : inspectionResult.mobileUsability === 'NOT_MOBILE_FRIENDLY'
-//                                 ? 'bg-red-100 text-red-800'
-//                                 : 'bg-gray-100 text-gray-800'
-//                             }`}>
-//                               {inspectionResult.mobileUsability.replace(/_/g, ' ')}
-//                             </span>
-//                           </div>
-//                         )}
-
-//                         {/* Canonical URL */}
-//                         {inspectionResult.googleCanonical && (
-//                           <div className="pb-4 border-b border-gray-200">
-//                             <span className="text-sm font-medium text-gray-700 block mb-2">Canonical URL</span>
-//                             <div className="flex items-center space-x-2">
-//                               <span className="text-sm text-gray-900 flex-1 truncate">{inspectionResult.googleCanonical}</span>
-//                               <button
-//                                 onClick={() => copyToClipboard(inspectionResult.googleCanonical || '')}
-//                                 className="p-1 hover:bg-gray-100 rounded"
-//                                 title="Copy to clipboard"
-//                               >
-//                                 <Copy className="w-4 h-4 text-gray-500" />
-//                               </button>
-//                             </div>
-//                           </div>
-//                         )}
-
-//                         {/* Actions based on status */}
-//                         {inspectionResult.indexStatus !== 'INDEXED' && (
-//                           <div className="mt-4 pt-4 border-t border-gray-200">
-//                             <button
-//                               onClick={() => {
-//                                 setUrlToIndex(urlToInspect);
-//                                 setActiveTab('index');
-//                               }}
-//                               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-//                             >
-//                               <Send className="w-4 h-4" />
-//                               <span>Request Indexing</span>
-//                             </button>
-//                           </div>
-//                         )}
-//                       </div>
-//                     </div>
-//                   )}
-//                 </div>
-//               )}
-
-//               {/* Sitemaps Tab */}
-//               {activeTab === 'sitemap' && (
-//                 <div className="space-y-6">
-//                   <div>
-//                     <h3 className="text-lg font-medium text-gray-900 mb-4">Sitemap Management</h3>
-//                     <p className="text-sm text-gray-600 mb-4">
-//                       Submit your sitemap to help Google discover all the pages on your website.
-//                     </p>
-                    
-//                     <div className="bg-gray-50 rounded-lg p-4">
-//                       <label className="block text-sm font-medium text-gray-700 mb-2">
-//                         Sitemap URL
-//                       </label>
-//                       <div className="flex space-x-2">
-//                         <input
-//                           type="url"
-//                           value={sitemapUrl}
-//                           onChange={(e) => setSitemapUrl(e.target.value)}
-//                           placeholder="https://example.com/sitemap.xml"
-//                           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-//                         />
-//                         <button
-//                           onClick={handleSubmitSitemap}
-//                           disabled={loading || !sitemapUrl}
-//                           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors flex items-center space-x-2"
-//                         >
-//                           {loading ? (
-//                             <Loader2 className="w-4 h-4 animate-spin" />
-//                           ) : (
-//                             <FileText className="w-4 h-4" />
-//                           )}
-//                           <span>Submit</span>
-//                         </button>
-//                       </div>
-//                     </div>
-//                   </div>
-
-//                   {/* Sitemap Tips */}
-//                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-//                     <div className="flex items-start space-x-2">
-//                       <Info className="w-5 h-5 text-yellow-600 mt-0.5" />
-//                       <div>
-//                         <p className="text-sm font-medium text-yellow-900">Sitemap Best Practices</p>
-//                         <ul className="text-sm text-yellow-800 mt-2 space-y-1 list-disc list-inside">
-//                           <li>Include all important pages you want indexed</li>
-//                           <li>Keep your sitemap under 50MB and 50,000 URLs</li>
-//                           <li>Update your sitemap when you add or remove pages</li>
-//                           <li>Use sitemap index files for large websites</li>
-//                           <li>Include lastmod dates to indicate when pages were updated</li>
-//                         </ul>
-//                       </div>
-//                     </div>
-//                   </div>
-//                 </div>
-//               )}
-
-//               {/* Performance Tab */}
-//               {activeTab === 'performance' && (
-//                 <div className="space-y-6">
-//                   <div>
-//                     <h3 className="text-lg font-medium text-gray-900 mb-4">Search Performance</h3>
-//                     <p className="text-sm text-gray-600 mb-4">
-//                       Monitor your website's performance in Google Search results.
-//                     </p>
-//                   </div>
-
-//                   {/* Performance Metrics */}
-//                   {performanceData.length > 0 && (
-//                     <>
-//                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-//                         <div className="bg-white border border-gray-200 rounded-lg p-4">
-//                           <div className="flex items-center justify-between">
-//                             <span className="text-sm font-medium text-gray-500">Total Clicks</span>
-//                             <TrendingUp className="w-4 h-4 text-gray-400" />
-//                           </div>
-//                           <p className="text-2xl font-bold text-gray-900 mt-2">
-//                             {performanceData.reduce((sum, d) => sum + d.clicks, 0).toLocaleString()}
-//                           </p>
-//                         </div>
-                        
-//                         <div className="bg-white border border-gray-200 rounded-lg p-4">
-//                           <div className="flex items-center justify-between">
-//                             <span className="text-sm font-medium text-gray-500">Total Impressions</span>
-//                             <BarChart className="w-4 h-4 text-gray-400" />
-//                           </div>
-//                           <p className="text-2xl font-bold text-gray-900 mt-2">
-//                             {performanceData.reduce((sum, d) => sum + d.impressions, 0).toLocaleString()}
-//                           </p>
-//                         </div>
-                        
-//                         <div className="bg-white border border-gray-200 rounded-lg p-4">
-//                           <div className="flex items-center justify-between">
-//                             <span className="text-sm font-medium text-gray-500">Average CTR</span>
-//                             <TrendingUp className="w-4 h-4 text-gray-400" />
-//                           </div>
-//                           <p className="text-2xl font-bold text-gray-900 mt-2">
-//                             {performanceData.length > 0 
-//                               ? (performanceData.reduce((sum, d) => sum + d.ctr, 0) / performanceData.length * 100).toFixed(1)
-//                               : 0}%
-//                           </p>
-//                         </div>
-                        
-//                         <div className="bg-white border border-gray-200 rounded-lg p-4">
-//                           <div className="flex items-center justify-between">
-//                             <span className="text-sm font-medium text-gray-500">Average Position</span>
-//                             <TrendingUp className="w-4 h-4 text-gray-400" />
-//                           </div>
-//                           <p className="text-2xl font-bold text-gray-900 mt-2">
-//                             {performanceData.length > 0
-//                               ? (performanceData.reduce((sum, d) => sum + d.position, 0) / performanceData.length).toFixed(1)
-//                               : 0}
-//                           </p>
-//                         </div>
-//                       </div>
-
-//                       {/* Performance Chart (simplified) */}
-//                       <div className="bg-white border border-gray-200 rounded-lg p-6">
-//                         <h4 className="text-lg font-medium text-gray-900 mb-4">Daily Performance</h4>
-//                         <div className="overflow-x-auto">
-//                           <table className="min-w-full divide-y divide-gray-200">
-//                             <thead className="bg-gray-50">
-//                               <tr>
-//                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-//                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Clicks</th>
-//                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Impressions</th>
-//                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CTR</th>
-//                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
-//                               </tr>
-//                             </thead>
-//                             <tbody className="bg-white divide-y divide-gray-200">
-//                               {performanceData.slice(0, 10).map((data, idx) => (
-//                                 <tr key={idx}>
-//                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-//                                     {data.date || 'N/A'}
-//                                   </td>
-//                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-//                                     {data.clicks.toLocaleString()}
-//                                   </td>
-//                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-//                                     {data.impressions.toLocaleString()}
-//                                   </td>
-//                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-//                                     {(data.ctr * 100).toFixed(2)}%
-//                                   </td>
-//                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-//                                     {data.position.toFixed(1)}
-//                                   </td>
-//                                 </tr>
-//                               ))}
-//                             </tbody>
-//                           </table>
-//                         </div>
-//                       </div>
-//                     </>
-//                   )}
-
-//                   {/* No data message */}
-//                   {performanceData.length === 0 && !loading && (
-//                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
-//                       <BarChart className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-//                       <p className="text-gray-600">No performance data available</p>
-//                       <p className="text-sm text-gray-500 mt-1">
-//                         Performance data will appear here once Google has collected search metrics for your property.
-//                       </p>
-//                       <button
-//                         onClick={loadPerformanceData}
-//                         className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-//                       >
-//                         Refresh Data
-//                       </button>
-//                     </div>
-//                   )}
-//                 </div>
-//               )}
-//             </div>
-//           </div>
-
-//           {/* Account Management */}
-//           <div className="mt-6 bg-white rounded-lg shadow p-6">
-//             <h3 className="text-lg font-medium text-gray-900 mb-4">Connected Accounts</h3>
-//             <div className="space-y-3">
-//               {accounts.map(account => (
-//                 <div key={account.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-//                   <div className="flex items-center space-x-3">
-//                     {account.picture ? (
-//                       <img src={account.picture} alt={account.name} className="w-10 h-10 rounded-full" />
-//                     ) : (
-//                       <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white">
-//                         {account.name[0]}
-//                       </div>
-//                     )}
-//                     <div>
-//                       <p className="text-sm font-medium text-gray-900">{account.name}</p>
-//                       <p className="text-xs text-gray-500">{account.email}</p>
-//                     </div>
-//                   </div>
-//                   <div className="flex items-center space-x-2">
-//                     {account.isActive ? (
-//                       <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
-//                         Active
-//                       </span>
-//                     ) : (
-//                       <button
-//                         onClick={() => handleAddAccount()}
-//                         className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full hover:bg-yellow-200"
-//                       >
-//                         Re-authenticate
-//                       </button>
-//                     )}
-//                     <button
-//                       onClick={() => handleRemoveAccount(account.id)}
-//                       className="p-1 hover:bg-gray-200 rounded transition-colors"
-//                       title="Remove account"
-//                     >
-//                       <Trash2 className="w-4 h-4 text-gray-500" />
-//                     </button>
-//                   </div>
-//                 </div>
-//               ))}
-//             </div>
-            
-//             {accounts.length === 0 && (
-//               <div className="text-center py-4 text-gray-500">
-//                 <p className="text-sm">No accounts connected yet</p>
-//                 <button
-//                   onClick={handleAddAccount}
-//                   disabled={isAuthenticating}
-//                   className="mt-2 text-blue-600 hover:text-blue-700 text-sm font-medium disabled:opacity-50"
-//                 >
-//                   {isAuthenticating ? 'Authenticating...' : 'Connect your first account'}
-//                 </button>
-//               </div>
-//             )}
-//           </div>
-//         </div>
-//       ) : (
-//         /* Empty State */
-//         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-//           <div className="text-center">
-//             <Globe className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-//             <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-//               Get Started with Google Search Console
-//             </h2>
-//             <p className="text-gray-600 mb-8 max-w-md mx-auto">
-//               Connect your Google account to start managing your website's presence in Google Search results.
-//             </p>
-//             <button
-//               onClick={handleAddAccount}
-//               disabled={isAuthenticating}
-//               className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center space-x-2 disabled:opacity-50"
-//             >
-//               {isAuthenticating ? (
-//                 <>
-//                   <Loader2 className="w-5 h-5 animate-spin" />
-//                   <span>Authenticating...</span>
-//                 </>
-//               ) : (
-//                 <>
-//                   <Plus className="w-5 h-5" />
-//                   <span>Add Google Account</span>
-//                 </>
-//               )}
-//             </button>
-            
-//             <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto">
-//               <div className="bg-white rounded-lg shadow p-6">
-//                 <Send className="w-8 h-8 text-blue-600 mb-3" />
-//                 <h3 className="font-medium text-gray-900 mb-2">Submit URLs</h3>
-//                 <p className="text-sm text-gray-600">
-//                   Tell Google about new or updated content on your website
-//                 </p>
-//               </div>
-//               <div className="bg-white rounded-lg shadow p-6">
-//                 <Search className="w-8 h-8 text-blue-600 mb-3" />
-//                 <h3 className="font-medium text-gray-900 mb-2">Inspect URLs</h3>
-//                 <p className="text-sm text-gray-600">
-//                   Check how Google sees your pages and troubleshoot issues
-//                 </p>
-//               </div>
-//               <div className="bg-white rounded-lg shadow p-6">
-//                 <TrendingUp className="w-8 h-8 text-blue-600 mb-3" />
-//                 <h3 className="font-medium text-gray-900 mb-2">Track Performance</h3>
-//                 <p className="text-sm text-gray-600">
-//                   Monitor clicks, impressions, and search rankings
-//                 </p>
-//               </div>
-//             </div>
-//           </div>
-//         </div>
-//       )}
-//     </div>
-//   );
-// };
+// // Export the requireAuth middleware for use in other files
+// export { requireAuth };

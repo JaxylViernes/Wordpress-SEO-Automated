@@ -29,7 +29,8 @@ interface PerformanceChartProps {
 const TZ = "Asia/Manila";
 
 // ────────────────────────────────────────────────────────────
-// Helpers
+
+// Helpers (Use exact timestamp instead of hour bucketing)
 // ────────────────────────────────────────────────────────────
 
 /** Format timestamp label like "Sep 18, 16:00" in TZ */
@@ -44,6 +45,9 @@ const formatTimeLabel = (dateStr: string | Date, tz = TZ) => {
     hour12: false,
   }).format(date);
 };
+
+// ────────────────────────────────────────────────────────────
+
 
 export default function PerformanceChart({ stats, isLoading, selectedWebsite }: PerformanceChartProps) {
   const queryClient = useQueryClient();
@@ -260,6 +264,7 @@ export default function PerformanceChart({ stats, isLoading, selectedWebsite }: 
             </ResponsiveContainer>
             
             {/* Performance Summary */}
+
             {chartData?.websites && chartData.websites.length > 0 && (
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="grid grid-cols-2 gap-4">
