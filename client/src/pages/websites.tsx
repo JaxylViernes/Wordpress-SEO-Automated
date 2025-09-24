@@ -531,17 +531,17 @@ export default function Websites() {
                       {selectedWebsite.contentCount} posts
                     </p>
                   </div>
-                  <div>
+                  {/* <div>
                     <Label className="text-sm font-medium text-gray-700">
                       AI Model
                     </Label>
                     <p className="mt-1 text-sm text-gray-900">
                       {selectedWebsite.aiModel || "Default"}
                     </p>
-                  </div>
+                  </div> */}
                 </div>
 
-                {selectedWebsite.brandVoice && (
+                {/* {selectedWebsite.brandVoice && (
                   <div>
                     <Label className="text-sm font-medium text-gray-700">
                       Brand Voice
@@ -550,9 +550,9 @@ export default function Websites() {
                       {selectedWebsite.brandVoice}
                     </p>
                   </div>
-                )}
+                )} */}
 
-                {selectedWebsite.targetAudience && (
+                {/* {selectedWebsite.targetAudience && (
                   <div>
                     <Label className="text-sm font-medium text-gray-700">
                       Target Audience
@@ -561,9 +561,9 @@ export default function Websites() {
                       {selectedWebsite.targetAudience}
                     </p>
                   </div>
-                )}
+                )} */}
 
-                {selectedWebsite.contentGuidelines && (
+                {/* {selectedWebsite.contentGuidelines && (
                   <div>
                     <Label className="text-sm font-medium text-gray-700">
                       Content Guidelines
@@ -572,9 +572,9 @@ export default function Websites() {
                       {selectedWebsite.contentGuidelines}
                     </p>
                   </div>
-                )}
+                )} */}
 
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+                {/* <div className="grid grid-cols-2 gap-4 pt-4 border-t">
                   <div>
                     <Label className="text-sm font-medium text-gray-700">
                       Auto Posting
@@ -593,7 +593,7 @@ export default function Websites() {
                         : "Disabled"}
                     </p>
                   </div>
-                </div>
+                </div> */}
 
                 <div className="grid grid-cols-2 gap-4 pt-4 border-t">
                   <div>
@@ -702,7 +702,7 @@ export default function Websites() {
                 />
               </div>
 
-              <div>
+              {/* <div>
                 <Label htmlFor="aiModel">AI Model</Label>
                 <Select
                   value={editForm.aiModel}
@@ -736,8 +736,8 @@ export default function Websites() {
                     }
                     placeholder="e.g., Professional, Friendly, Authoritative"
                   />
-                </div>
-                <div>
+                </div> */}
+                {/* <div>
                   <Label htmlFor="targetAudience">Target Audience</Label>
                   <Input
                     id="targetAudience"
@@ -750,10 +750,10 @@ export default function Websites() {
                     }
                     placeholder="e.g., Small business owners, Tech professionals"
                   />
-                </div>
-              </div>
+                </div> */}
+              {/* </div> */}
 
-              <div>
+              {/* <div>
                 <Label htmlFor="contentGuidelines">Content Guidelines</Label>
                 <Textarea
                   id="contentGuidelines"
@@ -767,9 +767,9 @@ export default function Websites() {
                   placeholder="Specific guidelines for content generation..."
                   rows={3}
                 />
-              </div>
+              </div> */}
 
-              <div className="space-y-4">
+              {/* <div className="space-y-4">
                 <div className="flex items-center space-x-2">
                   <Switch
                     id="autoPosting"
@@ -779,9 +779,9 @@ export default function Websites() {
                     }
                   />
                   <Label htmlFor="autoPosting">Enable Auto Posting</Label>
-                </div>
+                </div> */}
 
-                <div className="flex items-center space-x-2">
+                {/* <div className="flex items-center space-x-2">
                   <Switch
                     id="requireApproval"
                     checked={editForm.requireApproval}
@@ -793,7 +793,7 @@ export default function Websites() {
                     Require Content Approval
                   </Label>
                 </div>
-              </div>
+              </div> */}
 
               <DialogFooter className="mt-6">
                 <Button

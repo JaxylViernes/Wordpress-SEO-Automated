@@ -221,11 +221,7 @@ export default function AutoContentScheduler({
     includeImages: false,
     imageCount: 1,
     imageStyle: "natural",
-
-    // Publishing settings
-    //nadagdag - Changed autoPublish default from false to true for immediate publishing
     autoPublish: true,
-    //nadagdag - Set publishDelay to 0 for immediate publishing after generation
     publishDelay: 0,
     
     // Limits
@@ -332,7 +328,6 @@ export default function AutoContentScheduler({
       resetForm();
       showToastMessage(
         "Schedule Created",
-        //nadagdag - Updated message to mention immediate publishing if enabled
         scheduleForm.autoPublish && scheduleForm.publishDelay === 0 
           ? "Your auto-generation schedule has been created with immediate publishing"
           : "Your auto-generation schedule has been created successfully"
@@ -418,9 +413,7 @@ export default function AutoContentScheduler({
       includeImages: false,
       imageCount: 1,
       imageStyle: "natural",
-      //nadagdag - Reset to auto-publish enabled by default
       autoPublish: true,
-      //nadagdag - Reset to 0 delay for immediate publishing
       publishDelay: 0,
       maxMonthlyPosts: 30,
       maxDailyCost: 5.0,
@@ -595,7 +588,6 @@ export default function AutoContentScheduler({
                         {schedule.autoPublish && (
                           <>
                             <span>•</span>
-                            {/*nadagdag - Enhanced auto-publish display to show immediate or delayed publishing*/}
                             <span className="text-green-600 font-medium">
                               {schedule.publishDelay === 0 
                                 ? 'Auto-publish (immediate)' 
@@ -679,7 +671,6 @@ export default function AutoContentScheduler({
                             <div>Time: {schedule.timeOfDay}</div>
                             <div>Posts this month: {schedule.postsThisMonth || 0}</div>
                             <div>Cost today: ${formatCost(schedule.costToday || 0)}</div>
-                            {/*nadagdag - Show publishing status in expanded details*/}
                             {schedule.autoPublish && (
                               <div className="text-green-600">
                                 Publishing: {schedule.publishDelay === 0 ? 'Immediate' : `After ${schedule.publishDelay}h`}
@@ -1080,9 +1071,6 @@ export default function AutoContentScheduler({
                             </div>
                           )}
                         </div>
-
-                        {/* Publishing Settings */}
-                        {/*nadagdag - Completely redesigned publishing settings section for immediate auto-publish*/}
                         <div className="border border-green-200 bg-green-50 rounded-lg p-3">
                           <label className="flex items-center">
                             <input
@@ -1092,7 +1080,6 @@ export default function AutoContentScheduler({
                                 setScheduleForm((prev) => ({
                                   ...prev,
                                   autoPublish: e.target.checked,
-                                  //nadagdag - Reset publishDelay to 0 when enabling auto-publish
                                   publishDelay: e.target.checked ? 0 : prev.publishDelay,
                                 }))
                               }
@@ -1109,8 +1096,6 @@ export default function AutoContentScheduler({
                                 <CheckCircle className="w-3 h-3 mr-1" />
                                 Content will be published immediately after AI generation completes
                               </div>
-                              
-                              {/*nadagdag - Optional delay section hidden by default*/}
                               <details className="mt-2">
                                 <summary className="cursor-pointer text-gray-600 hover:text-gray-800">
                                   Add publish delay (optional)
@@ -1140,8 +1125,6 @@ export default function AutoContentScheduler({
                               </details>
                             </div>
                           )}
-                          
-                          {/*nadagdag - Warning message when auto-publish is disabled*/}
                           {!scheduleForm.autoPublish && (
                             <div className="mt-2 text-xs text-amber-700 bg-amber-50 rounded p-2">
                               <AlertCircle className="w-3 h-3 inline mr-1" />

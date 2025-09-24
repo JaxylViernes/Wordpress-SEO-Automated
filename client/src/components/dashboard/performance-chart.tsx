@@ -27,18 +27,9 @@ interface PerformanceChartProps {
 // ────────────────────────────────────────────────────────────
 
 const TZ = "Asia/Manila";
-const LINE_COLORS = [
-  "#3b82f6", // blue-500
-  "#10b981", // emerald-500
-  "#f59e0b", // amber-500
-  "#ef4444", // red-500
-  "#8b5cf6", // violet-500
-  "#ec4899", // pink-500
-  "#06b6d4", // cyan-500
-  "#84cc16", // lime-500
-];
 
 // ────────────────────────────────────────────────────────────
+
 // Helpers (Use exact timestamp instead of hour bucketing)
 // ────────────────────────────────────────────────────────────
 
@@ -57,13 +48,14 @@ const formatTimeLabel = (dateStr: string | Date, tz = TZ) => {
 
 // ────────────────────────────────────────────────────────────
 
+
 export default function PerformanceChart({ stats, isLoading, selectedWebsite }: PerformanceChartProps) {
   const queryClient = useQueryClient();
 
   // If external stats changed (e.g., a new analysis), invalidate to refresh.
   useEffect(() => {
     if (stats?.lastAnalysis) {
-      queryClient.invalidateQueries({ queryKey: ["seo-reports-chart-data"] });
+      queryClient.invalidateQueries({ queryKey: ["performance-data"] });
     }
   }, [stats?.lastAnalysis, queryClient]);
 
@@ -73,127 +65,11 @@ export default function PerformanceChart({ stats, isLoading, selectedWebsite }: 
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ["seo-reports-chart-data", stats?.avgSeoScore, selectedWebsite],
+    queryKey: ["performance-data", selectedWebsite],
     queryFn: async () => {
-      const websites = await api.getWebsites();
-      
-      // Filter websites based on selectedWebsite prop from dashboard
-      const filteredWebsites = selectedWebsite && selectedWebsite !== "all"
-        ? websites.filter((w: any) => w.id === selectedWebsite)
-        : websites;
-
-      // Store all data points with exact timestamps
-      const allDataPoints: Array<{
-        ts: number;
-        label: string;
-        reportId: string;
-        metadata?: Record<string, any>;
-        [key: string]: any;
-      }> = [];
-
-      const websiteInfo: Array<{
-        id: string;
-        name: string;
-        color: string;
-        latestScore: number;
-        reportCount: number;
-        error?: boolean;
-      }> = [];
-
-      let totalReports = 0;
-
-      for (let i = 0; i < filteredWebsites.length; i++) {
-        const website = filteredWebsites[i];
-
-        try {
-          const reports = await api.getSeoReports(website.id);
-
-          if (reports && reports.length > 0) {
-            totalReports += reports.length;
-
-            // Sort by date to get chronological order
-            const sortedReports = [...reports].sort(
-              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-            );
-
-            // Latest report is the last one chronologically
-            const latestReport = sortedReports[sortedReports.length - 1];
-            let latestScore = latestReport?.score || 0;
-
-            // Legend/info
-            websiteInfo.push({
-              id: website.id,
-              name: website.name,
-              color: LINE_COLORS[i % LINE_COLORS.length],
-              latestScore,
-              reportCount: reports.length,
-            });
-
-            // Create a data point for each report with exact timestamp
-            for (const report of sortedReports) {
-              const ts = new Date(report.createdAt).getTime();
-              
-              // Find existing data point with same timestamp or create new one
-              let dataPoint = allDataPoints.find(dp => dp.ts === ts);
-              
-              if (!dataPoint) {
-                dataPoint = {
-                  ts,
-                  label: formatTimeLabel(report.createdAt, TZ),
-                  reportId: report.id,
-                };
-                allDataPoints.push(dataPoint);
-              }
-              
-              // Add the score for this website
-              const score = report.score || 0;
-              dataPoint[website.name] = score;
-              
-              // Add metadata
-              if (!dataPoint.metadata) dataPoint.metadata = {};
-              dataPoint.metadata[website.name] = {
-                score,
-                pageSpeedScore: report.pageSpeedScore,
-                issuesCount: report.fixableIssuesCount || 0,
-                criticalIssues: report.criticalIssuesCount || 0,
-                reportId: report.id,
-                createdAt: report.createdAt,
-              };
-            }
-          } else {
-            websiteInfo.push({
-              id: website.id,
-              name: website.name,
-              color: LINE_COLORS[i % LINE_COLORS.length],
-              latestScore: 0,
-              reportCount: 0,
-            });
-          }
-        } catch {
-          websiteInfo.push({
-            id: website.id,
-            name: website.name,
-            color: LINE_COLORS[i % LINE_COLORS.length],
-            latestScore: 0,
-            reportCount: 0,
-            error: true,
-          });
-        }
-      }
-
-      // Sort all data points by timestamp
-      const sortedData = allDataPoints.sort((a, b) => a.ts - b.ts);
-
-      // Keep recent data points (last 100 or so)
-      const recentData = sortedData.slice(-100);
-
-      return {
-        data: recentData,
-        websites: websiteInfo,
-        hasData: recentData.length > 0,
-        totalReports,
-        lastFetch: new Date().toISOString(),
-      };
+      // Use the correct API endpoint that matches your backend
+      const response = await api.getPerformanceData(selectedWebsite !== "all" ? selectedWebsite : undefined);
+      return response;
     },
     enabled: !isLoading,
     refetchInterval: 30000,
@@ -206,7 +82,7 @@ export default function PerformanceChart({ stats, isLoading, selectedWebsite }: 
   const loading = isLoading || chartLoading;
 
   const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["seo-reports-chart-data"] });
+    queryClient.invalidateQueries({ queryKey: ["performance-data"] });
     refetch();
   };
 
@@ -387,7 +263,8 @@ export default function PerformanceChart({ stats, isLoading, selectedWebsite }: 
               </LineChart>
             </ResponsiveContainer>
             
-            {/* Latest Performance vs Historical Average */}
+            {/* Performance Summary */}
+
             {chartData?.websites && chartData.websites.length > 0 && (
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="grid grid-cols-2 gap-4">

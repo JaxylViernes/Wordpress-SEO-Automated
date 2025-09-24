@@ -15,7 +15,6 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-
 // ============================================================================
 // CORE USER TABLES
 // ============================================================================
@@ -625,6 +624,7 @@ export const aiUsageTracking = pgTable(
     costUsd: integer("cost_usd").notNull(), // Store as cents
     operation: text("operation").notNull(), // content_generation, seo_analysis, etc.
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [index("idx_ai_usage_user_id").on(table.userId)]
 );
@@ -685,6 +685,7 @@ export const autoSchedules = pgTable("auto_schedules", {
   index("idx_auto_schedules_last_run").on(table.lastRun),
 ]);
 
+
 // ============================================================================
 // ACTIVITY & LOGGING TABLES
 // ============================================================================
@@ -726,6 +727,7 @@ export const securityAudits = pgTable(
   },
   (table) => [index("idx_security_audits_user_id").on(table.userId)]
 );
+
 
 export const clientReports = pgTable(
   "client_reports",

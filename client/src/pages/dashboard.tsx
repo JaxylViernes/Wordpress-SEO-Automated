@@ -1,9 +1,8 @@
-
-//client/src/pages/dashboard.tsx
+// client/src/pages/dashboard.tsx
 import { useQuery } from "@tanstack/react-query";
 import { Globe, Bot, Search, Calendar, TrendingUp, ChevronDown } from "lucide-react";
 import { api } from "@/lib/api";
-import { useAuth } from "@/pages/authentication"; // Import useAuth (NOT useAuthContext)
+import { useAuth } from "@/pages/authentication";
 import StatsCard from "@/components/dashboard/stats-card";
 import PerformanceChart from "@/components/dashboard/performance-chart";
 import RecentActivity from "@/components/dashboard/recent-activity";
@@ -24,12 +23,25 @@ const calculatePercentageChange = (
   current: number,
   previous: number
 ): { percentage: string; type: "positive" | "negative" | "neutral" } => {
-  if (!previous || previous === 0) {
+  // Handle edge cases
+  if (previous === undefined || previous === null || previous === 0 || isNaN(previous)) {
+    if (current > 0) {
+      return { percentage: "First Report", type: "neutral" };
+    }
+    return { percentage: "N/A", type: "neutral" };
+  }
+
+  if (current === undefined || current === null || isNaN(current)) {
     return { percentage: "N/A", type: "neutral" };
   }
 
   const change = ((current - previous) / previous) * 100;
-  const roundedChange = Math.round(change * 10) / 10; // Round to 1 decimal place
+  
+  if (isNaN(change)) {
+    return { percentage: "N/A", type: "neutral" };
+  }
+
+  const roundedChange = Math.round(change * 10) / 10;
 
   if (roundedChange > 0) {
     return { percentage: `+${roundedChange}%`, type: "positive" };
@@ -42,8 +54,10 @@ const calculatePercentageChange = (
 
 // Helper function to format SEO score display
 const formatSeoScore = (score: number): string => {
-  if (!score) return "0";
-  return Math.round(score * 10) / 10; // Round to 1 decimal place
+  if (!score && score !== 0) return "0%";
+  // Handle if score is a decimal (0-1) vs percentage (0-100)
+  const percentage = score <= 1 ? score * 100 : score;
+  return `${Math.round(percentage * 10) / 10}%`;
 };
 
 export default function Dashboard() {
@@ -61,7 +75,7 @@ export default function Dashboard() {
   // Set default website when websites load
   useEffect(() => {
     if (websites && websites.length > 0 && !selectedWebsite) {
-      setSelectedWebsite("all"); // Default to "all websites"
+      setSelectedWebsite("all");
     }
   }, [websites, selectedWebsite]);
 
@@ -70,85 +84,9 @@ export default function Dashboard() {
     queryKey: ["dashboard-stats", selectedWebsite],
     queryFn: async () => {
       if (selectedWebsite === "all" || !selectedWebsite) {
-        // Get overall stats for all websites
-        const dashboardStats = await api.getDashboardStats();
-        return dashboardStats;
-      } else {
-        // Get stats for specific website - calculate from actual data
-        try {
-          // Fetch reports for the specific website
-          const reports = await api.getSeoReports(selectedWebsite);
-          
-          // Try to fetch content for the website
-          let contents = [];
-          try {
-            // Check if api has getContentByWebsite method
-            if (typeof api.getContentByWebsite === 'function') {
-              contents = await api.getContentByWebsite(selectedWebsite);
-            } else if (typeof api.getContent === 'function') {
-              // Alternative: fetch all content and filter
-              const allContent = await api.getContent();
-              contents = Array.isArray(allContent) 
-                ? allContent.filter((c: any) => c.websiteId === selectedWebsite || c.website_id === selectedWebsite)
-                : [];
-            } else if (typeof api.getWebsiteContent === 'function') {
-              // Another possible API method name
-              contents = await api.getWebsiteContent(selectedWebsite);
-            }
-          } catch (error) {
-            contents = [];
-          }
-          
-          // Ensure reports is an array
-          const reportsArray = Array.isArray(reports) ? reports : [];
-          
-          // Calculate stats from reports
-          const sortedReports = reportsArray.length > 0
-            ? [...reportsArray].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-            : [];
-          
-          const latestScore = sortedReports.length > 0 ? (sortedReports[0].score || 0) : 0;
-          
-          const avgSeoScore = reportsArray.length > 0
-            ? reportsArray.reduce((sum, r) => sum + (r.score || 0), 0) / reportsArray.length
-            : 0;
-          
-          const previousScore = sortedReports.length > 1
-            ? (sortedReports[1].score || 0)
-            : sortedReports.length === 1
-            ? (sortedReports[0].score || 0)
-            : 0;
-          
-          // Calculate scheduled posts (if content has status field)
-          const scheduledCount = Array.isArray(contents) 
-            ? contents.filter((c: any) => 
-                c.status === 'scheduled' || c.isScheduled || c.scheduledAt
-              ).length
-            : 0;
-
-          const websiteStats = {
-            websiteCount: 1,
-            contentCount: Array.isArray(contents) ? contents.length : 0,
-            avgSeoScore: latestScore || avgSeoScore,
-            previousAvgSeoScore: previousScore,
-            scheduledPosts: scheduledCount,
-            reportCount: reportsArray.length,
-          };
-          
-          return websiteStats;
-        } catch (error) {
-          console.error('Error fetching website stats:', error);
-          // Return empty stats on error
-          return {
-            websiteCount: 1,
-            contentCount: 0,
-            avgSeoScore: 0,
-            previousAvgSeoScore: 0,
-            scheduledPosts: 0,
-            reportCount: 0,
-          };
-        }
+        return api.getDashboardStats();
       }
+      return api.getDashboardStats(selectedWebsite);
     },
     enabled: isAuthenticated && !!selectedWebsite,
     retry: 1,
@@ -156,30 +94,31 @@ export default function Dashboard() {
     refetchOnWindowFocus: false,
   });
 
+  // IMPORTANT: Fetch performance data separately
+  const { data: performanceData, isLoading: performanceLoading } = useQuery({
+    queryKey: ["dashboard-performance", selectedWebsite],
+    queryFn: () => api.getPerformanceData(),
+    enabled: isAuthenticated,
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
+  });
+
   // Calculate SEO score percentage change
-  const seoScoreChange =
-    stats?.avgSeoScore && stats?.previousAvgSeoScore && stats.avgSeoScore > 0
-      ? calculatePercentageChange(stats.avgSeoScore, stats.previousAvgSeoScore)
-      : { percentage: "N/A", type: "neutral" as const };
+  const seoScoreChange = calculatePercentageChange(
+    stats?.avgSeoScore || 0,
+    stats?.previousAvgSeoScore || 0
+  );
 
-  // Alternative calculation if your API returns historical data differently
-  const calculateSeoChangeFromHistory = () => {
-    if (!stats?.seoScoreHistory || stats.seoScoreHistory.length < 2) {
-      return { percentage: "N/A", type: "neutral" as const };
+  // Debug logging for change calculation
+  useEffect(() => {
+    if (stats) {
+      console.log('Stats for change calculation:', {
+        current: stats.avgSeoScore,
+        previous: stats.previousAvgSeoScore,
+        change: seoScoreChange
+      });
     }
-
-    const currentScore =
-      stats.seoScoreHistory[stats.seoScoreHistory.length - 1];
-    const previousScore =
-      stats.seoScoreHistory[stats.seoScoreHistory.length - 2];
-
-    return calculatePercentageChange(currentScore, previousScore);
-  };
-
-  // Use whichever method fits your API structure
-  const finalSeoChange = stats?.avgSeoScore > 0 && stats?.previousAvgSeoScore
-    ? seoScoreChange
-    : calculateSeoChangeFromHistory();
+  }, [stats, seoScoreChange]);
 
   // Add debug logging
   useEffect(() => {
@@ -269,20 +208,20 @@ export default function Dashboard() {
               statsLoading ? "..." : 
               stats?.avgSeoScore !== undefined && stats.avgSeoScore > 0
                 ? formatSeoScore(stats.avgSeoScore)
-                : "0"
+                : "0%"
             }
             icon={Search}
             iconColor="bg-yellow-500"
             change={
               statsLoading 
                 ? "..." 
-                : stats?.avgSeoScore > 0 && stats?.previousAvgSeoScore > 0
-                  ? finalSeoChange.percentage 
+                : stats?.previousAvgSeoScore !== null && stats?.previousAvgSeoScore !== undefined
+                  ? seoScoreChange.percentage 
                   : stats?.avgSeoScore > 0 
-                    ? "â€”"
+                    ? "First Report"
                     : ""
             }
-            changeType={stats?.avgSeoScore > 0 ? finalSeoChange.type : "neutral"}
+            changeType={seoScoreChange.type}
           />
           <StatsCard
             title="Scheduled Posts"
@@ -293,10 +232,10 @@ export default function Dashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-         <div className="lg:col-span-2">
+          <div className="lg:col-span-2">
             <PerformanceChart 
-              stats={stats} 
-              isLoading={statsLoading}
+              performanceData={performanceData}
+              isLoading={performanceLoading}
               selectedWebsite={selectedWebsite}
             />
           </div>

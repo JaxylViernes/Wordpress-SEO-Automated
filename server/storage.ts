@@ -6,6 +6,7 @@ import {
   websites,
   content,
   seoReports,
+  seoIssueStatuses,
   activityLogs,
   clientReports,
   contentApprovals,
@@ -1682,57 +1683,98 @@ async getOrCreateUserSettings(userId: string): Promise<UserSettings> {
   }
 
   async updateUserApiKey(userId: string, keyId: string, updates: Partial<{
-    keyName: string;
-    isActive: boolean;
-    validationStatus: string;
-    lastValidated: Date;
-    validationError: string;
-    usageCount: number;
-    lastUsed: Date;
-  }>): Promise<UserApiKey | undefined> {
-    // Map camelCase updates to snake_case for database
-    const dbUpdates: any = {};
+  keyName: string;
+  isActive: boolean;
+  validationStatus: string;
+  lastValidated: Date;
+  validationError: string;
+  usageCount: number;
+  lastUsed: Date;
+}>): Promise<UserApiKey | undefined> {
+  try {
+    console.log('Updating API key:', keyId);
     
-    if (updates.keyName !== undefined) dbUpdates.key_name = updates.keyName;
-    if (updates.isActive !== undefined) dbUpdates.is_active = updates.isActive;
-    if (updates.validationStatus !== undefined) dbUpdates.validation_status = updates.validationStatus;
-    if (updates.lastValidated !== undefined) dbUpdates.last_validated = updates.lastValidated;
-    if (updates.validationError !== undefined) dbUpdates.validation_error = updates.validationError;
-    if (updates.usageCount !== undefined) dbUpdates.usage_count = updates.usageCount;
-    if (updates.lastUsed !== undefined) dbUpdates.last_used = updates.lastUsed;
+    // Build a simple update object
+    const updateObj: any = {};
     
-    // FIX: Check if we have any fields to update
-    if (Object.keys(dbUpdates).length === 0) {
-      console.warn('updateUserApiKey called with no valid fields to update');
-      // Return the existing key unchanged
-      const existingKey = await db
-        .select()
-        .from(userApiKeys)
-        .where(
-          and(
-            eq(userApiKeys.userId, userId),
-            eq(userApiKeys.id, keyId)
-          )
-        )
-        .limit(1);
-      return existingKey[0] ? this.normalizeApiKey(existingKey[0]) : undefined;
+    // Only add defined values
+    if (updates.keyName !== undefined) updateObj.keyName = updates.keyName;
+    if (updates.isActive !== undefined) updateObj.isActive = updates.isActive;
+    if (updates.validationStatus !== undefined) updateObj.validationStatus = updates.validationStatus;
+    if (updates.lastValidated !== undefined) updateObj.lastValidated = updates.lastValidated;
+    if (updates.validationError !== undefined) {
+      updateObj.validationError = updates.validationError;
+    } else if ('validationError' in updates) {
+      updateObj.validationError = null;
     }
+    if (updates.usageCount !== undefined) updateObj.usageCount = updates.usageCount;
+    if (updates.lastUsed !== undefined) updateObj.lastUsed = updates.lastUsed;
     
-    dbUpdates.updated_at = new Date();
-
-    const [rawKey] = await db
+    // Always add updatedAt
+    updateObj.updatedAt = new Date();
+    
+    console.log('Update object:', updateObj);
+    
+    // Use a simple WHERE clause with just the ID
+    const result = await db
       .update(userApiKeys)
-      .set(dbUpdates)
-      .where(
-        and(
-          eq(userApiKeys.userId, userId),
-          eq(userApiKeys.id, keyId)
-        )
-      )
+      .set(updateObj)
+      .where(eq(userApiKeys.id, keyId))
       .returning();
     
-    return rawKey ? this.normalizeApiKey(rawKey) : undefined;
+    if (result && result.length > 0) {
+      return this.normalizeApiKey(result[0]);
+    }
+    
+    return undefined;
+    
+  } catch (error) {
+    console.error('Update failed, attempting workaround...');
+    
+    // WORKAROUND: If the update fails, delete and recreate the record
+    // This is not ideal but will work around the SQL syntax issue
+    try {
+      // First get the existing key
+      const [existingKey] = await db
+        .select()
+        .from(userApiKeys)
+        .where(eq(userApiKeys.id, keyId));
+      
+      if (!existingKey) {
+        return undefined;
+      }
+      
+      // Delete the old record
+      await db
+        .delete(userApiKeys)
+        .where(eq(userApiKeys.id, keyId));
+      
+      // Create a new record with the updated values
+      const newKeyData = {
+        ...existingKey,
+        ...updates,
+        updatedAt: new Date()
+      };
+      
+      // Handle validationError specially
+      if ('validationError' in updates && updates.validationError === undefined) {
+        newKeyData.validationError = null;
+      }
+      
+      const [newKey] = await db
+        .insert(userApiKeys)
+        .values(newKeyData)
+        .returning();
+      
+      console.log('Workaround successful - recreated key with updates');
+      return this.normalizeApiKey(newKey);
+      
+    } catch (workaroundError) {
+      console.error('Workaround also failed:', workaroundError);
+      throw error; // Throw original error
+    }
   }
+}
 
   async deleteUserApiKey(userId: string, keyId: string): Promise<boolean> {
     const result = await db
@@ -2477,6 +2519,138 @@ async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Pro
   }
 }
 
+
+async deleteSeoReportsByWebsite(websiteId: string, userId: string): Promise<void> {
+  try {
+    // Delete all SEO reports for the website using Drizzle
+    await db
+      .delete(seoReports)
+      .where(
+        and(
+          eq(seoReports.websiteId, websiteId),
+          eq(seoReports.userId, userId)
+        )
+      );
+    
+    console.log(`Deleted SEO reports for website: ${websiteId}`);
+  } catch (error) {
+    console.error('Error deleting SEO reports:', error);
+    throw error;
+  }
+}
+
+async deleteTrackedSeoIssuesByWebsite(websiteId: string, userId: string): Promise<void> {
+  try {
+    // Delete all tracked SEO issues for the website using Drizzle
+    await db
+      .delete(seoIssueTracking)
+      .where(
+        and(
+          eq(seoIssueTracking.websiteId, websiteId),
+          eq(seoIssueTracking.userId, userId)
+        )
+      );
+    
+    console.log(`Deleted tracked SEO issues for website: ${websiteId}`);
+  } catch (error) {
+    console.error('Error deleting tracked SEO issues:', error);
+    throw error;
+  }
+}
+
+async clearAllSeoData(websiteId: string, userId: string): Promise<{
+  deletedReports: number;
+  deletedIssues: number;
+  keptLatestReport: boolean;
+  preservedIssues: number;
+}> {
+  console.log(`Clearing SEO data for website ${websiteId}, user ${userId}`);
+  
+  try {
+    // Get all reports
+    const allReports = await this.getSeoReportsByWebsite(websiteId);
+    
+    if (allReports.length === 0) {
+      return {
+        deletedReports: 0,
+        deletedIssues: 0,
+        keptLatestReport: false,
+        preservedIssues: 0
+      };
+    }
+    
+    // Sort to ensure we have the latest first
+    allReports.sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    
+    const latestReport = allReports[0];
+    const reportsToDelete = allReports.slice(1); // All except the latest
+    
+    // Get all tracked issues
+    const allTrackedIssues = await this.getTrackedSeoIssues(websiteId, userId, {
+      limit: 1000
+    });
+    
+    // Separate issues: those linked to latest report vs others
+    const latestReportIssues = allTrackedIssues.filter(
+      issue => issue.id === latestReport.id
+    );
+    const issuesToDelete = allTrackedIssues.filter(
+      issue => issue.id !== latestReport.id
+    );
+    
+    // Delete old reports
+    let deletedReports = 0;
+    for (const report of reportsToDelete) {
+      await db.delete(seoReports).where(eq(seoReports.id, report.id));
+      deletedReports++;
+    }
+    
+    // Delete old tracked issues (not linked to latest report)
+    let deletedIssues = 0;
+    for (const issue of issuesToDelete) {
+      await db.delete(seoIssueStatuses).where(eq(seoIssueStatuses.id, issue.id));
+      deletedIssues++;
+    }
+    
+    // Update the status of issues linked to the latest report
+    // Reset "fixing" status to "detected" to avoid stuck states
+    let preservedIssues = 0;
+    for (const issue of latestReportIssues) {
+      if (issue.status === 'fixing') {
+        await db.update(seoIssueStatuses)
+          .set({
+            status: 'detected',
+            updatedAt: new Date(),
+            metadata: {
+              ...issue.metadata,
+              resetFromFixing: true,
+              resetAt: new Date().toISOString()
+            }
+          })
+          .where(eq(seoIssueStatuses.id, issue.id));
+      }
+      preservedIssues++;
+    }
+    
+    console.log(`Deleted ${deletedReports} old SEO reports, kept latest report ${latestReport.id}`);
+    console.log(`Deleted ${deletedIssues} old tracked issues, preserved ${preservedIssues} issues for latest report`);
+    
+    return {
+      deletedReports,
+      deletedIssues,
+      keptLatestReport: true,
+      preservedIssues
+    };
+    
+  } catch (error) {
+    console.error('Error clearing SEO data:', error);
+    throw error;
+  }
+}
+
+ 
   //================Google Search Console===================
 
 

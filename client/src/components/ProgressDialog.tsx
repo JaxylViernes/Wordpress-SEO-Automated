@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Dialog, 
   DialogContent, 
   DialogHeader, 
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
@@ -59,27 +60,29 @@ const ProgressDialog: React.FC<ProgressDialogProps> = ({
   const [simulatedProgress, setSimulatedProgress] = useState(0);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
   
-  // Simulated activities for when no logs are provided
-  const simulatedActivities = type === 'seo-analysis' ? [
-    { at: 5, message: 'Connecting to website...', icon: <Globe className="h-4 w-4 text-purple-500 animate-pulse" /> },
-    { at: 15, message: 'Tracking SEO issues...', icon: <Database className="h-4 w-4 text-blue-500 animate-pulse" /> },
-    { at: 25, message: 'Analyzing page structure...', icon: <Search className="h-4 w-4 text-blue-500 animate-pulse" /> },
-    { at: 35, message: 'Checking meta tags...', icon: <AlertCircle className="h-4 w-4 text-orange-500 animate-pulse" /> },
-    { at: 45, message: 'Evaluating content quality...', icon: <PenTool className="h-4 w-4 text-indigo-500 animate-pulse" /> },
-    { at: 55, message: 'Running AI content analysis...', icon: <Brain className="h-4 w-4 text-purple-500 animate-pulse" /> },
-    { at: 70, message: 'Calculating SEO score...', icon: <Activity className="h-4 w-4 text-blue-500 animate-pulse" /> },
-    { at: 85, message: 'Generating recommendations...', icon: <Wrench className="h-4 w-4 text-green-500 animate-pulse" /> },
-    { at: 95, message: 'Finalizing report...', icon: <CheckCircle2 className="h-4 w-4 text-green-500" /> },
-  ] : [
-    { at: 5, message: 'Analyzing fixable issues...', icon: <Search className="h-4 w-4 text-blue-500 animate-pulse" /> },
-    { at: 15, message: 'Connecting to WordPress...', icon: <Globe className="h-4 w-4 text-purple-500 animate-pulse" /> },
-    { at: 25, message: 'Creating backup...', icon: <Shield className="h-4 w-4 text-green-500 animate-pulse" /> },
-    { at: 35, message: 'Fetching content...', icon: <Database className="h-4 w-4 text-blue-500 animate-pulse" /> },
-    { at: 45, message: 'Applying AI fixes...', icon: <Zap className="h-4 w-4 text-purple-500 animate-pulse" /> },
-    { at: 60, message: 'Updating meta tags...', icon: <Wrench className="h-4 w-4 text-orange-500 animate-pulse" /> },
-    { at: 75, message: 'Improving content quality...', icon: <PenTool className="h-4 w-4 text-indigo-500 animate-pulse" /> },
-    { at: 90, message: 'Saving changes...', icon: <CheckCircle2 className="h-4 w-4 text-green-500" /> },
-  ];
+  // Memoize simulated activities to prevent recreation on every render
+  const simulatedActivities = useMemo(() => {
+    return type === 'seo-analysis' ? [
+      { at: 5, message: 'Connecting to website...', icon: <Globe className="h-4 w-4 text-purple-500 animate-pulse" /> },
+      { at: 15, message: 'Tracking SEO issues...', icon: <Database className="h-4 w-4 text-blue-500 animate-pulse" /> },
+      { at: 25, message: 'Analyzing page structure...', icon: <Search className="h-4 w-4 text-blue-500 animate-pulse" /> },
+      { at: 35, message: 'Checking meta tags...', icon: <AlertCircle className="h-4 w-4 text-orange-500 animate-pulse" /> },
+      { at: 45, message: 'Evaluating content quality...', icon: <PenTool className="h-4 w-4 text-indigo-500 animate-pulse" /> },
+      { at: 55, message: 'Running AI content analysis...', icon: <Brain className="h-4 w-4 text-purple-500 animate-pulse" /> },
+      { at: 70, message: 'Calculating SEO score...', icon: <Activity className="h-4 w-4 text-blue-500 animate-pulse" /> },
+      { at: 85, message: 'Generating recommendations...', icon: <Wrench className="h-4 w-4 text-green-500 animate-pulse" /> },
+      { at: 95, message: 'Finalizing report...', icon: <CheckCircle2 className="h-4 w-4 text-green-500" /> },
+    ] : [
+      { at: 5, message: 'Analyzing fixable issues...', icon: <Search className="h-4 w-4 text-blue-500 animate-pulse" /> },
+      { at: 15, message: 'Connecting to WordPress...', icon: <Globe className="h-4 w-4 text-purple-500 animate-pulse" /> },
+      { at: 25, message: 'Creating backup...', icon: <Shield className="h-4 w-4 text-green-500 animate-pulse" /> },
+      { at: 35, message: 'Fetching content...', icon: <Database className="h-4 w-4 text-blue-500 animate-pulse" /> },
+      { at: 45, message: 'Applying AI fixes...', icon: <Zap className="h-4 w-4 text-purple-500 animate-pulse" /> },
+      { at: 60, message: 'Updating meta tags...', icon: <Wrench className="h-4 w-4 text-orange-500 animate-pulse" /> },
+      { at: 75, message: 'Improving content quality...', icon: <PenTool className="h-4 w-4 text-indigo-500 animate-pulse" /> },
+      { at: 90, message: 'Saving changes...', icon: <CheckCircle2 className="h-4 w-4 text-green-500" /> },
+    ];
+  }, [type]); // Only recreate when type changes
 
   // Start progress simulation when dialog opens and status is running
   useEffect(() => {
@@ -166,7 +169,7 @@ const ProgressDialog: React.FC<ProgressDialogProps> = ({
         setActivityIcon(currentSimulated.icon);
       }
     }
-  }, [logs, simulatedProgress, simulatedActivities]);
+  }, [logs, simulatedProgress, simulatedActivities]); // simulatedActivities is now stable due to useMemo
 
   const getDisplayProgress = () => {
     // Use provided progress if it's actively updating, otherwise use simulated
@@ -250,9 +253,15 @@ const ProgressDialog: React.FC<ProgressDialogProps> = ({
     return null;
   };
 
+  // Inline styles for shimmer animation (avoiding styled-jsx issues)
+  const shimmerStyle = {
+    animation: 'shimmer 2s infinite',
+    backgroundSize: '200% 100%',
+  };
+
   return (
     <Dialog open={open} onOpenChange={status !== 'running' ? onClose : undefined}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" aria-describedby="progress-dialog-description">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {type === 'ai-fix' ? (
@@ -262,6 +271,11 @@ const ProgressDialog: React.FC<ProgressDialogProps> = ({
             )}
             {title}
           </DialogTitle>
+          {description && (
+            <DialogDescription id="progress-dialog-description">
+              {description}
+            </DialogDescription>
+          )}
         </DialogHeader>
 
         <div className="space-y-4">
@@ -293,10 +307,7 @@ const ProgressDialog: React.FC<ProgressDialogProps> = ({
                 <div className="absolute inset-0 h-3 overflow-hidden rounded-full pointer-events-none">
                   <div 
                     className="h-full w-full bg-gradient-to-r from-transparent via-white/20 to-transparent"
-                    style={{
-                      animation: 'shimmer 2s infinite',
-                      backgroundSize: '200% 100%',
-                    }}
+                    style={shimmerStyle}
                   />
                 </div>
               )}
@@ -334,16 +345,18 @@ const ProgressDialog: React.FC<ProgressDialogProps> = ({
           )}
         </div>
 
-        <style jsx>{`
-          @keyframes shimmer {
-            0% {
-              transform: translateX(-100%);
+        <style>
+          {`
+            @keyframes shimmer {
+              0% {
+                transform: translateX(-100%);
+              }
+              100% {
+                transform: translateX(100%);
+              }
             }
-            100% {
-              transform: translateX(100%);
-            }
-          }
-        `}</style>
+          `}
+        </style>
       </DialogContent>
     </Dialog>
   );

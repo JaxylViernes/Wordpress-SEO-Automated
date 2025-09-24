@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Key, Globe, Bot, Bell, Shield, User, Trash2, Eye, EyeOff, Check, X, Loader2, Plus, RotateCcw } from "lucide-react";
+import { Save, Key, Globe, Bot, Bell, Shield, User, Trash2, Eye, EyeOff, Check, X, Loader2, Plus, RotateCcw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,10 +12,22 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 
-// ADD THIS IMPORT
+// Add these imports for the confirmation dialog
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+// Sanitizer import
 import { Sanitizer } from "@/utils/inputSanitizer";
 
-// API Key interfaces (keeping existing API key types)
+// Keep existing interfaces...
 interface UserApiKey {
   id: string;
   provider: string;
@@ -35,58 +47,39 @@ interface ApiKeyFormData {
 
 interface ApiKeyStatus {
   providers: {
-    openai: {
-      configured: boolean;
-      keyName?: string;
-      lastValidated?: string;
-      status: string;
-    };
-    anthropic: {
-      configured: boolean;
-      keyName?: string;
-      lastValidated?: string;
-      status: string;
-    };
-    google_pagespeed: {
-      configured: boolean;
-      keyName?: string;
-      lastValidated?: string;
-      status: string;
-    };
+    openai: { configured: boolean; keyName?: string; lastValidated?: string; status: string; };
+    anthropic: { configured: boolean; keyName?: string; lastValidated?: string; status: string; };
+    google_pagespeed: { configured: boolean; keyName?: string; lastValidated?: string; status: string; };
   };
 }
 
-// Settings interface
 interface UserSettings {
-  profile: {
-    name: string;
-    email: string;
-    company: string;
-    timezone: string;
-  };
-  notifications: {
-    emailReports: boolean;
-    contentGenerated: boolean;
-    seoIssues: boolean;
-    systemAlerts: boolean;
-  };
-  automation: {
-    defaultAiModel: string;
-    autoFixSeoIssues: boolean;
-    contentGenerationFrequency: string;
-    reportGeneration: string;
-  };
-  security: {
-    twoFactorAuth: boolean;
-    sessionTimeout: number;
-    allowApiAccess: boolean;
-  };
+  profile: { name: string; email: string; company: string; timezone: string; };
+  notifications: { emailReports: boolean; contentGenerated: boolean; seoIssues: boolean; systemAlerts: boolean; };
+  automation: { defaultAiModel: string; autoFixSeoIssues: boolean; contentGenerationFrequency: string; reportGeneration: string; };
+  security: { twoFactorAuth: boolean; sessionTimeout: number; allowApiAccess: boolean; };
+}
+
+// Delete confirmation state type
+interface DeleteConfirmation {
+  isOpen: boolean;
+  type: 'apiKey' | 'website' | null;
+  itemId: string;
+  itemName: string;
 }
 
 export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("profile");
+  
+  // Delete confirmation state
+  const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation>({
+    isOpen: false,
+    type: null,
+    itemId: '',
+    itemName: ''
+  });
   
   // API Key management state
   const [isAddingKey, setIsAddingKey] = useState(false);
@@ -146,17 +139,15 @@ export default function Settings() {
       if (!response.ok) throw new Error('Failed to fetch API key status');
       return response.json();
     },
-    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchInterval: 30000,
   });
 
-  // Update settings mutation (real API call)
+  // Update settings mutation
   const updateSettings = useMutation({
     mutationFn: async (newSettings: UserSettings) => {
       const response = await fetch("/api/user/settings", {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(newSettings)
       });
@@ -169,9 +160,7 @@ export default function Settings() {
       return response.json();
     },
     onSuccess: (updatedSettings) => {
-      // Update the query cache with the new settings
       queryClient.setQueryData(["/api/user/settings"], updatedSettings);
-      
       toast({
         title: "Settings Saved",
         description: "Your settings have been successfully updated.",
@@ -202,9 +191,7 @@ export default function Settings() {
       return response.json();
     },
     onSuccess: (result) => {
-      // Update the query cache with the default settings
       queryClient.setQueryData(["/api/user/settings"], result.settings);
-      
       toast({
         title: "Settings Reset",
         description: "Your settings have been reset to defaults.",
@@ -219,14 +206,12 @@ export default function Settings() {
     },
   });
 
-  // API key mutations (keeping existing)
+  // API key mutations
   const addApiKey = useMutation({
     mutationFn: async (keyData: ApiKeyFormData) => {
       const response = await fetch("/api/user/api-keys", {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(keyData)
       });
@@ -338,16 +323,15 @@ export default function Settings() {
   // UPDATED: handleSave with sanitization
   const handleSave = () => {
     if (settings) {
-      // Sanitize settings before saving
       const sanitizedSettings = {
         profile: {
           name: Sanitizer.sanitizeText(settings.profile.name),
-          email: settings.profile.email, // Already validated in updateSetting
+          email: settings.profile.email,
           company: Sanitizer.sanitizeText(settings.profile.company),
-          timezone: settings.profile.timezone, // From select, safe
+          timezone: settings.profile.timezone,
         },
-        notifications: settings.notifications, // All booleans, safe
-        automation: settings.automation, // All from selects or booleans, safe
+        notifications: settings.notifications,
+        automation: settings.automation,
         security: {
           twoFactorAuth: settings.security.twoFactorAuth,
           sessionTimeout: Math.min(168, Math.max(1, settings.security.sessionTimeout)),
@@ -363,18 +347,15 @@ export default function Settings() {
     resetSettings.mutate();
   };
 
-  // UPDATED: updateSetting with sanitization
   const updateSetting = (section: keyof UserSettings, key: string, value: any) => {
     if (!settings) return;
     
     let sanitizedValue = value;
     
-    // Apply sanitization based on field type
     if (section === 'profile') {
       switch (key) {
         case 'name':
         case 'company':
-          // Sanitize text fields
           sanitizedValue = Sanitizer.sanitizeText(value);
           break;
           
@@ -392,7 +373,6 @@ export default function Settings() {
           break;
       }
     } else if (section === 'security' && key === 'sessionTimeout') {
-      // Sanitize number
       const numValue = parseInt(value);
       if (!isNaN(numValue)) {
         sanitizedValue = Math.min(168, Math.max(1, numValue));
@@ -408,9 +388,7 @@ export default function Settings() {
     });
   };
 
-  // UPDATED: handleAddApiKey with sanitization
   const handleAddApiKey = () => {
-    // Sanitize key name
     const sanitizedKeyName = Sanitizer.sanitizeText(newKeyForm.keyName);
     
     if (!newKeyForm.provider || !sanitizedKeyName || !newKeyForm.apiKey) {
@@ -422,7 +400,6 @@ export default function Settings() {
       return;
     }
     
-    // Validate key name length
     if (sanitizedKeyName.length < 2 || sanitizedKeyName.length > 100) {
       toast({
         title: "Invalid Key Name",
@@ -432,7 +409,6 @@ export default function Settings() {
       return;
     }
     
-    // Basic API key format validation
     const apiKey = newKeyForm.apiKey.trim();
     if (newKeyForm.provider === 'openai' && !apiKey.startsWith('sk-')) {
       toast({
@@ -453,9 +429,9 @@ export default function Settings() {
     }
     
     addApiKey.mutate({
-      provider: newKeyForm.provider, // From select, safe
+      provider: newKeyForm.provider,
       keyName: sanitizedKeyName,
-      apiKey: apiKey // Don't alter the API key itself
+      apiKey: apiKey
     });
   };
 
@@ -488,7 +464,6 @@ export default function Settings() {
       errors.push('Password confirmation is required');
     }
     
-    // Check password length limits
     if (passwordData.newPassword && passwordData.newPassword.length > 200) {
       errors.push('Password is too long (maximum 200 characters)');
     }
@@ -507,7 +482,6 @@ export default function Settings() {
       errors.push('New password must be different from current password');
     }
     
-    // Check for common weak passwords
     const weakPasswords = ['password', '12345678', 'qwerty', 'abc12345', 'password123'];
     if (passwordData.newPassword && weakPasswords.includes(passwordData.newPassword.toLowerCase())) {
       errors.push('This password is too common. Please choose a stronger password');
@@ -517,7 +491,6 @@ export default function Settings() {
     return errors.length === 0;
   };
 
-  // Add form submit handler
   const handlePasswordChange = () => {
     if (!validatePasswordForm()) {
       toast({
@@ -574,7 +547,6 @@ export default function Settings() {
     }
   };
 
-  // Loading state
   if (settingsLoading) {
     return (
       <div className="py-6">
@@ -588,7 +560,6 @@ export default function Settings() {
     );
   }
 
-  // Error state
   if (settingsError || !settings) {
     return (
       <div className="py-6">
@@ -712,7 +683,7 @@ export default function Settings() {
             </Card>
           </TabsContent>
 
-          {/* API Keys (Integrations) - Complete Implementation */}
+          {/* API Keys (Integrations) */}
           <TabsContent value="integrations" className="space-y-6">
             <Card>
               <CardHeader>
@@ -764,7 +735,6 @@ export default function Settings() {
                           placeholder="e.g., My OpenAI Key"
                           value={newKeyForm.keyName}
                           onChange={(e) => {
-                            // Sanitize on input
                             const sanitized = Sanitizer.sanitizeText(e.target.value);
                             setNewKeyForm(prev => ({ ...prev, keyName: sanitized }));
                           }}
@@ -874,7 +844,7 @@ export default function Settings() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => deleteApiKey.mutate(apiKey.id)}
+                          onClick={() => openDeleteConfirmation('apiKey', apiKey.id, apiKey.keyName)}
                           disabled={deleteApiKey.isPending}
                         >
                           <Trash2 className="w-3 h-3" />
@@ -890,37 +860,6 @@ export default function Settings() {
                       <p className="text-sm">Add your first API key to get started with AI content generation.</p>
                     </div>
                   )}
-                </div>
-
-                {/* Provider Status Overview */}
-                <div className="mt-6 pt-6 border-t">
-                  <h4 className="font-medium mb-3">Service Status</h4>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center p-3 border rounded">
-                      <Bot className="w-8 h-8 mx-auto mb-2 text-green-600" />
-                      <p className="font-medium">OpenAI</p>
-                      {getStatusBadge(
-                        apiKeyStatus?.providers?.openai?.configured ? 'valid' : 'invalid',
-                        'openai'
-                      )}
-                    </div>
-                    <div className="text-center p-3 border rounded">
-                      <Bot className="w-8 h-8 mx-auto mb-2 text-blue-600" />
-                      <p className="font-medium">Anthropic</p>
-                      {getStatusBadge(
-                        apiKeyStatus?.providers?.anthropic?.configured ? 'valid' : 'invalid',
-                        'anthropic'
-                      )}
-                    </div>
-                    <div className="text-center p-3 border rounded">
-                      <Globe className="w-8 h-8 mx-auto mb-2 text-orange-600" />
-                      <p className="font-medium">PageSpeed</p>
-                      {getStatusBadge(
-                        apiKeyStatus?.providers?.google_pagespeed?.configured ? 'valid' : 'invalid',
-                        'google_pagespeed'
-                      )}
-                    </div>
-                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -951,12 +890,25 @@ export default function Settings() {
                         }>
                           {website.status}
                         </Badge>
-                        <Button size="sm" variant="outline">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => openDeleteConfirmation('website', website.id, website.name)}
+                          disabled={deleteWebsite.isPending}
+                        >
                           <Trash2 className="w-3 h-3" />
                         </Button>
                       </div>
                     </div>
                   ))}
+                  
+                  {(!websites || websites.length === 0) && (
+                    <div className="text-center py-8 text-gray-500">
+                      <Globe className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                      <p>No WordPress sites connected yet.</p>
+                      <p className="text-sm">Connect your first website to start generating content.</p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -996,7 +948,7 @@ export default function Settings() {
                   </p>
                 </div>
 
-                <div>
+                {/* <div>
                   <Label htmlFor="frequency">Content Generation Frequency</Label>
                   <Select
                     value={settings.automation.contentGenerationFrequency}
@@ -1013,7 +965,7 @@ export default function Settings() {
                       <SelectItem value="monthly">Monthly</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
+                </div> */}
 
                 <div>
                   <Label htmlFor="reports">Report Generation</Label>
@@ -1033,7 +985,7 @@ export default function Settings() {
                   </Select>
                 </div>
 
-                <div className="flex items-center justify-between">
+                {/* <div className="flex items-center justify-between">
                   <div>
                     <Label htmlFor="autoFix">Auto-fix SEO Issues</Label>
                     <p className="text-sm text-gray-500">
@@ -1045,7 +997,7 @@ export default function Settings() {
                     checked={settings.automation.autoFixSeoIssues}
                     onCheckedChange={(checked) => updateSetting("automation", "autoFixSeoIssues", checked)}
                   />
-                </div>
+                </div> */}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1087,7 +1039,6 @@ export default function Settings() {
                     value={settings.security.sessionTimeout}
                     onChange={(e) => updateSetting("security", "sessionTimeout", parseInt(e.target.value))}
                     onBlur={(e) => {
-                      // Ensure value is within bounds on blur
                       const value = parseInt(e.target.value);
                       if (isNaN(value) || value < 1) {
                         updateSetting("security", "sessionTimeout", 1);
@@ -1143,7 +1094,7 @@ export default function Settings() {
                         value={passwordData.currentPassword}
                         onChange={(e) => setPasswordData(prev => ({ 
                           ...prev, 
-                          currentPassword: e.target.value // Don't sanitize passwords
+                          currentPassword: e.target.value
                         }))}
                         maxLength={200}
                         autoComplete="current-password"
@@ -1160,7 +1111,7 @@ export default function Settings() {
                         value={passwordData.newPassword}
                         onChange={(e) => setPasswordData(prev => ({ 
                           ...prev, 
-                          newPassword: e.target.value // Don't sanitize passwords
+                          newPassword: e.target.value
                         }))}
                         maxLength={200}
                         autoComplete="new-password"
@@ -1180,7 +1131,7 @@ export default function Settings() {
                         value={passwordData.confirmPassword}
                         onChange={(e) => setPasswordData(prev => ({ 
                           ...prev, 
-                          confirmPassword: e.target.value // Don't sanitize passwords
+                          confirmPassword: e.target.value
                         }))}
                         maxLength={200}
                         autoComplete="new-password"
@@ -1188,7 +1139,6 @@ export default function Settings() {
                       />
                     </div>
                     
-                    {/* Password strength indicator */}
                     {passwordData.newPassword && (
                       <div className="text-xs">
                         Password strength: 
@@ -1227,6 +1177,45 @@ export default function Settings() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteConfirmation.isOpen} onOpenChange={closeDeleteConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="w-5 h-5 text-red-500" />
+                <span>Confirm Deletion</span>
+              </div>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteConfirmation.type === 'apiKey' ? (
+                <>
+                  Are you sure you want to delete the API key <strong>"{deleteConfirmation.itemName}"</strong>?
+                  <br /><br />
+                  This action cannot be undone. You will need to add the key again if you want to use it in the future.
+                </>
+              ) : (
+                <>
+                  Are you sure you want to disconnect <strong>"{deleteConfirmation.itemName}"</strong>?
+                  <br /><br />
+                  This will remove the website from your account. You can reconnect it later, but you will need to re-enter your WordPress credentials.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmDelete}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
+
