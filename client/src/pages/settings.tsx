@@ -98,6 +98,14 @@ export default function Settings() {
   const [validatingKeys, setValidatingKeys] = useState<Set<string>>(new Set());
   const [showApiKey, setShowApiKey] = useState(false);
 
+  // Password state
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
+
   // Fetch real user settings
   const { data: settings, isLoading: settingsLoading, error: settingsError } = useQuery<UserSettings>({
     queryKey: ["/api/user/settings"],
@@ -303,6 +311,30 @@ export default function Settings() {
     },
   });
 
+  // Add password change mutation
+  const changePassword = useMutation({
+    mutationFn: api.changePassword,
+    onSuccess: () => {
+      toast({
+        title: "Password Changed",
+        description: "Your password has been successfully updated.",
+      });
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+      setPasswordErrors([]);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Password Change Failed", 
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // UPDATED: handleSave with sanitization
   const handleSave = () => {
     if (settings) {
@@ -440,66 +472,6 @@ export default function Settings() {
     });
   };
 
-  const getStatusBadge = (status: string, provider: string) => {
-    const providerStatus = apiKeyStatus?.providers?.[provider as keyof typeof apiKeyStatus.providers];
-    
-    if (!providerStatus?.configured) {
-      return <Badge className="bg-gray-100 text-gray-800">Not Configured</Badge>;
-    }
-    
-    if (status === 'valid') {
-      return <Badge className="bg-green-100 text-green-800">✔ Active</Badge>;
-    } else if (status === 'invalid') {
-      return <Badge className="bg-red-100 text-red-800">✗ Invalid</Badge>;
-    } else {
-      return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>;
-    }
-  };
-
-  const getProviderIcon = (provider: string) => {
-    switch (provider) {
-      case 'openai':
-        return <Bot className="w-6 h-6 text-green-600" />;
-      case 'anthropic':
-        return <Bot className="w-6 h-6 text-blue-600" />;
-      case 'google_pagespeed':
-        return <Globe className="w-6 h-6 text-orange-600" />;
-      default:
-        return <Key className="w-6 h-6 text-gray-400" />;
-    }
-  };
-
-  const [passwordData, setPasswordData] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
-  });
-  const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
-
-  // Add password change mutation
-  const changePassword = useMutation({
-    mutationFn: api.changePassword,
-    onSuccess: () => {
-      toast({
-        title: "Password Changed",
-        description: "Your password has been successfully updated.",
-      });
-      setPasswordData({
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: ''
-      });
-      setPasswordErrors([]);
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Password Change Failed", 
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
   // UPDATED: validatePasswordForm with enhanced validation
   const validatePasswordForm = (): boolean => {
     const errors: string[] = [];
@@ -559,6 +531,7 @@ export default function Settings() {
     changePassword.mutate(passwordData);
   };
 
+  // Helper functions
   const getStatusBadge = (status: string, provider: string) => {
     const providerStatus = apiKeyStatus?.providers?.[provider as keyof typeof apiKeyStatus.providers];
     
@@ -662,11 +635,10 @@ export default function Settings() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="integrations">API Keys</TabsTrigger>
             <TabsTrigger value="automation">Automation</TabsTrigger>
-            {/* <TabsTrigger value="notifications">Notifications</TabsTrigger> */}
             <TabsTrigger value="security">Security</TabsTrigger>
           </TabsList>
 
