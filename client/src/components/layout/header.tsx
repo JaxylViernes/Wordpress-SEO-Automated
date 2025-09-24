@@ -768,13 +768,13 @@ const { data: posts } = useQuery({
               <div className="relative w-full max-w-lg" ref={searchRef}>
                 {/* Search Input */}
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                  {/* <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                     <Search className={cn(
                       "w-5 h-5 transition-colors",
                       searchQuery ? "text-gray-600" : "text-gray-400"
                     )} />
-                  </div>
-                  <Input
+                  </div> */}
+                  {/* <Input
                     ref={inputRef}
                     type="text"
                     value={searchQuery}
@@ -783,7 +783,7 @@ const { data: posts } = useQuery({
                     onFocus={() => searchQuery && setShowResults(true)}
                     placeholder="Search websites, reports, posts..."
                     className="w-full pl-10 pr-10 py-2 border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
-                  />
+                  /> */}
                   {searchQuery && (
                     <button
                       onClick={clearSearch}

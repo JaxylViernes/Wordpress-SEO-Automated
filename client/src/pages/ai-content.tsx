@@ -25,6 +25,7 @@ import {
   Image,
 } from "lucide-react";
 import AutoContentScheduler from "./auto-content-scheduler";
+import { sanitizeHtmlContent, sanitizeFormInput } from "@/utils/sanitize-HTML";
 
 // API utility functions
 const api = {
@@ -136,7 +137,22 @@ const api = {
     });
     if (!response.ok) throw new Error('Failed to replace image');
     return response.json();
+  },
+
+
+  async deleteContent(contentId) {
+  const response = await fetch(`/api/user/content/${contentId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || "Failed to delete content");
   }
+  
+  return response.json();
+},
 };
 
 // Utility functions
@@ -340,6 +356,13 @@ export default function AIContent() {
   const [selectedImageToReplace, setSelectedImageToReplace] = useState(null);
   const [showImagePicker, setShowImagePicker] = useState(false);
   
+  const [activeTab, setActiveTab] = useState("unpublished"); // "published" or "unpublished"
+const [isDeleting, setIsDeleting] = useState(false);
+const [deletingContentId, setDeletingContentId] = useState(null);
+const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+const [contentToDelete, setContentToDelete] = useState(null);
+
+
   // Refs
   const bodyTextareaRef = useRef(null);
 
@@ -781,38 +804,38 @@ export default function AIContent() {
   };
 
   const saveContent = async () => {
-    if (!validateEditForm() || !editingContent) return;
+  if (!validateEditForm() || !editingContent) return;
 
-    setIsSaving(true);
+  setIsSaving(true);
 
-    try {
-      const keywords = editFormData.keywords
-        .split(",")
-        .map((k) => k.trim())
-        .filter((k) => k);
+  try {
+    const keywords = editFormData.keywords
+      .split(",")
+      .map((k) => k.trim())
+      .filter((k) => k);
 
-      await api.updateContent(editingContent.id, {
-        title: editFormData.title,
-        body: editFormData.body,
-        excerpt: editFormData.excerpt,
-        seoKeywords: keywords,
-        tone: editFormData.tone,
-        brandVoice: editFormData.brandVoice || undefined,
-        targetAudience: editFormData.targetAudience || undefined,
-        eatCompliance: editFormData.eatCompliance,
-        websiteId: selectedWebsite,
-      });
+    await api.updateContent(editingContent.id, {
+      title: sanitizeFormInput(editFormData.title),
+      body: sanitizeHtmlContent(editFormData.body, true), // Pass true to preserve HTML
+      excerpt: sanitizeFormInput(editFormData.excerpt),
+      seoKeywords: keywords,
+      tone: editFormData.tone,
+      brandVoice: editFormData.brandVoice || undefined,
+      targetAudience: editFormData.targetAudience || undefined,
+      eatCompliance: editFormData.eatCompliance,
+      websiteId: selectedWebsite,
+    });
 
-      await loadContent();
-      closeEditDialog();
+    await loadContent();
+    closeEditDialog();
 
-      showToast("Content Saved Successfully", "Your changes have been saved to the database.");
-    } catch (error) {
-      showToast("Save Failed", error.message || "Failed to save content changes", "destructive");
-    } finally {
-      setIsSaving(false);
-    }
-  };
+    showToast("Content Saved Successfully", "Your changes have been saved to the database.");
+  } catch (error) {
+    showToast("Save Failed", error.message || "Failed to save content changes", "destructive");
+  } finally {
+    setIsSaving(false);
+  }
+};
 
   const regenerateContent = async () => {
     if (!validateEditForm() || !editingContent) return;
@@ -888,6 +911,35 @@ export default function AIContent() {
     }
   };
 
+  const deleteContent = async (contentId) => {
+  setIsDeleting(true);
+  setDeletingContentId(contentId);
+  
+  try {
+    await api.deleteContent(contentId);
+    await loadContent();
+    showToast("Content Deleted", "Content has been successfully deleted.");
+    setShowDeleteConfirm(false);
+    setContentToDelete(null);
+  } catch (error) {
+    showToast("Delete Failed", error.message || "Failed to delete content. Please try again.", "destructive");
+  } finally {
+    setIsDeleting(false);
+    setDeletingContentId(null);
+  }
+};
+
+const openDeleteConfirm = (item) => {
+  setContentToDelete(item);
+  setShowDeleteConfirm(true);
+};
+
+const closeDeleteConfirm = () => {
+  setShowDeleteConfirm(false);
+  setContentToDelete(null);
+};
+
+
   const getWebsiteName = (websiteId) => {
     const website = websites.find((w) => w.id === websiteId);
     return website?.name || "Unknown Website";
@@ -912,6 +964,19 @@ export default function AIContent() {
     validScores.length > 0
       ? Math.round(validScores.reduce((sum, item) => sum + item.seoScore, 0) / validScores.length)
       : null;
+
+
+      const tabFilteredContent = filteredContent.filter(item => {
+  if (activeTab === "published") {
+    return item.status === "published";
+  } else {
+    return item.status !== "published";
+  }
+});
+
+// Update metrics to use filtered content
+const publishedCount = filteredContent.filter(c => c.status === "published").length;
+const unpublishedCount = filteredContent.filter(c => c.status !== "published").length;
 
   return (
     <div className="py-6 bg-gray-50 min-h-screen">
@@ -1452,12 +1517,12 @@ export default function AIContent() {
 
                         <div className="prose prose-lg max-w-none">
                           <div
-                            className="wordpress-content"
-                            dangerouslySetInnerHTML={{
-                              __html: editFormData.body || "<p>Start typing your content...</p>",
-                            }}
-                            style={{ lineHeight: "1.7", fontSize: "16px" }}
-                          />
+  className="wordpress-content"
+  dangerouslySetInnerHTML={{
+    __html: editFormData.body || "<p>Start typing your content...</p>", 
+  }}
+  style={{ lineHeight: "1.7", fontSize: "16px" }}
+/>
                         </div>
 
                         {(editFormData.targetAudience || editFormData.brandVoice || editFormData.eatCompliance) && (
@@ -2153,180 +2218,323 @@ export default function AIContent() {
           </div>
         )}
 
+
+{/* Delete Confirmation Dialog */}
+{showDeleteConfirm && contentToDelete && (
+  <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+      <div 
+        className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+        onClick={closeDeleteConfirm}
+      ></div>
+      
+      <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+        <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+          <div className="sm:flex sm:items-start">
+            <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+              <AlertTriangle className="h-6 w-6 text-red-600" />
+            </div>
+            <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+              <h3 className="text-lg leading-6 font-medium text-gray-900">
+                Delete Content
+              </h3>
+              <div className="mt-2">
+                <p className="text-sm text-gray-500">
+                  Are you sure you want to delete "{contentToDelete.title}"? This action cannot be undone.
+                </p>
+                {contentToDelete.status === "published" && (
+                  <p className="mt-2 text-sm text-yellow-600 bg-yellow-50 p-2 rounded">
+                    Warning: This content is currently published. Deleting it will only remove it from your database, not from WordPress.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+          <button
+            type="button"
+            onClick={() => deleteContent(contentToDelete.id)}
+            disabled={isDeleting}
+            className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
+          >
+            {isDeleting ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={closeDeleteConfirm}
+            disabled={isDeleting}
+            className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
         {/* Content List */}
-        {selectedWebsite ? (
-          <div className="bg-white shadow overflow-hidden sm:rounded-md">
-            <div className="px-4 py-5 sm:p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Generated Content</h3>
-                  <p className="text-sm text-gray-500">Manage AI-generated content for {getWebsiteName(selectedWebsite)}</p>
+{selectedWebsite ? (
+  <div className="bg-white shadow overflow-hidden sm:rounded-md">
+    <div className="px-4 py-5 sm:p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h3 className="text-lg leading-6 font-medium text-gray-900">Generated Content</h3>
+          <p className="text-sm text-gray-500">
+            Manage AI-generated content for {getWebsiteName(selectedWebsite)}
+          </p>
+        </div>
+        <button
+          onClick={loadContent}
+          disabled={isLoadingContent}
+          className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3 h-3 mr-1 ${isLoadingContent ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+          <button
+            onClick={() => setActiveTab("unpublished")}
+            className={`${
+              activeTab === "unpublished"
+                ? "border-blue-500 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200`}
+          >
+            Unpublished
+            <span className={`ml-2 ${
+              activeTab === "unpublished"
+                ? "bg-blue-100 text-blue-600"
+                : "bg-gray-100 text-gray-900"
+            } inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium`}>
+              {unpublishedCount}
+            </span>
+          </button>
+          
+          <button
+            onClick={() => setActiveTab("published")}
+            className={`${
+              activeTab === "published"
+                ? "border-green-500 text-green-600"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200`}
+          >
+            Published
+            <span className={`ml-2 ${
+              activeTab === "published"
+                ? "bg-green-100 text-green-600"
+                : "bg-gray-100 text-gray-900"
+            } inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium`}>
+              {publishedCount}
+            </span>
+          </button>
+        </nav>
+      </div>
+
+      {isLoadingContent ? (
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="border rounded-lg p-6 animate-pulse">
+              <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+              <div className="h-3 bg-gray-200 rounded w-full mb-4"></div>
+              <div className="h-3 bg-gray-200 rounded w-2/3"></div>
+            </div>
+          ))}
+        </div>
+      ) : tabFilteredContent.length > 0 ? (
+        <div className="space-y-6">
+          {tabFilteredContent.map((item) => (
+            <div key={item.id} className="border rounded-lg p-6 hover:shadow-sm transition-shadow">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3 mb-2">
+                    <h4 className="font-medium text-gray-900 text-lg">{item.title}</h4>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(item.status)}`}>
+                      {getStatusIcon(item.status)}
+                      <span className="ml-1 capitalize">{item.status.replace("_", " ")}</span>
+                    </span>
+                    {item.aiProvider && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                        {getProviderIcon(item.aiProvider)}
+                        <span className="ml-1">{getProviderName(item.aiProvider)}</span>
+                      </span>
+                    )}
+                    {item.hasImages && item.imageCount > 0 && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
+                        <Image className="w-3 h-3 mr-1" />
+                        {item.imageCount} image{item.imageCount > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-600 mb-3 leading-relaxed">
+                    {item.excerpt || (item.body && item.body.substring(0, 200) + "...")}
+                  </p>
                 </div>
-                <button
-                  onClick={loadContent}
-                  disabled={isLoadingContent}
-                  className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3 h-3 mr-1 ${isLoadingContent ? "animate-spin" : ""}`} />
-                  Refresh
-                </button>
+                <div className="flex items-center space-x-2 ml-4">
+                  {/* Publish button - only for unpublished content */}
+                  {activeTab === "unpublished" && (
+                    <button
+                      onClick={() => publishContent(item.id)}
+                      disabled={isPublishing}
+                      className={`inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 ${
+                        item.status === "publish_failed"
+                          ? "bg-orange-600 hover:bg-orange-700 focus:ring-orange-500"
+                          : "bg-green-600 hover:bg-green-700 focus:ring-green-500"
+                      }`}
+                    >
+                      <Play className="w-3 h-3 mr-1" />
+                      {item.status === "publish_failed" ? "Retry" : "Publish"}
+                    </button>
+                  )}
+                  
+                  {/* Edit button - only for unpublished content */}
+                  {activeTab === "unpublished" && (
+                    <button
+                      onClick={() => openEditDialog(item)}
+                      className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      <Edit className="w-3 h-3 mr-1" />
+                      Edit
+                    </button>
+                  )}
+                  
+                  {/* Delete button - for all content */}
+                  <button
+                    onClick={() => openDeleteConfirm(item)}
+                    disabled={isDeleting && deletingContentId === item.id}
+                    className="inline-flex items-center px-3 py-1.5 border border-red-300 text-xs font-medium rounded text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                  >
+                    {isDeleting && deletingContentId === item.id ? (
+                      <>
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3 h-3 mr-1" />
+                        Delete
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
-              {isLoadingContent ? (
-                <div className="space-y-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="border rounded-lg p-6 animate-pulse">
-                      <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                      <div className="h-3 bg-gray-200 rounded w-full mb-4"></div>
-                      <div className="h-3 bg-gray-200 rounded w-2/3"></div>
-                    </div>
-                  ))}
-                </div>
-              ) : filteredContent.length > 0 ? (
-                <div className="space-y-6">
-                  {filteredContent.map((item) => (
-                    <div key={item.id} className="border rounded-lg p-6 hover:shadow-sm transition-shadow">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2">
-                            <h4 className="font-medium text-gray-900 text-lg">{item.title}</h4>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(item.status)}`}>
-                              {getStatusIcon(item.status)}
-                              <span className="ml-1 capitalize">{item.status.replace("_", " ")}</span>
-                            </span>
-                            {item.aiProvider && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
-                                {getProviderIcon(item.aiProvider)}
-                                <span className="ml-1">{getProviderName(item.aiProvider)}</span>
-                              </span>
-                            )}
-                            {item.hasImages && item.imageCount > 0 && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
-                                <Image className="w-3 h-3 mr-1" />
-                                {item.imageCount} image{item.imageCount > 1 ? "s" : ""}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-600 mb-3 leading-relaxed">
-                            {item.excerpt || (item.body && item.body.substring(0, 200) + "...")}
-                          </p>
-                        </div>
-                        <div className="flex items-center space-x-2 ml-4">
-                          {(item.status === "draft" || item.status === "pending_approval" || item.status === "approved" || item.status === "publish_failed") && (
-                            <button
-                              onClick={() => publishContent(item.id)}
-                              disabled={isPublishing}
-                              className={`inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 ${
-                                item.status === "publish_failed"
-                                  ? "bg-orange-600 hover:bg-orange-700 focus:ring-orange-500"
-                                  : "bg-green-600 hover:bg-green-700 focus:ring-green-500"
-                              }`}
-                            >
-                              <Play className="w-3 h-3 mr-1" />
-                              {item.status === "publish_failed" ? "Retry Publish" : "Publish"}
-                            </button>
-                          )}
-                          <button
-                            onClick={() => openEditDialog(item)}
-                            className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                          >
-                            <Edit className="w-3 h-3 mr-1" />
-                            Edit
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
-                        <div className="text-center">
-                          <div className={`text-lg font-bold ${typeof item.seoScore === "number" && item.seoScore > 0 ? getScoreColor(item.seoScore) : "text-red-500"}`}>
-                            {typeof item.seoScore === "number" && item.seoScore > 0 ? `${item.seoScore}%` : "Error"}
-                          </div>
-                          <div className="text-xs text-gray-500">SEO Score</div>
-                        </div>
-                        <div className="text-center">
-                          <div className={`text-lg font-bold ${typeof item.readabilityScore === "number" && item.readabilityScore > 0 ? getScoreColor(item.readabilityScore) : "text-red-500"}`}>
-                            {typeof item.readabilityScore === "number" && item.readabilityScore > 0 ? `${item.readabilityScore}%` : "Error"}
-                          </div>
-                          <div className="text-xs text-gray-500">Readability</div>
-                        </div>
-                        <div className="text-center">
-                          <div className={`text-lg font-bold ${typeof item.brandVoiceScore === "number" && item.brandVoiceScore > 0 ? getScoreColor(item.brandVoiceScore) : "text-red-500"}`}>
-                            {typeof item.brandVoiceScore === "number" && item.brandVoiceScore > 0 ? `${item.brandVoiceScore}%` : "Error"}
-                          </div>
-                          <div className="text-xs text-gray-500">Brand Voice</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-lg font-bold text-blue-600">
-                            {item.wordpressPostId ? `#${item.wordpressPostId}` : "-"}
-                          </div>
-                          <div className="text-xs text-gray-500">WP Post ID</div>
-                        </div>
-                        <div className="text-center">
-                          <div className="text-lg font-bold text-orange-600">
-                            {item.hasImages && item.imageCostCents ? `$${(item.imageCostCents / 100).toFixed(3)}` : "-"}
-                          </div>
-                          <div className="text-xs text-gray-500">Image Cost</div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs text-gray-500 border-t pt-3">
-                        <div className="flex items-center space-x-4">
-                          <span>Tokens: {item.tokensUsed || "N/A"}</span>
-                          <span>Text Cost: ${typeof item.costUsd === "number" ? (item.costUsd / 100).toFixed(4) : "N/A"}</span>
-                          {item.hasImages && item.imageCostCents && (
-                            <span>Image Cost: ${(item.imageCostCents / 100).toFixed(4)}</span>
-                          )}
-                          {item.seoKeywords && item.seoKeywords.length > 0 && (
-                            <span>Keywords: {item.seoKeywords.join(", ")}</span>
-                          )}
-                          {item.eatCompliance && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-xs">
-                              <Shield className="w-3 h-3 mr-1" />
-                              E-E-A-T
-                            </span>
-                          )}
-                        </div>
-                        <div>
-                          <span>Created: {formatDistanceToNow(item.createdAt)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <Bot className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No content generated yet</h3>
-                  <p className="mt-1 text-sm text-gray-500">Start by generating your first AI-powered content piece with real-time analysis and scoring.</p>
-                  <div className="mt-6">
-                    <button
-                      onClick={() => setIsGenerateDialogOpen(true)}
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      Generate Content
-                    </button>
+              {/* Rest of the content card remains the same */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+                <div className="text-center">
+                  <div className={`text-lg font-bold ${typeof item.seoScore === "number" && item.seoScore > 0 ? getScoreColor(item.seoScore) : "text-red-500"}`}>
+                    {typeof item.seoScore === "number" && item.seoScore > 0 ? `${item.seoScore}%` : "Error"}
                   </div>
+                  <div className="text-xs text-gray-500">SEO Score</div>
                 </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="bg-white shadow overflow-hidden sm:rounded-md">
-            <div className="text-center py-12">
-              <Bot className="mx-auto h-12 w-12 text-gray-400" />
-              <h3 className="mt-2 text-sm font-medium text-gray-900">
-                {isLoadingWebsites ? "Loading websites..." : "Select a website"}
-              </h3>
-              <p className="mt-1 text-sm text-gray-500">
-                {isLoadingWebsites
-                  ? "Please wait while we fetch your websites from the database."
-                  : "Choose a website to view and manage its AI-generated content with real-time analytics and error reporting."}
-              </p>
-            </div>
-          </div>
-        )}
+                <div className="text-center">
+                  <div className={`text-lg font-bold ${typeof item.readabilityScore === "number" && item.readabilityScore > 0 ? getScoreColor(item.readabilityScore) : "text-red-500"}`}>
+                    {typeof item.readabilityScore === "number" && item.readabilityScore > 0 ? `${item.readabilityScore}%` : "Error"}
+                  </div>
+                  <div className="text-xs text-gray-500">Readability</div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-lg font-bold ${typeof item.brandVoiceScore === "number" && item.brandVoiceScore > 0 ? getScoreColor(item.brandVoiceScore) : "text-red-500"}`}>
+                    {typeof item.brandVoiceScore === "number" && item.brandVoiceScore > 0 ? `${item.brandVoiceScore}%` : "Error"}
+                  </div>
+                  <div className="text-xs text-gray-500">Brand Voice</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-blue-600">
+                    {item.wordpressPostId ? `#${item.wordpressPostId}` : "-"}
+                  </div>
+                  <div className="text-xs text-gray-500">WP Post ID</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-orange-600">
+                    {item.hasImages && item.imageCostCents ? `$${(item.imageCostCents / 100).toFixed(3)}` : "-"}
+                  </div>
+                  <div className="text-xs text-gray-500">Image Cost</div>
+                </div>
+              </div>
 
+              <div className="flex items-center justify-between text-xs text-gray-500 border-t pt-3">
+                <div className="flex items-center space-x-4">
+                  <span>Tokens: {item.tokensUsed || "N/A"}</span>
+                  <span>Text Cost: ${typeof item.costUsd === "number" ? (item.costUsd / 100).toFixed(4) : "N/A"}</span>
+                  {item.hasImages && item.imageCostCents && (
+                    <span>Image Cost: ${(item.imageCostCents / 100).toFixed(4)}</span>
+                  )}
+                  {item.seoKeywords && item.seoKeywords.length > 0 && (
+                    <span>Keywords: {item.seoKeywords.join(", ")}</span>
+                  )}
+                  {item.eatCompliance && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-xs">
+                      <Shield className="w-3 h-3 mr-1" />
+                      E-E-A-T
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <span>Created: {formatDistanceToNow(item.createdAt)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12">
+          <Bot className="mx-auto h-12 w-12 text-gray-400" />
+          <h3 className="mt-2 text-sm font-medium text-gray-900">
+            No {activeTab} content
+          </h3>
+          <p className="mt-1 text-sm text-gray-500">
+            {activeTab === "published" 
+              ? "You haven't published any content yet. Check the Unpublished tab to publish your drafts."
+              : "Start by generating your first AI-powered content piece."
+            }
+          </p>
+          {activeTab === "unpublished" && (
+            <div className="mt-6">
+              <button
+                onClick={() => setIsGenerateDialogOpen(true)}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                Generate Content
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  </div>
+) : (
+  // Keep the existing "Select a website" view as is
+  <div className="bg-white shadow overflow-hidden sm:rounded-md">
+    <div className="text-center py-12">
+      <Bot className="mx-auto h-12 w-12 text-gray-400" />
+      <h3 className="mt-2 text-sm font-medium text-gray-900">
+        {isLoadingWebsites ? "Loading websites..." : "Select a website"}
+      </h3>
+      <p className="mt-1 text-sm text-gray-500">
+        {isLoadingWebsites
+          ? "Please wait while we fetch your websites from the database."
+          : "Choose a website to view and manage its AI-generated content with real-time analytics and error reporting."}
+      </p>
+    </div>
+  </div>
+)}
         {/* Auto Content Scheduler Section */}
         {selectedWebsite && (
           <div className="mt-8">
