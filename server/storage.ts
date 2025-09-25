@@ -53,6 +53,9 @@ import {
   InsertGscConfiguration,
   GscAccount,
   InsertGscAccount,
+  passwordResetTokens,
+  type InsertPasswordResetToken,
+  type SelectPasswordResetToken
 } from "@shared/schema";
 import { 
   userApiKeys,
@@ -218,7 +221,25 @@ export interface IStorage {
   getGscQuotaUsage(accountId: string, date?: Date): Promise<{ used: number; limit: number }>;
   incrementGscQuotaUsage(accountId: string): Promise<void>;
 
-
+  // Password Reset Methods
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createPasswordResetToken(data: {
+    userId: string;
+    token: string;
+    email: string;
+    expiresAt: Date;
+  }): Promise<SelectPasswordResetToken>;
+  getValidPasswordResetToken(hashedToken: string): Promise<SelectPasswordResetToken | null>;
+  getPasswordResetToken(hashedToken: string): Promise<SelectPasswordResetToken | null>;
+  deletePasswordResetToken(tokenId: string): Promise<boolean>;
+  deleteAllPasswordResetTokensForUser(userId: string): Promise<void>;
+  markPasswordResetTokenAsUsed(tokenId: string): Promise<void>;
+  cleanupExpiredPasswordResetTokens(): Promise<void>;
+  // Additional Password Reset Methods for Code Verification
+  getRecentPasswordResetToken(userId: string): Promise<SelectPasswordResetToken | null>;
+  getValidPasswordResetTokenByCode(userId: string, hashedCode: string): Promise<SelectPasswordResetToken | null>;
+  markPasswordResetTokenVerified(tokenId: string): Promise<void>;
+  getVerifiedPasswordResetToken(userId: string, hashedCode: string): Promise<SelectPasswordResetToken | null>;
 
 }
 
@@ -270,6 +291,226 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return user;
   }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const normalizedEmail = email.toLowerCase().trim();
+    
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, normalizedEmail))
+      .limit(1);
+    
+    if (user) {
+      return user;
+    }
+    
+    const [settings] = await db
+      .select({
+        userId: userSettings.userId,
+        email: userSettings.profileEmail
+      })
+      .from(userSettings)
+      .where(eq(userSettings.profileEmail, normalizedEmail))
+      .limit(1);
+    
+    if (settings?.userId) {
+      return this.getUser(settings.userId);
+    }
+    
+    return undefined;
+  }
+
+
+  async getRecentPasswordResetToken(userId: string): Promise<SelectPasswordResetToken | null> {
+  const oneMinuteAgo = new Date(Date.now() - 60000);
+  
+  const [token] = await db
+    .select()
+    .from(passwordResetTokens)
+    .where(
+      and(
+        eq(passwordResetTokens.userId, userId),
+        gte(passwordResetTokens.createdAt, oneMinuteAgo)
+      )
+    )
+    .orderBy(desc(passwordResetTokens.createdAt))
+    .limit(1);
+  
+  return token || null;
+}
+
+async getValidPasswordResetTokenByCode(userId: string, hashedCode: string): Promise<SelectPasswordResetToken | null> {
+  const now = new Date();
+  
+  const [token] = await db
+    .select()
+    .from(passwordResetTokens)
+    .where(
+      and(
+        eq(passwordResetTokens.userId, userId),
+        eq(passwordResetTokens.token, hashedCode),
+        eq(passwordResetTokens.used, false),
+        gte(passwordResetTokens.expiresAt, now)
+      )
+    )
+    .limit(1);
+  
+  return token || null;
+}
+
+async markPasswordResetTokenVerified(tokenId: string): Promise<void> {
+  await db
+    .update(passwordResetTokens)
+    .set({
+      metadata: sql`jsonb_set(COALESCE(metadata, '{}'), '{verified}', 'true')`
+    })
+    .where(eq(passwordResetTokens.id, tokenId));
+  
+  console.log(`✅ Password reset token marked as verified: ${tokenId}`);
+}
+
+async getVerifiedPasswordResetToken(userId: string, hashedCode: string): Promise<SelectPasswordResetToken | null> {
+  const now = new Date();
+  
+  const [token] = await db
+    .select()
+    .from(passwordResetTokens)
+    .where(
+      and(
+        eq(passwordResetTokens.userId, userId),
+        eq(passwordResetTokens.token, hashedCode),
+        eq(passwordResetTokens.used, false),
+        gte(passwordResetTokens.expiresAt, now)
+      )
+    )
+    .limit(1);
+  
+  // Check if token was verified
+  if (token && token.metadata?.verified === true) {
+    return token;
+  }
+  
+  return null;
+}
+async getUserByEmail(email: string): Promise<User | undefined> {
+  const normalizedEmail = email.toLowerCase().trim();
+  
+  // Check users table first
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, normalizedEmail))
+    .limit(1);
+  
+  if (user) {
+    return user;
+  }
+  
+  // Check userSettings for profile email
+  const [settings] = await db
+    .select({
+      userId: userSettings.userId,
+      email: userSettings.profileEmail
+    })
+    .from(userSettings)
+    .where(eq(userSettings.profileEmail, normalizedEmail))
+    .limit(1);
+  
+  if (settings?.userId) {
+    return this.getUser(settings.userId);
+  }
+  
+  return undefined;
+}
+
+async createPasswordResetToken(data: {
+  userId: string;
+  token: string;
+  email: string;
+  expiresAt: Date;
+}): Promise<any> {
+  // Delete any existing unused tokens for this user
+  await db
+    .delete(passwordResetTokens)
+    .where(
+      and(
+        eq(passwordResetTokens.userId, data.userId),
+        eq(passwordResetTokens.used, false)
+      )
+    );
+  
+  const [token] = await db
+    .insert(passwordResetTokens)
+    .values({
+      userId: data.userId,
+      token: data.token,
+      email: data.email.toLowerCase(),
+      expiresAt: data.expiresAt,
+      used: false,
+      createdAt: new Date()
+    })
+    .returning();
+  
+  console.log(`✅ Password reset token created for user ${data.userId}`);
+  return token;
+}
+
+async getValidPasswordResetToken(hashedToken: string): Promise<any> {
+  const now = new Date();
+  
+  const [token] = await db
+    .select()
+    .from(passwordResetTokens)
+    .where(
+      and(
+        eq(passwordResetTokens.token, hashedToken),
+        eq(passwordResetTokens.used, false),
+        gte(passwordResetTokens.expiresAt, now)
+      )
+    )
+    .limit(1);
+  
+  return token || null;
+}
+
+async getPasswordResetToken(hashedToken: string): Promise<any> {
+  const [token] = await db
+    .select()
+    .from(passwordResetTokens)
+    .where(eq(passwordResetTokens.token, hashedToken))
+    .limit(1);
+  
+  return token || null;
+}
+
+async deletePasswordResetToken(tokenId: string): Promise<boolean> {
+  const result = await db
+    .delete(passwordResetTokens)
+    .where(eq(passwordResetTokens.id, tokenId));
+  
+  return (result.rowCount ?? 0) > 0;
+}
+
+async deleteAllPasswordResetTokensForUser(userId: string): Promise<void> {
+  await db
+    .delete(passwordResetTokens)
+    .where(eq(passwordResetTokens.userId, userId));
+  
+  console.log(`✅ Deleted all password reset tokens for user ${userId}`);
+}
+
+async markPasswordResetTokenAsUsed(tokenId: string): Promise<void> {
+  await db
+    .update(passwordResetTokens)
+    .set({
+      used: true,
+      usedAt: new Date()
+    })
+    .where(eq(passwordResetTokens.id, tokenId));
+  
+  console.log(`✅ Password reset token marked as used: ${tokenId}`);
+}
 
   // User-scoped Websites
   async getUserWebsites(userId: string): Promise<Website[]> {
@@ -922,85 +1163,6 @@ async getUserDashboardStats(userId: string): Promise<{
     scheduledPosts: Number(scheduledCount?.count) || 0
   };
 }
-// async getUserDashboardStats(userId: string): Promise<{
-//   websiteCount: number;
-//   contentCount: number;
-//   avgSeoScore: number;
-//   recentActivity: number;
-//   scheduledPosts: number;  // ADD THIS FIELD
-// }> {
-//   const userWebsites = await this.getUserWebsites(userId);
-//   const userContent = await this.getUserContent(userId);
-//   const recentLogs = await db
-//     .select()
-//     .from(activityLogs)
-//     .where(
-//       and(
-//         eq(activityLogs.userId, userId),
-//         // FIX: Change eq to gte for date comparison
-//         gte(activityLogs.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
-//       )
-//     );
-  
-//   // ADD: Count scheduled posts
-//   const [scheduledCount] = await db
-//     .select({ count: count() })
-//     .from(contentSchedule)
-//     .where(eq(contentSchedule.userId, userId));
-
-//   return {
-//     websiteCount: userWebsites.length,
-//     contentCount: userContent.length,
-//     avgSeoScore: userWebsites.length > 0 
-//       ? Math.round(userWebsites.reduce((sum, w) => sum + w.seoScore, 0) / userWebsites.length)
-//       : 0,
-//     recentActivity: recentLogs.length,
-//     scheduledPosts: Number(scheduledCount?.count) || 0  // ADD THIS LINE
-//   };
-// }
-
-
-
-  //WAG ALISIN
-//   // Dashboard stats
-//   async getUserDashboardStats(userId: string): Promise<{
-//     websiteCount: number;
-//     contentCount: number;
-//     avgSeoScore: number;
-//     recentActivity: number;
-//   }> {
-//     const userWebsites = await this.getUserWebsites(userId);
-//     const userContent = await this.getUserContent(userId);
-//     const recentLogs = await db
-//       .select()
-//       .from(activityLogs)
-//       .where(
-//         and(
-//           eq(activityLogs.userId, userId),
-//           // Last 7 days
-//           eq(activityLogs.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
-//         )
-//       );
-
-//     return {
-//       websiteCount: userWebsites.length,
-//       contentCount: userContent.length,
-//       avgSeoScore: userWebsites.length > 0 
-//         ? Math.round(userWebsites.reduce((sum, w) => sum + w.seoScore, 0) / userWebsites.length)
-//         : 0,
-//       recentActivity: recentLogs.length
-//     };
-//   }
-
-//   async createContentImage(data: InsertContentImage & { userId: string }): Promise<ContentImage> {
-//   const validatedData = insertContentImageSchema.parse(data);
-//   const imageWithUserId = { ...validatedData, userId: data.userId };
-  
-//   const [image] = await db.insert(contentImages).values(imageWithUserId).returning();
-//   return image;
-// }
-
-
 
 async getContentScheduleByContentId(contentId: string): Promise<ContentSchedule | undefined> {
   const [schedule] = await db
@@ -2049,113 +2211,6 @@ async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Pro
     }
   }
 
-
-
-
-
-// async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Promise<AutoSchedule> {
-//     try {
-//       // Manually generate the UUID
-//       const scheduleData = {
-//         id: randomUUID(), // Generate UUID here
-//         userId: schedule.userId,
-//         websiteId: schedule.websiteId,
-//         name: schedule.name,
-//         frequency: schedule.frequency,
-//         timeOfDay: schedule.timeOfDay,
-//         customDays: schedule.customDays || [],
-//         topics: schedule.topics || [],
-//         keywords: schedule.keywords || null,
-//         tone: schedule.tone || 'professional',
-//         wordCount: schedule.wordCount || 800,
-//         brandVoice: schedule.brandVoice || null,
-//         targetAudience: schedule.targetAudience || null,
-//         eatCompliance: schedule.eatCompliance || false,
-//         aiProvider: schedule.aiProvider || 'openai',
-//         includeImages: schedule.includeImages || false,
-//         imageCount: schedule.imageCount || 1,
-//         imageStyle: schedule.imageStyle || 'natural',
-//         seoOptimized: schedule.seoOptimized !== false,
-//         autoPublish: schedule.autoPublish || false,
-//         publishDelay: schedule.publishDelay || 0,
-//         topicRotation: schedule.topicRotation || 'random',
-//         nextTopicIndex: schedule.nextTopicIndex || 0,
-//         maxDailyCost: schedule.maxDailyCost || 5.00,
-//         maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
-//         costToday: schedule.costToday || 0,
-//         postsThisMonth: schedule.postsThisMonth || 0,
-//         lastRun: schedule.lastRun || null,
-//         isActive: schedule.isActive !== false,
-//         createdAt: new Date(),
-//         updatedAt: new Date()
-//       };
-
-//       const [newSchedule] = await db
-//         .insert(autoSchedules)
-//         .values(scheduleData)
-//         .returning();
-      
-//       console.log('Auto-schedule created successfully:', newSchedule.id);
-//       return newSchedule;
-//     } catch (error) {
-//       console.error('Error creating auto-schedule:', error);
-//       throw error;
-//     }
-//   }
-
-//   async getAutoSchedule(scheduleId: string): Promise<AutoSchedule | undefined> {
-//     try {
-//       const [schedule] = await db
-//         .select()
-//         .from(autoSchedules)
-//         .where(eq(autoSchedules.id, scheduleId));
-      
-//       return schedule;
-//     } catch (error) {
-//       console.error('Error fetching auto-schedule:', error);
-//       return undefined;
-//     }
-//   }
-
-//   async deleteAutoSchedule(scheduleId: string): Promise<boolean> {
-//     try {
-//       // Soft delete
-//       await db
-//         .update(autoSchedules)
-//         .set({ 
-//           deletedAt: new Date(),
-//           isActive: false,
-//           updatedAt: new Date()
-//         })
-//         .where(eq(autoSchedules.id, scheduleId));
-      
-//       return true;
-//     } catch (error) {
-//       console.error('Error deleting auto-schedule:', error);
-//       return false;
-//     }
-//   }
-
-//   async getUserAutoSchedules(userId: string): Promise<AutoSchedule[]> {
-//     try {
-//       const schedules = await db
-//         .select()
-//         .from(autoSchedules)
-//         .where(
-//           and(
-//             eq(autoSchedules.userId, userId),
-//             isNull(autoSchedules.deletedAt)
-//           )
-//         )
-//         .orderBy(desc(autoSchedules.createdAt));
-      
-//       return schedules;
-//     } catch (error) {
-//       console.error('Error fetching user auto-schedules:', error);
-//       return [];
-//     }
-//   }
-
   // ===============================
   // SEO ISSUE TRACKING METHODS
   // ===============================
@@ -2577,6 +2632,7 @@ async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Pro
     throw error;
   }
 }
+
 
 async deleteSeoReportsByWebsite(websiteId: string, userId: string): Promise<void> {
   try {

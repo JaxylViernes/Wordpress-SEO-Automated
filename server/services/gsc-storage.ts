@@ -1,4 +1,4 @@
-// server/services/gsc-storage.ts - COMPLETE VERSION WITH FIX
+// server/services/gsc-storage.ts
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
 
@@ -65,19 +65,16 @@ export const gscStorage = {
     
     const query = `
       INSERT INTO gsc_accounts (
-        id,  -- Explicitly include id
-        user_id, 
-        account_id, 
-        email, 
-        name, 
-        picture, 
-        access_token, 
-        refresh_token, 
-        token_expiry, 
-        is_active
+
+        id, user_id, account_id, email, name, picture, 
+        access_token, refresh_token, token_expiry, is_active
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      ON CONFLICT(user_id, account_id) DO UPDATE SET
+      ON CONFLICT(id) DO UPDATE SET
+        account_id = EXCLUDED.account_id,
+        email = EXCLUDED.email,
+        name = EXCLUDED.name,
+        picture = EXCLUDED.picture,
         access_token = EXCLUDED.access_token,
         refresh_token = EXCLUDED.refresh_token,
         token_expiry = EXCLUDED.token_expiry,
@@ -93,16 +90,16 @@ export const gscStorage = {
     const tokenExpiryInSeconds = Math.floor(account.tokenExpiry / 1000);
     
     const values = [
-      dbId,  // Generated UUID
-      userId,
-      account.id,  // Google account ID goes in account_id column
-      account.email,
-      account.name,
-      account.picture || null,
-      account.accessToken,
-      account.refreshToken,
-      tokenExpiryInSeconds,
-      account.isActive !== false
+      account.id,           // id
+      userId,               // user_id
+      account.id,           // account_id (using same value as id)
+      account.email,        // email
+      account.name,         // name
+      account.picture || null,  // picture
+      account.accessToken,  // access_token
+      account.refreshToken, // refresh_token
+      tokenExpiryInSeconds, // token_expiry
+      account.isActive !== false  // is_active
     ];
     
     const result = await pool.query(query, values);
@@ -111,7 +108,7 @@ export const gscStorage = {
 
   // Get account using account_id column
   async getGscAccount(userId: string, accountId: string): Promise<GscAccount | null> {
-    const query = 'SELECT * FROM gsc_accounts WHERE user_id = $1 AND account_id = $2';
+    const query = 'SELECT * FROM gsc_accounts WHERE user_id = $1 AND (id = $2 OR account_id = $2)';
     const result = await pool.query(query, [userId, accountId]);
     
     if (result.rows.length === 0) return null;
@@ -147,7 +144,7 @@ export const gscStorage = {
         c.redirect_uri
       FROM gsc_accounts a
       JOIN gsc_configurations c ON c.user_id = a.user_id
-      WHERE a.user_id = $1 AND a.account_id = $2
+      WHERE a.user_id = $1 AND (a.id = $2 OR a.account_id = $2)
     `;
     const result = await pool.query(query, [userId, accountId]);
     
@@ -203,7 +200,7 @@ export const gscStorage = {
     const query = `
       UPDATE gsc_accounts 
       SET ${fields.join(', ')}, updated_at = NOW()
-      WHERE user_id = $${paramCount} AND account_id = $${paramCount + 1}
+      WHERE user_id = $${paramCount} AND (id = $${paramCount + 1} OR account_id = $${paramCount + 1})
       RETURNING *
     `;
     
@@ -230,7 +227,7 @@ export const gscStorage = {
 
   // Delete account using account_id column
   async deleteGscAccount(userId: string, accountId: string) {
-    const query = 'DELETE FROM gsc_accounts WHERE user_id = $1 AND account_id = $2';
+    const query = 'DELETE FROM gsc_accounts WHERE user_id = $1 AND (id = $2 OR account_id = $2)';
     await pool.query(query, [userId, accountId]);
     return { success: true };
   },
@@ -361,8 +358,8 @@ export const gscStorage = {
     
     const propertyId = propertyResult.rows[0].id;
     
-    // Get user_id from account using account_id column
-    const userQuery = 'SELECT user_id FROM gsc_accounts WHERE account_id = $1 LIMIT 1';
+    // Get user_id from account
+    const userQuery = 'SELECT user_id FROM gsc_accounts WHERE id = $1 OR account_id = $1';
     const userResult = await pool.query(userQuery, [accountId]);
     
     if (userResult.rows.length === 0) {

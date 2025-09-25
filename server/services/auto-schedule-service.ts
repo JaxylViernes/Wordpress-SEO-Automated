@@ -454,6 +454,8 @@ private async publishToWordPress(
     };
   }
 }
+
+
   private shouldRunSchedule(
     schedule: any,
     currentHour: number,

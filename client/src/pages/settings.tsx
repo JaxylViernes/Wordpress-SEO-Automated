@@ -99,7 +99,7 @@ export default function Settings() {
   });
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
 
-  // Fetch user settings
+  // Fetch real user settings
   const { data: settings, isLoading: settingsLoading, error: settingsError } = useQuery<UserSettings>({
     queryKey: ["/api/user/settings"],
     queryFn: async () => {
@@ -296,35 +296,7 @@ export default function Settings() {
     },
   });
 
-  // Add website deletion mutation
-  const deleteWebsite = useMutation({
-    mutationFn: async (websiteId: string) => {
-      const response = await fetch(`/api/user/websites/${websiteId}`, {
-        method: 'DELETE',
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to delete website');
-      }
-    },
-    onSuccess: () => {
-      toast({
-        title: "Website Disconnected",
-        description: "The website has been removed from your account.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/user/websites"] });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Failed to Delete Website",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
+  // Add password change mutation
   const changePassword = useMutation({
     mutationFn: api.changePassword,
     onSuccess: () => {
@@ -348,34 +320,7 @@ export default function Settings() {
     },
   });
 
-  // Delete confirmation handlers
-  const openDeleteConfirmation = (type: 'apiKey' | 'website', itemId: string, itemName: string) => {
-    setDeleteConfirmation({
-      isOpen: true,
-      type,
-      itemId,
-      itemName
-    });
-  };
-
-  const closeDeleteConfirmation = () => {
-    setDeleteConfirmation({
-      isOpen: false,
-      type: null,
-      itemId: '',
-      itemName: ''
-    });
-  };
-
-  const handleConfirmDelete = async () => {
-    if (deleteConfirmation.type === 'apiKey') {
-      deleteApiKey.mutate(deleteConfirmation.itemId);
-    } else if (deleteConfirmation.type === 'website') {
-      deleteWebsite.mutate(deleteConfirmation.itemId);
-    }
-    closeDeleteConfirmation();
-  };
-
+  // UPDATED: handleSave with sanitization
   const handleSave = () => {
     if (settings) {
       const sanitizedSettings = {
@@ -415,7 +360,7 @@ export default function Settings() {
           break;
           
         case 'email':
-          const emailValidation = Sanitizer.sanitizeEmail(value);
+          const emailValidation = Sanitizer.validateEmail(value);
           if (!emailValidation.isValid && value !== '') {
             toast({
               title: "Invalid Email",
@@ -503,6 +448,7 @@ export default function Settings() {
     });
   };
 
+  // UPDATED: validatePasswordForm with enhanced validation
   const validatePasswordForm = (): boolean => {
     const errors: string[] = [];
     
@@ -558,6 +504,7 @@ export default function Settings() {
     changePassword.mutate(passwordData);
   };
 
+  // Helper functions
   const getStatusBadge = (status: string, provider: string) => {
     const providerStatus = apiKeyStatus?.providers?.[provider as keyof typeof apiKeyStatus.providers];
     
