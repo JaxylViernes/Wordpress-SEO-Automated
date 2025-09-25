@@ -4,8 +4,8 @@ import { storage } from "./storage";
 import { aiService } from "./services/ai-service";
 import { seoService } from "./services/seo-service";
 import { approvalWorkflowService } from "./services/approval-workflow";
-import { insertWebsiteSchema, insertContentSchema } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { insertWebsiteSchema, insertContentSchema, passwordResetTokens } from "@shared/schema";
+import { eq, gt, desc, and, sql } from 'drizzle-orm';
 import { AuthService } from "./services/auth-service";
 import { wordpressService } from "./services/wordpress-service";
 import { wordPressAuthService } from './services/wordpress-auth';
@@ -25,6 +25,10 @@ import { gscStorage } from "./services/gsc-storage";
 import  gscRouter  from './routes/gsc.routes';
 import multer from 'multer';
 import { cloudinaryStorage } from "./services/cloudinary-storage";
+import {db} from './db'
+import { emailService } from './services/email-service';
+
+
 
 
 // Configure multer
@@ -45,6 +49,29 @@ function escapeRegExp(string: string): string {
 }
 
 const authService = new AuthService();
+
+
+
+
+// ============================================================================
+// VERIFICATION CODE STORE (In-memory - use Redis in production)
+// ============================================================================
+const verificationCodes = new Map<string, {
+  code: string;
+  username: string;
+  expiresAt: Date;
+  attempts: number;
+}>();
+
+// Clean up expired codes periodically (every 5 minutes)
+setInterval(() => {
+  const now = new Date();
+  for (const [email, data] of verificationCodes.entries()) {
+    if (data.expiresAt < now) {
+      verificationCodes.delete(email);
+    }
+  }
+}, 5 * 60 * 1000);
 
 // =============================================================================
 // TYPE DECLARATIONS & SESSION EXTENSIONS
@@ -708,85 +735,221 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AUTHENTICATION ROUTES
   // ===========================================================================
   
-  app.post("/api/auth/signup", async (req: Request, res: Response): Promise<void> => {
-    try {
-      console.log('🔐 Signup request received:', {
-        body: req.body,
-        hasUsername: !!req.body.username,
-        hasPassword: !!req.body.password,
+
+
+  //added
+app.post("/api/auth/signup", async (req: Request, res: Response): Promise<void> => {
+  try {
+    console.log('🔐 Signup request received:', {
+      body: req.body,
+      hasUsername: !!req.body.username,
+      hasPassword: !!req.body.password,
+      hasEmail: !!req.body.email,
+      hasVerificationCode: !!req.body.verificationCode
+    });
+
+    const { username, password, email, name, verificationCode } = req.body;
+
+    if (!username || !password || !email) {
+      console.error('❌ Missing required fields');
+      res.status(400).json({ 
+        message: "Username, password, and email are required",
+        errors: ['Username is required', 'Password is required', 'Email is required'].filter((msg, i) => 
+          i === 0 ? !username : i === 1 ? !password : !email
+        )
       });
-
-      const { username, password, email, name } = req.body;
-
-      if (!username || !password) {
-        console.error('⌠ Missing required fields');
-        res.status(400).json({ 
-          message: "Username and password are required",
-          errors: ['Username is required', 'Password is required'].filter((_, i) => 
-            i === 0 ? !username : !password
-          )
-        });
-        return;
-      }
-
-      const validation = authService.validateUserData({ username, password, email, name });
-      if (validation.length > 0) {
-        console.error('⌠ Validation errors:', validation);
-        res.status(400).json({ 
-          message: "Validation failed", 
-          errors: validation 
-        });
-        return;
-      }
-
-      console.log('👤 Creating user...');
-      const user = await authService.createUser({ username, password, email, name });
-      console.log('✅ User created:', { id: user.id, username: user.username });
-      
-      if (req.session) {
-        req.session.userId = user.id;
-        req.session.save((err) => {
-          if (err) {
-            console.error("⌠ Session save error:", err);
-            res.status(500).json({ message: "Failed to create session" });
-            return;
-          }
-
-          console.log('✅ Session created for user:', user.id);
-
-          res.status(201).json({
-            success: true,
-            message: "Account created successfully",
-            user: {
-              id: user.id,
-              username: user.username,
-              email: user.email,
-              name: user.name
-            }
-          });
-        });
-      } else {
-        console.error('⌠ No session available');
-        res.status(500).json({ message: "Session not configured" });
-      }
-    } catch (error) {
-      console.error("⌠ Signup error:", error);
-      
-      if (error instanceof Error) {
-        if (error.message.includes('already exists')) {
-          res.status(409).json({ message: error.message });
-          return;
-        }
-        
-        if (error.message.includes('Validation failed')) {
-          res.status(400).json({ message: error.message });
-          return;
-        }
-      }
-      
-      res.status(500).json({ message: "Failed to create account" });
+      return;
     }
-  });
+
+    // Check verification code if provided
+    if (verificationCode) {
+      const stored = verificationCodes.get(email.toLowerCase());
+      
+      if (!stored) {
+        res.status(400).json({ 
+          message: "No verification code found. Please request a new code." 
+        });
+        return;
+      }
+      
+      if (stored.expiresAt < new Date()) {
+        verificationCodes.delete(email.toLowerCase());
+        res.status(400).json({ 
+          message: "Verification code expired. Please request a new code." 
+        });
+        return;
+      }
+      
+      if (stored.code !== verificationCode.trim()) {
+        stored.attempts++;
+        if (stored.attempts >= 5) {
+          verificationCodes.delete(email.toLowerCase());
+          res.status(400).json({ 
+            message: "Too many failed attempts. Please request a new code." 
+          });
+        } else {
+          res.status(400).json({ 
+            message: `Invalid verification code. ${5 - stored.attempts} attempts remaining.` 
+          });
+        }
+        return;
+      }
+      
+      // Verify username matches
+      if (stored.username !== username) {
+        res.status(400).json({ 
+          message: "Username doesn't match verification request" 
+        });
+        return;
+      }
+      
+      // Code is valid - remove from store
+      verificationCodes.delete(email.toLowerCase());
+      console.log('✅ Verification code validated for:', email);
+    }
+
+    // Validate user data
+    const validation = authService.validateUserData({ username, password, email, name });
+    if (validation.length > 0) {
+      console.error('❌ Validation errors:', validation);
+      res.status(400).json({ 
+        message: "Validation failed", 
+        errors: validation 
+      });
+      return;
+    }
+
+    console.log('👤 Creating user...');
+    const user = await authService.createUser({ username, password, email, name });
+    console.log('✅ User created:', { id: user.id, username: user.username });
+    
+    if (req.session) {
+      req.session.userId = user.id;
+      req.session.save((err) => {
+        if (err) {
+          console.error("❌ Session save error:", err);
+          res.status(500).json({ message: "Failed to create session" });
+          return;
+        }
+
+        console.log('✅ Session created for user:', user.id);
+
+        res.status(201).json({
+          success: true,
+          message: "Account created successfully",
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            name: user.name
+          }
+        });
+      });
+    } else {
+      console.error('❌ No session available');
+      res.status(500).json({ message: "Session not configured" });
+    }
+  } catch (error) {
+    console.error("❌ Signup error:", error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('already exists')) {
+        res.status(409).json({ message: error.message });
+        return;
+      }
+      
+      if (error.message.includes('Validation failed')) {
+        res.status(400).json({ message: error.message });
+        return;
+      }
+    }
+    
+    res.status(500).json({ message: "Failed to create account" });
+  }
+});
+
+
+
+  // app.post("/api/auth/signup", async (req: Request, res: Response): Promise<void> => {
+  //   try {
+  //     console.log('🔐 Signup request received:', {
+  //       body: req.body,
+  //       hasUsername: !!req.body.username,
+  //       hasPassword: !!req.body.password,
+  //       hasEmail: !!req.body.email,
+  //     });
+
+  //     const { username, password, email, name } = req.body;
+
+  //     if (!username || !password) {
+  //       console.error('⌠ Missing required fields');
+  //       res.status(400).json({ 
+  //         message: "Username and password are required",
+  //         errors: ['Username is required', 'Password is required'].filter((_, i) => 
+  //           i === 0 ? !username : !password
+  //         )
+  //       });
+  //       return;
+  //     }
+
+  //     const validation = authService.validateUserData({ username, password, email, name });
+  //     if (validation.length > 0) {
+  //       console.error('⌠ Validation errors:', validation);
+  //       res.status(400).json({ 
+  //         message: "Validation failed", 
+  //         errors: validation 
+  //       });
+  //       return;
+  //     }
+
+  //     console.log('👤 Creating user...');
+  //     const user = await authService.createUser({ username, password, email, name });
+  //     console.log('✅ User created:', { id: user.id, username: user.username });
+      
+  //     if (req.session) {
+  //       req.session.userId = user.id;
+  //       req.session.save((err) => {
+  //         if (err) {
+  //           console.error("⌠ Session save error:", err);
+  //           res.status(500).json({ message: "Failed to create session" });
+  //           return;
+  //         }
+
+  //         console.log('✅ Session created for user:', user.id);
+
+  //         res.status(201).json({
+  //           success: true,
+  //           message: "Account created successfully",
+  //           user: {
+  //             id: user.id,
+  //             username: user.username,
+  //             email: user.email,
+  //             name: user.name
+  //           }
+  //         });
+  //       });
+  //     } else {
+  //       console.error('⌠ No session available');
+  //       res.status(500).json({ message: "Session not configured" });
+  //     }
+  //   } catch (error) {
+  //     console.error("⌠ Signup error:", error);
+      
+  //     if (error instanceof Error) {
+  //       if (error.message.includes('already exists')) {
+  //         res.status(409).json({ message: error.message });
+  //         return;
+  //       }
+        
+  //       if (error.message.includes('Validation failed')) {
+  //         res.status(400).json({ message: error.message });
+  //         return;
+  //       }
+  //     }
+      
+  //     res.status(500).json({ message: "Failed to create account" });
+  //   }
+  // });
 
   app.post("/api/auth/login", async (req: Request, res: Response): Promise<void> => {
     try {
@@ -1019,6 +1182,689 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+
+
+
+
+//for email verification(signup)
+// Add this after the signup endpoint in routes.ts
+
+app.post("/api/auth/send-verification", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, username } = req.body;
+    
+    console.log('📧 Sending verification code to:', email);
+    
+    // Validate inputs
+    if (!email || !username) {
+      res.status(400).json({ 
+        message: "Email and username are required" 
+      });
+      return;
+    }
+    
+    // Check if username already exists
+    const existingUser = await storage.getUserByUsername(username);
+    if (existingUser) {
+      res.status(409).json({ 
+        message: "Username already exists" 
+      });
+      return;
+    }
+    
+    // Check if email already exists
+    const existingEmail = await storage.getUserByEmail(email);
+    if (existingEmail) {
+      res.status(409).json({ 
+        message: "Email already registered" 
+      });
+      return;
+    }
+    
+    // Generate 6-digit verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Store in memory
+    verificationCodes.set(email.toLowerCase(), {
+      code: verificationCode,
+      username,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+      attempts: 0
+    });
+    
+    // Send email with verification code
+    try {
+      const emailSent = await emailService.sendVerificationCode(email, verificationCode);
+      
+      if (emailSent) {
+        console.log('✅ Verification email sent to:', email);
+      } else {
+        console.warn('⚠️ Failed to send email, but code was generated');
+      }
+    } catch (emailError) {
+      console.error('Failed to send email:', emailError);
+      // In development, return the code for testing
+      if (process.env.NODE_ENV === 'development') {
+        res.json({
+          success: true,
+          message: "Verification code generated",
+          devCode: verificationCode // Only in development
+        });
+        return;
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: "Verification code sent to your email"
+    });
+    
+  } catch (error) {
+    console.error("Send verification error:", error);
+    res.status(500).json({ 
+      message: "Failed to send verification code" 
+    });
+  }
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ===========================================================================
+// PASSWORD RESET ROUTES
+// ===========================================================================
+
+
+app.post("/api/auth/forgot-password", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body;
+    
+    console.log('🔑 Password reset request for email:', email);
+    
+    // Validation
+    if (!email) {
+      res.status(400).json({ 
+        message: "Email address is required" 
+      });
+      return;
+    }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      res.status(400).json({ 
+        message: "Please enter a valid email address" 
+      });
+      return;
+    }
+    
+    const user = await storage.getUserByEmail(email);
+    
+    if (!user) {
+        console.log('⚠️ User not found for email:', email);
+        res.status(404).json({  // ← Returns 404 Not Found
+          success: false,  // ← Says failure
+          message: "No account found with this email address"
+        });
+        return;
+      }
+    
+    // Generate and store code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedCode = crypto.createHash('sha256').update(verificationCode).digest('hex');
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    
+    // Clear any existing tokens for this user
+    await db
+      .delete(passwordResetTokens)
+      .where(
+        and(
+          eq(passwordResetTokens.userId, user.id),
+          eq(passwordResetTokens.used, false)
+        )
+      );
+    
+    // Store new reset token
+    await db.insert(passwordResetTokens).values({
+      userId: user.id,
+      email: user.email,
+      token: hashedCode,
+      expiresAt,
+      used: false,
+      metadata: {
+        type: 'verification_code',
+        attempts: 0,
+        verified: false,
+        codeLength: 6
+      }
+    });
+
+    // SEND EMAIL WITH VERIFICATION CODE
+    try {
+      const emailSent = await emailService.sendPasswordResetCode(user.email, verificationCode);
+      
+      if (emailSent) {
+        console.log('✅ Verification code email sent to:', user.email);
+      } else {
+        console.warn('⚠️ Failed to send email, but code was generated');
+        // In production, you might want to return an error here
+        // But for development, continue so the code can still be used
+      }
+    } catch (emailError) {
+      console.error('Failed to send email:', emailError);
+      // Continue anyway - in development, user can see code in response
+    }
+
+    // Log the activity
+    await storage.createActivityLog({
+      userId: user.id,
+      type: "password_reset_requested",
+      description: "Password reset code requested",
+      metadata: { 
+        email: user.email,
+        timestamp: new Date().toISOString(),
+        ipAddress: req.ip || 'unknown'
+      }
+    });
+
+    console.log('🔐 Verification code generated for:', user.email);
+
+    // Response
+    const responseData: any = {
+      success: true,
+      message: "If an account exists with that email, a verification code has been sent."
+    };
+    
+    // Only include sensitive data in development mode
+    if (process.env.NODE_ENV === 'development') {
+      responseData.verificationCode = verificationCode;
+      responseData.email = user.email;
+      responseData.expiresAt = expiresAt.toISOString();
+      responseData.devNote = "Code exposed only in development mode";
+      console.log('📧 Dev Mode - Verification Code:', verificationCode);
+    }
+    
+    res.json(responseData);
+    
+  } catch (error) {
+    console.error("Password reset request error:", error);
+    res.status(500).json({ 
+      message: "An error occurred. Please try again later." 
+    });
+  }
+});
+
+app.post("/api/auth/verify-code", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, code } = req.body;
+    
+    console.log('🔍 Verifying reset code for email:', email);
+    
+    if (!email || !code) {
+      res.status(400).json({ 
+        valid: false,
+        message: "Email and verification code are required" 
+      });
+      return;
+    }
+
+    // Find user by email
+    const user = await storage.getUserByEmail(email);
+    
+    if (!user) {
+      res.status(400).json({ 
+        valid: false,
+        message: "Invalid email or code" 
+      });
+      return;
+    }
+
+    // Hash the provided code
+    const hashedCode = crypto.createHash('sha256').update(code).digest('hex');
+    
+    // Find valid reset token
+    const [resetToken] = await db
+      .select()
+      .from(passwordResetTokens)
+      .where(
+        and(
+          eq(passwordResetTokens.userId, user.id),
+          eq(passwordResetTokens.token, hashedCode),
+          eq(passwordResetTokens.used, false),
+          gt(passwordResetTokens.expiresAt, new Date())
+        )
+      )
+      .limit(1);
+    
+    if (!resetToken) {
+      // Increment failed attempts for the most recent token
+      const [latestToken] = await db
+        .select()
+        .from(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.userId, user.id),
+            eq(passwordResetTokens.used, false)
+          )
+        )
+        .orderBy(desc(passwordResetTokens.createdAt))
+        .limit(1);
+      
+      if (latestToken) {
+        const currentAttempts = (latestToken.metadata as any)?.attempts || 0;
+        
+        // Update attempts count
+        await db
+          .update(passwordResetTokens)
+          .set({
+            metadata: {
+              ...(latestToken.metadata as any || {}),
+              attempts: currentAttempts + 1,
+              lastAttemptAt: new Date().toISOString()
+            }
+          })
+          .where(eq(passwordResetTokens.id, latestToken.id));
+        
+        // Check if too many attempts
+        if (currentAttempts >= 4) { // 5 total attempts
+          // Mark as used to invalidate it
+          await db
+            .update(passwordResetTokens)
+            .set({ 
+              used: true,
+              usedAt: new Date(),
+              metadata: {
+                ...(latestToken.metadata as any || {}),
+                invalidatedReason: 'too_many_attempts'
+              }
+            })
+            .where(eq(passwordResetTokens.id, latestToken.id));
+          
+          await storage.createSecurityAudit({
+            userId: user.id,
+            action: "password_reset_blocked",
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            success: false,
+            metadata: {
+              reason: "Too many failed attempts",
+              email: user.email,
+              timestamp: new Date().toISOString()
+            }
+          });
+          
+          res.status(400).json({ 
+            valid: false,
+            message: "Too many failed attempts. Please request a new code." 
+          });
+          return;
+        }
+      }
+      
+      res.status(400).json({ 
+        valid: false,
+        message: "Invalid or expired verification code" 
+      });
+      return;
+    }
+
+    // Code is valid - mark it as verified in metadata
+    await db
+      .update(passwordResetTokens)
+      .set({
+        metadata: {
+          ...(resetToken.metadata as any || {}),
+          verified: true,
+          verifiedAt: new Date().toISOString()
+        }
+      })
+      .where(eq(passwordResetTokens.id, resetToken.id));
+    
+    // Log successful verification
+    await storage.createActivityLog({
+      userId: user.id,
+      type: "password_reset_code_verified",
+      description: "Password reset code verified successfully",
+      metadata: { 
+        email: user.email,
+        timestamp: new Date().toISOString(),
+        ipAddress: req.ip || 'unknown'
+      }
+    });
+
+    res.json({
+      valid: true,
+      message: "Code verified successfully",
+      // Return the token ID as session reference
+      resetTokenId: resetToken.id
+    });
+
+  } catch (error) {
+    console.error("Code verification error:", error);
+    res.status(500).json({ 
+      valid: false,
+      message: "Failed to verify code" 
+    });
+  }
+});
+
+app.post("/api/auth/reset-password", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, code, newPassword } = req.body;
+    
+    console.log('🔐 Password reset attempt for email:', email);
+    
+    if (!email || !code || !newPassword) {
+      res.status(400).json({ 
+        message: "Email, verification code, and new password are required" 
+      });
+      return;
+    }
+
+    // Validate password
+    if (newPassword.length < 6) {
+      res.status(400).json({ 
+        message: "Password must be at least 6 characters long" 
+      });
+      return;
+    }
+
+    // Find user by email
+    const user = await storage.getUserByEmail(email);
+    
+    if (!user) {
+      res.status(400).json({ 
+        message: "Invalid email or verification code" 
+      });
+      return;
+    }
+
+    // Hash the provided code
+    const hashedCode = crypto.createHash('sha256').update(code).digest('hex');
+    
+    // Find valid and verified reset token
+    const [resetToken] = await db
+      .select()
+      .from(passwordResetTokens)
+      .where(
+        and(
+          eq(passwordResetTokens.userId, user.id),
+          eq(passwordResetTokens.token, hashedCode),
+          eq(passwordResetTokens.used, false),
+          gt(passwordResetTokens.expiresAt, new Date())
+        )
+      )
+      .limit(1);
+    
+    if (!resetToken) {
+      res.status(400).json({ 
+        message: "Invalid or expired verification code. Please request a new one." 
+      });
+      return;
+    }
+
+    // Check if code was verified
+    const metadata = resetToken.metadata as any;
+    if (!metadata?.verified) {
+      res.status(400).json({ 
+        message: "Code must be verified first" 
+      });
+      return;
+    }
+
+    // Check if code was recently verified (within 5 minutes)
+    const verifiedAt = new Date(metadata.verifiedAt);
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    
+    if (verifiedAt < fiveMinutesAgo) {
+      res.status(400).json({ 
+        message: "Verification has expired. Please request a new code." 
+      });
+      return;
+    }
+
+    // Hash the new password
+    const hashedPassword = await authService.hashPassword(newPassword);
+    
+    // Update user's password
+    const updatedUser = await authService.updateUserPassword(user.id, hashedPassword);
+    
+    if (!updatedUser) {
+      res.status(500).json({ 
+        message: "Failed to reset password" 
+      });
+      return;
+    }
+
+    // Mark the token as used
+    await db
+      .update(passwordResetTokens)
+      .set({ 
+        used: true,
+        usedAt: new Date(),
+        metadata: {
+          ...metadata,
+          completedAt: new Date().toISOString()
+        }
+      })
+      .where(eq(passwordResetTokens.id, resetToken.id));
+    
+    // Mark all other tokens for this user as used
+    await db
+      .update(passwordResetTokens)
+      .set({ 
+        used: true,
+        usedAt: new Date()
+      })
+      .where(
+        and(
+          eq(passwordResetTokens.userId, user.id),
+          eq(passwordResetTokens.used, false)
+        )
+      );
+    
+    // Log the successful reset
+    await storage.createActivityLog({
+      userId: user.id,
+      type: "password_reset_completed",
+      description: "Password successfully reset",
+      metadata: { 
+        email: user.email,
+        timestamp: new Date().toISOString(),
+        ipAddress: req.ip || 'unknown'
+      }
+    });
+
+    await storage.createSecurityAudit({
+      userId: user.id,
+      action: "password_reset",
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent'),
+      success: true,
+      metadata: {
+        email: user.email,
+        timestamp: new Date().toISOString()
+      }
+    });
+
+    console.log(`✅ Password reset successfully for user: ${user.email}`);
+    
+    res.json({
+      success: true,
+      message: "Password has been reset successfully. You can now login with your new password."
+    });
+
+  } catch (error) {
+    console.error("Password reset error:", error);
+    
+    // Log failed attempt if we have user context
+    try {
+      const { email } = req.body;
+      if (email) {
+        const user = await storage.getUserByEmail(email);
+        
+        if (user) {
+          await storage.createSecurityAudit({
+            userId: user.id,
+            action: "password_reset_failed",
+            ipAddress: req.ip,
+            userAgent: req.get('User-Agent'),
+            success: false,
+            metadata: {
+              error: error instanceof Error ? error.message : 'Unknown error',
+              email: user.email,
+              timestamp: new Date().toISOString()
+            }
+          });
+        }
+      }
+    } catch (logError) {
+      console.error("Failed to log security audit:", logError);
+    }
+    
+    res.status(500).json({ 
+      message: "Failed to reset password. Please try again." 
+    });
+  }
+});
+
+app.post("/api/auth/resend-code", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body;
+    
+    console.log('🔄 Resending verification code for email:', email);
+    
+    if (!email) {
+      res.status(400).json({ 
+        message: "Email address is required" 
+      });
+      return;
+    }
+
+    // Find user by email
+    const user = await storage.getUserByEmail(email);
+    
+    // Always return success to prevent email enumeration
+    if (!user) {
+      res.json({
+        success: true,
+        message: "If an account exists with that email, a new verification code has been sent."
+      });
+      return;
+    }
+
+    // Check for rate limiting - count recent tokens
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentTokens = await db
+      .select()
+      .from(passwordResetTokens)
+      .where(
+        and(
+          eq(passwordResetTokens.userId, user.id),
+          gt(passwordResetTokens.createdAt, oneHourAgo)
+        )
+      );
+    
+    if (recentTokens.length >= 3) {
+      res.status(429).json({ 
+        message: "Too many requests. Please try again later." 
+      });
+      return;
+    }
+
+    // Mark existing unused tokens as used
+    await db
+      .update(passwordResetTokens)
+      .set({ 
+        used: true,
+        usedAt: new Date(),
+        metadata: sql`jsonb_set(COALESCE(metadata, '{}'), '{invalidatedReason}', '"new_code_requested"')`
+      })
+      .where(
+        and(
+          eq(passwordResetTokens.userId, user.id),
+          eq(passwordResetTokens.used, false)
+        )
+      );
+
+    // Generate new 6-digit verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedCode = crypto.createHash('sha256').update(verificationCode).digest('hex');
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Store new reset token
+    await db.insert(passwordResetTokens).values({
+      userId: user.id,
+      email: user.email,
+      token: hashedCode,
+      expiresAt,
+      used: false,
+      metadata: {
+        type: 'verification_code',
+        attempts: 0,
+        verified: false,
+        codeLength: 6,
+        resent: true
+      }
+    });
+
+    // SEND EMAIL WITH NEW VERIFICATION CODE
+    try {
+      const emailSent = await emailService.sendPasswordResetCode(user.email, verificationCode);
+      
+      if (emailSent) {
+        console.log('✅ New verification code email sent to:', user.email);
+      } else {
+        console.warn('⚠️ Failed to send resend email');
+      }
+    } catch (emailError) {
+      console.error('Failed to send email:', emailError);
+      // Continue anyway - in development, user can see code in response
+    }
+
+    // Log the activity
+    await storage.createActivityLog({
+      userId: user.id,
+      type: "password_reset_code_resent",
+      description: "Password reset code resent",
+      metadata: { 
+        email: user.email,
+        timestamp: new Date().toISOString(),
+        ipAddress: req.ip || 'unknown'
+      }
+    });
+
+    console.log('📧 New verification code generated for:', user.email);
+    console.log('🔐 Code (for testing only):', verificationCode);
+
+    res.json({
+      success: true,
+      message: "If an account exists with that email, a new verification code has been sent.",
+      ...(process.env.NODE_ENV === 'development' && { 
+        verificationCode,
+        expiresAt: expiresAt.toISOString()
+      })
+    });
+
+  } catch (error) {
+    console.error("Resend code error:", error);
+    res.status(500).json({ 
+      message: "An error occurred. Please try again later." 
+    });
+  }
+});
+
+
 
   // ===========================================================================
   // USER SETTINGS ROUTES
@@ -4434,6 +5280,216 @@ app.delete("/api/user/content/:id", requireAuth, async (req: Request, res: Respo
       });
     }
   });
+
+
+app.get("/api/images/batch-process", requireAuth, async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { contentId } = req.query;
+      
+      if (!contentId) {
+        res.status(400).json({ 
+          error: 'Content ID required' 
+        });
+        return;
+      }
+      
+      res.json({
+        status: 'ready',
+        contentId: contentId,
+        message: 'Image processing available'
+      });
+      
+    } catch (error: any) {
+      console.error("⌠Failed to get image status:", error);
+      res.status(500).json({ 
+        error: 'Failed to get image status',
+        message: error.message
+      });
+    }
+  });
+
+ app.post("/api/user/content/upload-images", 
+  requireAuth, 
+  upload.array('images', 10), 
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = req.user!.id;
+      const { websiteId, contentId } = req.body;
+      const files = req.files as Express.Multer.File[];
+      
+      const uploadedImages = [];
+      
+      for (const file of files) {
+        try {
+          // Step 3: Optimize image with Sharp
+          const optimizedBuffer = await sharp(file.buffer)
+            .resize(1920, 1080, { 
+              fit: 'inside', 
+              withoutEnlargement: true 
+            })
+            .jpeg({ 
+              quality: 85, 
+              progressive: true 
+            })
+            .toBuffer();
+          
+          // Get metadata for dimensions
+          const metadata = await sharp(optimizedBuffer).metadata();
+          
+          // Upload optimized image to Cloudinary
+          const cloudinaryResult = await cloudinaryStorage.uploadFromBuffer(
+            optimizedBuffer,  // Use optimized buffer instead of original
+            websiteId,
+            contentId || 'user-upload',
+            file.originalname
+          );
+          
+          // Step 2: Save to database
+          const imageRecord = await storage.createContentImage({
+            userId,
+            contentId: contentId || null,
+            websiteId,
+            url: cloudinaryResult.secureUrl,
+            cloudinaryId: cloudinaryResult.publicId,
+            altText: file.originalname.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+            filename: file.originalname,
+            mimeType: 'image/jpeg',  // We converted to JPEG
+            size: optimizedBuffer.length,
+            width: metadata.width || 0,
+            height: metadata.height || 0,
+            source: 'user_upload'
+          });
+          
+          uploadedImages.push({
+            id: imageRecord.id,
+            url: cloudinaryResult.secureUrl,
+            publicId: cloudinaryResult.publicId,
+            altText: imageRecord.altText,
+            filename: file.originalname,
+            size: optimizedBuffer.length,
+            width: metadata.width,
+            height: metadata.height
+          });
+          
+        } catch (uploadError: any) {
+          console.error(`Failed to process ${file.originalname}:`, uploadError);
+        }
+      }
+      
+      res.json({
+        success: true,
+        images: uploadedImages,
+        message: `Uploaded ${uploadedImages.length} images`
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Upload error:', error);
+      res.status(500).json({ 
+        error: 'Upload failed',
+        message: error.message 
+      });
+    }
+  }
+);
+
+app.post("/api/user/content/replace-image", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { contentId, oldImageUrl, newImageUrl, newAltText } = req.body;
+    
+    // Validate content ownership
+    const content = await storage.getContent(contentId);
+    if (!content || content.userId !== userId) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+    
+    // Replace image in content body
+    const imgRegex = new RegExp(
+      `<img[^>]*src=["']${escapeRegExp(oldImageUrl)}["'][^>]*>`, 
+      'gi'
+    );
+    
+    const updatedBody = content.body.replace(imgRegex, (match) => {
+      return match
+        .replace(/src=["'][^"']+["']/, `src="${newImageUrl}"`)
+        .replace(/alt=["'][^"']*["']/, `alt="${newAltText}"`);
+    });
+    
+    // Update content
+    await storage.updateContent(contentId, {
+      body: updatedBody,
+      updatedAt: new Date()
+    });
+    
+    res.json({
+      success: true,
+      message: 'Image replaced successfully'
+    });
+    
+  } catch (error: any) {
+    console.error('Failed to replace image:', error);
+    res.status(500).json({ error: 'Failed to replace image' });
+  }
+});
+
+// Get user's image library
+app.get("/api/user/content/images", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { websiteId, contentId, limit = "50", offset = "0" } = req.query;
+    
+    const images = await storage.getUserContentImages(userId, {
+      websiteId: websiteId as string,
+      contentId: contentId as string,
+      limit: parseInt(limit as string),
+      offset: parseInt(offset as string)
+    });
+    
+    res.json({
+      images,
+      total: images.length,
+      hasMore: images.length === parseInt(limit as string)
+    });
+    
+  } catch (error: any) {
+    console.error('Failed to fetch images:', error);
+    res.status(500).json({ error: 'Failed to fetch images' });
+  }
+});
+
+// Delete image
+app.delete("/api/user/content/images/:imageId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { imageId } = req.params;
+    
+    // Get image to verify ownership and get cloudinary ID
+    const image = await storage.getContentImage(imageId);
+    if (!image || image.userId !== userId) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+    
+    // Delete from Cloudinary if it has a public ID
+    if (image.cloudinaryId) {
+      await cloudinaryStorage.deleteImage(image.cloudinaryId);
+    }
+    
+    // Delete from database
+    await storage.deleteContentImage(imageId);
+    
+    res.json({
+      success: true,
+      message: 'Image deleted successfully'
+    });
+    
+  } catch (error: any) {
+    console.error('Failed to delete image:', error);
+    res.status(500).json({ error: 'Failed to delete image' });
+  }
+});
+
 
   // ===========================================================================
   // GOOGLE SEARCH CONSOLE ROUTES

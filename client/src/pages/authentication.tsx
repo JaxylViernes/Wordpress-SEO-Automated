@@ -58,7 +58,8 @@ interface AuthContextType {
     username: string,
     password: string,
     email: string,  // Now required
-    name?: string
+    name?: string,
+    verificationCode?: string  // Added for email verification
   ) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
@@ -121,13 +122,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     username: string,
     password: string,
     email: string,  // Now required
-    name?: string
+    name?: string,
+    verificationCode?: string  // Added for email verification
   ) => {
     const response = await fetch("/api/auth/signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ username, password, email, name }),
+      body: JSON.stringify({ username, password, email, name, verificationCode }),
     });
 
     const data = await response.json();
@@ -188,12 +190,10 @@ export function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Redirect if already authenticated
-  useEffect(() => {
-    if (user) {
-      setLocation("/");
-    }
-  }, [user, setLocation]);
+  // Verification state - moved up before useEffect
+  const [verificationStep, setVerificationStep] = useState(false);
+  const [verificationCode, setVerificationCode] = useState("");
+  const [resendTimer, setResendTimer] = useState(0);
 
   // Login state
   const [loginForm, setLoginForm] = useState({
@@ -209,6 +209,21 @@ export function AuthPage() {
     email: "",
     name: "",
   });
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (user) {
+      setLocation("/");
+    }
+  }, [user, setLocation]);
+  
+  // Timer for resend code
+  useEffect(() => {
+    if (resendTimer > 0) {
+      const timer = setTimeout(() => setResendTimer(resendTimer - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendTimer]);
 
   const handleLogin = async () => {
     if (!loginForm.username || !loginForm.password) {
@@ -263,20 +278,95 @@ export function AuthPage() {
     setLoading(true);
 
     try {
-      // FINAL sanitize before request
-      const username = sanitizeUsernameFinal(signupForm.username);
-      const password = (signupForm.password ?? "").trim();
-      const email = sanitizeEmailFinal(signupForm.email); // No longer optional
-      const name = signupForm.name ? sanitizeNameFinal(signupForm.name) : undefined;
+      // Send verification code to email
+      const response = await fetch("/api/auth/send-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          email: sanitizeEmailFinal(signupForm.email),
+          username: sanitizeUsernameFinal(signupForm.username)
+        }),
+      });
 
-      await signup(username, password, email, name);
-      // Success - redirect to dashboard
-      setLocation("/");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to send verification code");
+      }
+
+      // Move to verification step
+      setVerificationStep(true);
+      setResendTimer(60); // 60 second cooldown for resend
+      setError("");
     } catch (error: any) {
-      setError(error.message || "Signup failed");
+      setError(error.message || "Failed to send verification code");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleVerifyAndComplete = async () => {
+    if (!verificationCode) {
+      setError("Please enter the verification code");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      // FINAL sanitize before request
+      const username = sanitizeUsernameFinal(signupForm.username);
+      const password = (signupForm.password ?? "").trim();
+      const email = sanitizeEmailFinal(signupForm.email);
+      const name = signupForm.name ? sanitizeNameFinal(signupForm.name) : undefined;
+
+      // Use the signup function from AuthProvider with verification code
+      await signup(username, password, email, name, verificationCode.trim());
+      // Success - redirect to dashboard
+      setLocation("/");
+    } catch (error: any) {
+      setError(error.message || "Verification failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (resendTimer > 0) return;
+    
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/auth/send-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          email: sanitizeEmailFinal(signupForm.email),
+          username: sanitizeUsernameFinal(signupForm.username)
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to resend verification code");
+      }
+
+      setResendTimer(60);
+      setError("");
+    } catch (error: any) {
+      setError(error.message || "Failed to resend verification code");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBackToSignup = () => {
+    setVerificationStep(false);
+    setVerificationCode("");
+    setError("");
   };
 
   return (
@@ -300,7 +390,15 @@ export function AuthPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <Tabs value={activeTab} onValueChange={(value) => {
+              setActiveTab(value);
+              // Reset verification state when switching tabs
+              if (value === "login") {
+                setVerificationStep(false);
+                setVerificationCode("");
+              }
+              setError("");
+            }}>
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="login">Sign In</TabsTrigger>
                 <TabsTrigger value="signup">Sign Up</TabsTrigger>
@@ -392,125 +490,191 @@ export function AuthPage() {
               </TabsContent>
 
               <TabsContent value="signup" className="space-y-4">
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="signup-username">Username *</Label>
-                    <div className="relative">
+                {!verificationStep ? (
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="signup-username">Username *</Label>
+                      <div className="relative">
+                        <Input
+                          id="signup-username"
+                          type="text"
+                          value={signupForm.username}
+                          onChange={(e) =>
+                            setSignupForm((prev) => ({
+                              ...prev,
+                              username: sanitizeUsernameInline(e.target.value),
+                            }))
+                          }
+                          className="pl-10"
+                          placeholder="Choose a username"
+                          required
+                        />
+                        <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="signup-email">Email *</Label>
+                      <div className="relative">
+                        <Input
+                          id="signup-email"
+                          type="email"
+                          value={signupForm.email}
+                          onChange={(e) =>
+                            setSignupForm((prev) => ({
+                              ...prev,
+                              email: sanitizeEmailInline(e.target.value),
+                            }))
+                          }
+                          className="pl-10"
+                          placeholder="your@email.com"
+                          required
+                        />
+                        <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        We'll send a verification code to this email
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="signup-name">Full Name</Label>
                       <Input
-                        id="signup-username"
+                        id="signup-name"
                         type="text"
-                        value={signupForm.username}
+                        value={signupForm.name}
                         onChange={(e) =>
                           setSignupForm((prev) => ({
                             ...prev,
-                            username: sanitizeUsernameInline(e.target.value),
+                            name: sanitizeNameInline(e.target.value),
                           }))
                         }
-                        className="pl-10"
-                        placeholder="Choose a username"
-                        required
+                        placeholder="Your full name (optional)"
                       />
-                      <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                     </div>
-                  </div>
 
-                  <div>
-                    <Label htmlFor="signup-email">Email *</Label>
-                    <div className="relative">
-                      <Input
-                        id="signup-email"
-                        type="email"
-                        value={signupForm.email}
-                        onChange={(e) =>
-                          setSignupForm((prev) => ({
-                            ...prev,
-                            email: sanitizeEmailInline(e.target.value),
-                          }))
-                        }
-                        className="pl-10"
-                        placeholder="your@email.com"
-                        required
-                      />
-                      <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <div>
+                      <Label htmlFor="signup-password">Password *</Label>
+                      <div className="relative">
+                        <Input
+                          id="signup-password"
+                          type={showPassword ? "text" : "password"}
+                          value={signupForm.password}
+                          onChange={(e) =>
+                            setSignupForm((prev) => ({
+                              ...prev,
+                              password: e.target.value,
+                            }))
+                          }
+                          className="pl-10 pr-10"
+                          placeholder="At least 6 characters"
+                        />
+                        <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3"
+                          onClick={() => setShowPassword(!showPassword)}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Required for password recovery
-                    </p>
-                  </div>
 
-                  <div>
-                    <Label htmlFor="signup-name">Full Name</Label>
-                    <Input
-                      id="signup-name"
-                      type="text"
-                      value={signupForm.name}
-                      onChange={(e) =>
-                        setSignupForm((prev) => ({
-                          ...prev,
-                          name: sanitizeNameInline(e.target.value),
-                        }))
-                      }
-                      placeholder="Your full name (optional)"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="signup-password">Password *</Label>
-                    <div className="relative">
+                    <div>
+                      <Label htmlFor="signup-confirm">Confirm Password *</Label>
                       <Input
-                        id="signup-password"
-                        type={showPassword ? "text" : "password"}
-                        value={signupForm.password}
+                        id="signup-confirm"
+                        type="password"
+                        value={signupForm.confirmPassword}
                         onChange={(e) =>
                           setSignupForm((prev) => ({
                             ...prev,
-                            password: e.target.value,
+                            confirmPassword: e.target.value,
                           }))
                         }
-                        className="pl-10 pr-10"
-                        placeholder="At least 6 characters"
+                        placeholder="Confirm your password"
                       />
-                      <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Button
+                    </div>
+
+                    <Button
+                      onClick={handleSignup}
+                      className="w-full"
+                      disabled={loading}
+                    >
+                      {loading ? "Sending Verification Code..." : "Continue"}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="text-center space-y-2">
+                      <Mail className="mx-auto h-12 w-12 text-blue-600" />
+                      <h3 className="font-semibold text-lg">Verify Your Email</h3>
+                      <p className="text-sm text-gray-600">
+                        We've sent a verification code to
+                      </p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {signupForm.email}
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="verification-code">Verification Code *</Label>
+                      <Input
+                        id="verification-code"
+                        type="text"
+                        value={verificationCode}
+                        onChange={(e) => setVerificationCode(e.target.value.replace(/[^0-9]/g, ''))}
+                        className="text-center text-lg font-semibold tracking-widest"
+                        placeholder="Enter 6-digit code"
+                        maxLength={6}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && verificationCode.length === 6) {
+                            handleVerifyAndComplete();
+                          }
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-center space-x-2 text-sm">
+                      <span className="text-gray-500">Didn't receive the code?</span>
+                      <button
                         type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3"
-                        onClick={() => setShowPassword(!showPassword)}
+                        onClick={handleResendCode}
+                        disabled={resendTimer > 0 || loading}
+                        className={`font-medium ${
+                          resendTimer > 0 
+                            ? 'text-gray-400 cursor-not-allowed' 
+                            : 'text-blue-600 hover:text-blue-700 hover:underline'
+                        }`}
                       >
-                        {showPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </Button>
+                        {resendTimer > 0 ? `Resend in ${resendTimer}s` : 'Resend Code'}
+                      </button>
                     </div>
-                  </div>
 
-                  <div>
-                    <Label htmlFor="signup-confirm">Confirm Password *</Label>
-                    <Input
-                      id="signup-confirm"
-                      type="password"
-                      value={signupForm.confirmPassword}
-                      onChange={(e) =>
-                        setSignupForm((prev) => ({
-                          ...prev,
-                          confirmPassword: e.target.value,
-                        }))
-                      }
-                      placeholder="Confirm your password"
-                    />
-                  </div>
+                    <Button
+                      onClick={handleVerifyAndComplete}
+                      className="w-full"
+                      disabled={loading || verificationCode.length !== 6}
+                    >
+                      {loading ? "Verifying..." : "Verify & Create Account"}
+                    </Button>
 
-                  <Button
-                    onClick={handleSignup}
-                    className="w-full"
-                    disabled={loading}
-                  >
-                    {loading ? "Creating Account..." : "Create Account"}
-                  </Button>
-                </div>
+                    <Button
+                      variant="outline"
+                      onClick={handleBackToSignup}
+                      className="w-full"
+                      disabled={loading}
+                    >
+                      Back to Sign Up
+                    </Button>
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           </CardContent>
