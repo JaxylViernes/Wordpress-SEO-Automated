@@ -67,6 +67,7 @@ import { contentImages, insertContentImageSchema, type InsertContentImage, type 
 import { autoSchedules, type AutoSchedule, type InsertAutoSchedule } from "@shared/schema";
 import { gscStorage } from "./services/gsc-storage";
 import { randomUUID, createHash } from 'crypto';
+import { cloudinaryStorage } from './services/cloudinary-storage';
 
 
 
@@ -139,7 +140,7 @@ export interface IStorage {
 
   // User-scoped SEO Reports
   getUserSeoReports(userId: string, websiteId?: string): Promise<SeoReport[]>;
-  getSeoReportsByWebsite(websiteId: string): Promise<SeoReport[]>;
+  getSeoReportsByWebsite(websiteId: string, userId: string): Promise<SeoReport[]>;
   getLatestSeoReport(websiteId: string): Promise<SeoReport | undefined>;
   createSeoReport(report: InsertSeoReport & { userId: string }): Promise<SeoReport>;
 
@@ -428,6 +429,111 @@ export class DatabaseStorage implements IStorage {
     return contentItem;
   }
 
+  async deleteContent(contentId: string, userId: string): Promise<boolean> {
+  try {
+    // First verify the content belongs to the user
+    const [contentItem] = await db
+      .select()
+      .from(content)
+      .where(
+        and(
+          eq(content.id, contentId),
+          eq(content.userId, userId)
+        )
+      );
+    
+    if (!contentItem) {
+      console.log(`Content ${contentId} not found or doesn't belong to user ${userId}`);
+      return false;
+    }
+    
+    // Get all images associated with this content before deleting them from DB
+    const images = await db
+      .select()
+      .from(contentImages)
+      .where(eq(contentImages.contentId, contentId));
+    
+    // Delete images from Cloudinary if they exist
+    if (images && images.length > 0) {
+      console.log(`Found ${images.length} images to delete from Cloudinary`);
+      
+      // Import cloudinaryStorage dynamically to avoid circular dependencies
+      const { cloudinaryStorage } = await import('./services/cloudinary-storage');
+      
+      // Only attempt Cloudinary deletion if it's configured
+      if (cloudinaryStorage.isConfigured()) {
+        for (const image of images) {
+          if (image.cloudinaryPublicId) {
+            try {
+              const deleted = await cloudinaryStorage.deleteImage(image.cloudinaryPublicId);
+              if (deleted) {
+                console.log(`✅ Deleted image from Cloudinary: ${image.cloudinaryPublicId}`);
+              } else {
+                console.warn(`⚠️ Failed to delete image from Cloudinary: ${image.cloudinaryPublicId}`);
+              }
+            } catch (error) {
+              console.error(`Error deleting image ${image.cloudinaryPublicId} from Cloudinary:`, error);
+              // Continue with deletion even if Cloudinary deletion fails
+            }
+          }
+        }
+      } else {
+        console.log('Cloudinary not configured, skipping cloud image deletion');
+      }
+    }
+    
+    // Delete images from database
+    if (images.length > 0) {
+      try {
+        await db
+          .delete(contentImages)
+          .where(eq(contentImages.contentId, contentId));
+        console.log(`Deleted ${images.length} images from database for content ${contentId}`);
+      } catch (error) {
+        console.error(`Error deleting images from database:`, error);
+        // Continue even if image deletion fails
+      }
+    }
+    
+    // Delete associated schedules if any
+    try {
+      const scheduleResult = await db
+        .delete(contentSchedule)
+        .where(eq(contentSchedule.contentId, contentId));
+      if (scheduleResult.rowCount && scheduleResult.rowCount > 0) {
+        console.log(`Deleted ${scheduleResult.rowCount} schedule(s) for content ${contentId}`);
+      }
+    } catch (error) {
+      // Schedules might not exist, that's okay
+      console.log(`No schedules to delete for content ${contentId}`);
+    }
+    
+    // Now delete the content itself
+    const result = await db
+      .delete(content)
+      .where(
+        and(
+          eq(content.id, contentId),
+          eq(content.userId, userId)
+        )
+      );
+    
+    const success = (result.rowCount ?? 0) > 0;
+    
+    if (success) {
+      console.log(`✅ Content ${contentId} and all associated resources deleted successfully`);
+    } else {
+      console.error(`❌ Failed to delete content ${contentId}`);
+    }
+    
+    return success;
+    
+  } catch (error) {
+    console.error('Error deleting content:', error);
+    throw error;
+  }
+}
+
 
   // ===============================
   // CONTENT IMAGES METHODS
@@ -559,7 +665,7 @@ async createContentImage(data: InsertContentImage & { userId: string }): Promise
       if (!website) {
         return [];
       }
-      return await this.getSeoReportsByWebsite(websiteId);
+      return await this.getSeoReportsByWebsite(websiteId, userId);
     }
     
     // Get all SEO reports for user's websites
@@ -570,13 +676,18 @@ async createContentImage(data: InsertContentImage & { userId: string }): Promise
       .orderBy(desc(seoReports.createdAt));
   }
 
-  async getSeoReportsByWebsite(websiteId: string): Promise<SeoReport[]> {
-    return await db
-      .select()
-      .from(seoReports)
-      .where(eq(seoReports.websiteId, websiteId))
-      .orderBy(desc(seoReports.createdAt));
-  }
+  async getSeoReportsByWebsite(websiteId: string, userId: string): Promise<SeoReport[]> {
+  return await db
+    .select()
+    .from(seoReports)
+    .where(
+      and(
+        eq(seoReports.websiteId, websiteId),
+        eq(seoReports.userId, userId)  // Add this line
+      )
+    )
+    .orderBy(desc(seoReports.createdAt));
+}
 
   async getLatestSeoReport(websiteId: string): Promise<SeoReport | undefined> {
     const [report] = await db
@@ -759,9 +870,9 @@ async getUserDashboardStats(userId: string): Promise<{
   websiteCount: number;
   contentCount: number;
   avgSeoScore: number;
+  previousAvgSeoScore: number | null;
   recentActivity: number;
   scheduledPosts: number;
-  seoReports?: any[];  // Add this to pass reports to frontend
 }> {
   const userWebsites = await this.getUserWebsites(userId);
   const userContent = await this.getUserContent(userId);
@@ -775,37 +886,40 @@ async getUserDashboardStats(userId: string): Promise<{
       )
     );
   
-  const [scheduledCount] = await db
-    .select({ count: count() })
-    .from(contentSchedule)
-    .where(eq(contentSchedule.userId, userId));
-
-  // GET LATEST SEO REPORTS
   const allSeoReports = [];
   for (const website of userWebsites) {
-    const reports = await this.getSeoReportsByWebsite(website.id);
+    // Pass userId to ensure we only get this user's reports
+    const reports = await this.getSeoReportsByWebsite(website.id, userId);
     if (reports.length > 0) {
       allSeoReports.push(...reports);
     }
   }
   
-  // Sort by date to get the most recent
+  // Sort by date
   allSeoReports.sort((a, b) => 
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
-  // Use the latest report score as current score
   const currentScore = allSeoReports.length > 0 
     ? Math.round(allSeoReports[0].score)
     : 0;
+    
+  const previousScore = allSeoReports.length > 1 
+    ? Math.round(allSeoReports[1].score)
+    : null;
 
+    const [scheduledCount] = await db
+  .select({ count: count() })
+  .from(contentSchedule)
+  .where(eq(contentSchedule.userId, userId));
+  
   return {
     websiteCount: userWebsites.length,
     contentCount: userContent.length,
-    avgSeoScore: currentScore,  // Now shows latest report score
+    avgSeoScore: currentScore,
+    previousAvgSeoScore: previousScore,
     recentActivity: recentLogs.length,
-    scheduledPosts: Number(scheduledCount?.count) || 0,
-    seoReports: allSeoReports  // Pass this for the graph
+    scheduledPosts: Number(scheduledCount?.count) || 0
   };
 }
 // async getUserDashboardStats(userId: string): Promise<{
@@ -2512,7 +2626,7 @@ async clearAllSeoData(websiteId: string, userId: string): Promise<{
   
   try {
     // Get all reports
-    const allReports = await this.getSeoReportsByWebsite(websiteId);
+    const allReports = await this.getSeoReportsByWebsite(websiteId, userId);
     
     if (allReports.length === 0) {
       return {

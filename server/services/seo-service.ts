@@ -59,24 +59,56 @@ const SEO_CONSTANTS = {
 };
 
 const AI_FIXABLE_ISSUE_TYPES = [
+  // Meta tags
   'missing page title',
   'title tag too long',
   'title tag too short',
   'missing meta description',
   'meta description too long',
+  'meta description too short',
+  'duplicate meta descriptions',
+  
+  // Headings
   'missing h1 tag',
   'multiple h1 tags',
   'improper heading hierarchy',
+  
+  // Images
   'images missing alt text',
+  'unoptimized images',
+  'missing image dimensions',
+  'images missing lazy loading',
+  
+  // Content
   'low content quality',
   'poor readability',
   'poor content structure',
+  'thin content',
+  'duplicate content',
+  'keyword over-optimization',
+  'poor keyword distribution',
+  'missing important keywords',
+  
+  // Technical SEO
   'missing viewport meta tag',
   'missing schema markup',
   'missing open graph tags',
-  'poor keyword distribution',
-  'keyword over-optimization',
-  'missing important keywords',
+  'missing twitter cards',
+  'missing canonical url',
+  'missing breadcrumbs',
+  'missing faq schema',
+  
+  // Links
+  'broken internal links',
+  'poor internal linking',
+  'external links missing attributes',
+  'orphan pages',
+  
+  // Site-wide
+  'missing xml sitemap',
+  'robots txt issues',
+  'unoptimized permalinks',
+  'redirect chains',
 ];
 
 const DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -101,6 +133,8 @@ export interface ContentAnalysisResult {
   contentStructureScore: number;
   uniquenessScore: number;
   userIntentAlignment: number;
+  wordCount?: number;
+  duplicateContentRisk?: number;
 }
 
 export interface KeywordOptimizationResult {
@@ -134,6 +168,8 @@ export interface TechnicalSEODetails {
     hasKeywords: boolean;
     hasOgTags?: boolean;
     hasTwitterCards?: boolean;
+    hasCanonical?: boolean;
+    canonicalUrl?: string;
   };
   headings: {
     h1Count: number;
@@ -145,11 +181,15 @@ export interface TechnicalSEODetails {
     total: number;
     withoutAlt: number;
     withoutTitle: number;
+    withoutDimensions?: number;
+    withoutLazyLoading?: number;
   };
   links: {
     internal: number;
     external: number;
     broken: number;
+    externalWithoutAttributes?: number;
+    inboundLinks?: number;
   };
   performance: {
     loadTime?: number;
@@ -161,6 +201,11 @@ export interface TechnicalSEODetails {
   };
   schema?: {
     hasStructuredData: boolean;
+    hasFAQSchema?: boolean;
+    hasBreadcrumbs?: boolean;
+    hasArticleSchema?: boolean;
+    hasProductSchema?: boolean;
+    hasFAQContent?: boolean;
   };
 }
 
@@ -202,7 +247,7 @@ export class EnhancedSEOService {
         console.log(
           `No user-specific ${provider} key for user ${userId}, checking system keys`
         );
-      } catch (error) {
+      } catch (error: any) {
         console.warn(
           `Failed to get user ${provider} key for ${userId}: ${error.message}`
         );
@@ -213,14 +258,16 @@ export class EnhancedSEOService {
         if (userId) {
           console.log(`Using system ${provider} API key for user ${userId}`);
         }
-        return process.env[envVar];
+        return process.env[envVar]!;
       }
     }
 
     return null;
   }
 
-  private async getUserOpenAI(userId: string): Promise<OpenAI | null> {
+  private async getUserOpenAI(userId: string | undefined): Promise<OpenAI | null> {
+    if (!userId) return null;
+    
     const apiKey = await this.getAPIKey(
       userId,
       "openai",
@@ -230,12 +277,14 @@ export class EnhancedSEOService {
     return apiKey ? new OpenAI({ apiKey }) : null;
   }
 
-  private async getUserAnthropic(userId: string): Promise<Anthropic | null> {
+  private async getUserAnthropic(userId: string | undefined): Promise<Anthropic | null> {
+    if (!userId) return null;
+    
     const apiKey = await this.getAPIKey(userId, "anthropic", ["ANTHROPIC_API_KEY"]);
     return apiKey ? new Anthropic({ apiKey }) : null;
   }
 
-  private async getUserGooglePageSpeedApiKey(userId: string): Promise<string | null> {
+  private async getUserGooglePageSpeedApiKey(userId: string | undefined): Promise<string | null> {
     return this.getAPIKey(userId, "google_pagespeed", ["GOOGLE_PAGESPEED_API_KEY"]);
   }
 
@@ -257,19 +306,22 @@ export class EnhancedSEOService {
         this.performTechnicalAnalysis(normalizedUrl),
       ]);
 
-      const textContent = this.extractTextContent(pageContent);
+      const { text: textContent, wordCount } = this.extractTextContent(pageContent);
       const $ = cheerio.load(pageContent);
       const pageTitle = $("title").text();
       const metaDescription = $('meta[name="description"]').attr("content") || "";
+      
       const contentAnalysis = await this.performAIContentAnalysis(
         textContent,
         pageTitle,
         metaDescription,
         targetKeywords || [],
         userId,
-        websiteId
+        websiteId,
+        wordCount
       );
-      const issues = this.analyzeForIssues(technicalDetails, pageContent, contentAnalysis);
+      
+      const issues = await this.analyzeForIssues(technicalDetails, pageContent, contentAnalysis, normalizedUrl);
       const recommendations = this.generateEnhancedRecommendations(
         issues,
         technicalDetails,
@@ -306,7 +358,7 @@ export class EnhancedSEOService {
         technicalDetails,
         contentAnalysis,
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error("Enhanced SEO analysis failed:", error);
       throw new Error(`Failed to analyze website SEO: ${error.message}`);
     }
@@ -429,7 +481,7 @@ export class EnhancedSEOService {
           websiteId,
           seoReportId
         );
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Failed to track issue "${issue.title}":`, error);
       }
     }
@@ -515,21 +567,18 @@ export class EnhancedSEOService {
   ): Promise<void> {
     const isAutoFixable = this.isIssueAutoFixable(issue);
 
-    await storage.createSeoIssue({
+    await storage.createOrUpdateSeoIssue({
       userId,
       websiteId,
-      seoReportId,
       issueType,
       issueTitle: issue.title,
       issueDescription: issue.description,
       severity: issue.type,
       autoFixAvailable: isAutoFixable,
-      status: 'detected',
       elementPath: this.generateElementPath(issue.title),
       currentValue: this.extractCurrentValue(issue.title, issue.description),
       recommendedValue: this.generateRecommendedValue(issue.title, issue.description),
-      detectedAt: new Date(),
-      lastSeenAt: new Date()
+      seoReportId
     });
 
     console.log(`Created new tracked issue: ${issue.title}`);
@@ -596,22 +645,55 @@ export class EnhancedSEOService {
 
   private mapIssueToTrackingType(title: string): string {
     const titleLower = title.toLowerCase();
-    const mappings = {
+    const mappings: { [key: string]: string[] } = {
+      // Meta tags
       "missing_meta_description": ["meta description"],
+      "duplicate_meta_descriptions": ["duplicate meta"],
       "poor_title_tag": ["title tag"],
-      "heading_structure": ["h1", "heading"],
-      "missing_alt_text": ["alt text", "image"],
-      "missing_viewport_meta": ["viewport"],
-      "missing_schema": ["schema", "structured data"],
-      "mobile_responsiveness": ["mobile", "responsive"],
+      
+      // Headings
+      "heading_structure": ["h1", "heading", "hierarchy"],
+      
+      // Images
+      "missing_alt_text": ["alt text", "image alt"],
+      "unoptimized_images": ["unoptimized image", "image optimization"],
+      "missing_image_dimensions": ["image dimension", "width height"],
+      "images_missing_lazy_loading": ["lazy loading", "loading attribute"],
+      
+      // Schema & structured data
+      "missing_schema": ["schema", "structured data", "json-ld"],
+      "missing_faq_schema": ["faq schema", "faq structured"],
+      "missing_breadcrumbs": ["breadcrumb"],
+      
+      // Open Graph & social
+      "missing_og_tags": ["open graph", "og:"],
+      "missing_twitter_cards": ["twitter card", "twitter:"],
+      
+      // Links
+      "broken_internal_links": ["broken link", "404", "dead link"],
+      "poor_internal_linking": ["internal link", "internal linking"],
+      "external_links_missing_attributes": ["external link", "nofollow", "noopener"],
+      "orphan_pages": ["orphan page", "no inbound links"],
+      
+      // Content issues
+      "thin_content": ["thin content", "insufficient content", "short content"],
+      "duplicate_content": ["duplicate content", "content duplication"],
       "low_content_quality": ["content quality"],
       "poor_readability": ["readability"],
-      "low_eat_score": ["e-a-t"],
+      "low_eat_score": ["e-a-t", "expertise", "authority", "trust"],
       "keyword_optimization": ["keyword"],
-      "missing_og_tags": ["open graph"],
-      "poor_user_intent": ["user intent"],
-      "low_content_uniqueness": ["content uniqueness", "uniqueness"],
-      "poor_content_structure": ["content structure"],
+      "poor_user_intent": ["user intent", "search intent"],
+      "low_content_uniqueness": ["content uniqueness", "uniqueness", "original"],
+      "poor_content_structure": ["content structure", "organization"],
+      
+      // Technical
+      "missing_viewport_meta": ["viewport"],
+      "mobile_responsiveness": ["mobile", "responsive"],
+      "missing_canonical_url": ["canonical"],
+      "missing_xml_sitemap": ["sitemap", "xml sitemap"],
+      "robots_txt_issues": ["robots.txt", "robots txt"],
+      "unoptimized_permalinks": ["permalink", "url structure"],
+      "redirect_chains": ["redirect chain", "multiple redirects"],
     };
 
     for (const [type, keywords] of Object.entries(mappings)) {
@@ -625,7 +707,7 @@ export class EnhancedSEOService {
 
   private generateElementPath(title: string): string | undefined {
     const titleLower = title.toLowerCase();
-    const pathMappings = {
+    const pathMappings: { [key: string]: string[] } = {
       "title": ["title tag"],
       'meta[name="description"]': ["meta description"],
       "h1": ["h1"],
@@ -662,7 +744,7 @@ export class EnhancedSEOService {
 
   private generateRecommendedValue(title: string, description: string): string | undefined {
     const titleLower = title.toLowerCase();
-    const recommendations = {
+    const recommendations: { [key: string]: { missing?: string; default: string } } = {
       "meta description": {
         missing: "Add 120-160 character meta description",
         default: "Optimize to 120-160 characters"
@@ -770,9 +852,10 @@ export class EnhancedSEOService {
     description: string,
     targetKeywords: string[],
     userId?: string,
-    websiteId?: string
+    websiteId?: string,
+    wordCount?: number
   ): Promise<ContentAnalysisResult> {
-    const defaultResult = this.getDefaultContentAnalysisResult();
+    const defaultResult = this.getDefaultContentAnalysisResult(wordCount);
 
     try {
       const analysisPrompt = this.buildAnalysisPrompt(
@@ -793,7 +876,7 @@ export class EnhancedSEOService {
       }
 
       const parsed = this.parseAIResponse(aiResponse.result);
-      const result = this.validateContentAnalysisResult(parsed);
+      const result = this.validateContentAnalysisResult(parsed, wordCount);
 
       await this.trackAIUsageIfApplicable(
         userId,
@@ -815,7 +898,7 @@ export class EnhancedSEOService {
     }
   }
 
-  private getDefaultContentAnalysisResult(): ContentAnalysisResult {
+  private getDefaultContentAnalysisResult(wordCount?: number): ContentAnalysisResult {
     return {
       qualityScore: 70,
       readabilityScore: 70,
@@ -837,6 +920,8 @@ export class EnhancedSEOService {
       contentStructureScore: 70,
       uniquenessScore: 70,
       userIntentAlignment: 70,
+      wordCount: wordCount || 0,
+      duplicateContentRisk: 0,
     };
   }
 
@@ -957,7 +1042,7 @@ Return ONLY valid JSON with the exact structure specified.`;
     try {
       const result = this.getDefaultContentAnalysisResult();
       
-      const patterns = {
+      const patterns: { [key: string]: RegExp } = {
         qualityScore: /quality[:\s]+(\d+)/i,
         readabilityScore: /readability[:\s]+(\d+)/i,
         expertise: /expertise[:\s]+(\d+)/i,
@@ -969,9 +1054,9 @@ Return ONLY valid JSON with the exact structure specified.`;
         if (match) {
           const value = parseInt(match[1]);
           if (key === 'expertise' || key === 'trustworthiness') {
-            result.eatScore[key] = value;
+            (result.eatScore as any)[key] = value;
           } else {
-            result[key] = value;
+            (result as any)[key] = value;
           }
         }
       }
@@ -982,7 +1067,7 @@ Return ONLY valid JSON with the exact structure specified.`;
     }
   }
 
-  private validateContentAnalysisResult(parsed: any): ContentAnalysisResult {
+  private validateContentAnalysisResult(parsed: any, wordCount?: number): ContentAnalysisResult {
     return {
       qualityScore: this.safeValidateScore(parsed.qualityScore),
       readabilityScore: this.safeValidateScore(parsed.readabilityScore),
@@ -1009,6 +1094,8 @@ Return ONLY valid JSON with the exact structure specified.`;
       contentStructureScore: this.safeValidateScore(parsed.contentStructureScore),
       uniquenessScore: this.safeValidateScore(parsed.uniquenessScore),
       userIntentAlignment: this.safeValidateScore(parsed.userIntentAlignment),
+      wordCount: wordCount || 0,
+      duplicateContentRisk: parsed.duplicateContentRisk || 0,
     };
   }
 
@@ -1049,7 +1136,7 @@ Return ONLY valid JSON with the exact structure specified.`;
           operation: "seo_content_analysis",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.warn("Failed to track AI usage:", error.message);
     }
   }
@@ -1120,7 +1207,7 @@ Return ONLY valid JSON with the exact structure specified.`;
       );
 
       return Math.round(finalScore);
-    } catch (error) {
+    } catch (error: any) {
       console.error("PageSpeed API failed, using fallback:", error.message);
       return this.estimatePageSpeedScore(url);
     }
@@ -1187,18 +1274,90 @@ Return ONLY valid JSON with the exact structure specified.`;
     return {
       metaTags: this.analyzeMetaTags($),
       headings: this.analyzeHeadings($),
-      images: this.analyzeImages($),
-      links: this.analyzeLinks($, url),
+      images: this.analyzeImagesEnhanced($),
+      links: this.analyzeLinksEnhanced($, url),
       performance: { pageSize: html.length },
       mobile: this.analyzeMobile($, html),
-      schema: { hasStructuredData: this.hasSchemaMarkup($) },
+      schema: this.analyzeSchemaEnhanced($),
     };
   }
 
+  // Enhanced image analysis:
+  private analyzeImagesEnhanced($: cheerio.CheerioAPI) {
+    const images = $("img");
+    let withoutAlt = 0;
+    let withoutTitle = 0;
+    let withoutDimensions = 0;
+    let withoutLazyLoading = 0;
+
+    images.each((i, elem) => {
+      const $img = $(elem);
+      const alt = $img.attr("alt");
+      const title = $img.attr("title");
+      const width = $img.attr("width");
+      const height = $img.attr("height");
+      const loading = $img.attr("loading");
+      
+      if (!alt || alt.trim() === "") withoutAlt++;
+      if (!title || title.trim() === "") withoutTitle++;
+      if (!width || !height) withoutDimensions++;
+      if (loading !== "lazy" && i > 2) withoutLazyLoading++; // Skip first few images
+    });
+
+    return {
+      total: images.length,
+      withoutAlt,
+      withoutTitle,
+      withoutDimensions,
+      withoutLazyLoading,
+    };
+  }
+
+  private analyzeSchemaEnhanced($: cheerio.CheerioAPI) {
+    const hasStructuredData = 
+      $('script[type="application/ld+json"]').length > 0 ||
+      $("[itemscope]").length > 0 ||
+      $("[typeof]").length > 0;
+
+    // Check for specific schema types
+    let hasFAQSchema = false;
+    let hasBreadcrumbs = false;
+    let hasArticleSchema = false;
+    let hasProductSchema = false;
+
+    // Check JSON-LD scripts
+    $('script[type="application/ld+json"]').each((i, elem) => {
+      const content = $(elem).html() || "";
+      if (content.includes('"@type":"FAQPage"')) hasFAQSchema = true;
+      if (content.includes('"@type":"BreadcrumbList"')) hasBreadcrumbs = true;
+      if (content.includes('"@type":"Article"')) hasArticleSchema = true;
+      if (content.includes('"@type":"Product"')) hasProductSchema = true;
+    });
+
+    // Check for breadcrumb markup
+    if ($('.breadcrumb, .breadcrumbs, nav[aria-label*="breadcrumb"]').length > 0) {
+      hasBreadcrumbs = true;
+    }
+
+    // Check if content has FAQ-like structure
+    const hasFAQContent = $('h2:contains("?"), h3:contains("?")').length >= 3;
+
+    return {
+      hasStructuredData,
+      hasFAQSchema,
+      hasBreadcrumbs,
+      hasArticleSchema,
+      hasProductSchema,
+      hasFAQContent,
+    };
+  }
+
+  // Enhanced meta tag analysis:
   private analyzeMetaTags($: cheerio.CheerioAPI) {
     const title = $("title").text().trim();
     const description = $('meta[name="description"]').attr("content")?.trim() || "";
     const keywords = $('meta[name="keywords"]').attr("content")?.trim() || "";
+    const canonical = $('link[rel="canonical"]').attr("href")?.trim() || "";
 
     return {
       hasTitle: title.length > 0,
@@ -1208,7 +1367,117 @@ Return ONLY valid JSON with the exact structure specified.`;
       hasKeywords: keywords.length > 0,
       hasOgTags: $('meta[property^="og:"]').length > 0,
       hasTwitterCards: $('meta[name^="twitter:"]').length > 0,
+      hasCanonical: canonical.length > 0,
+      canonicalUrl: canonical,
     };
+  }
+
+  private analyzeContentIssues(issues: SEOIssue[], content: ContentAnalysisResult): void {
+    const thresholds = SEO_CONSTANTS.THRESHOLDS;
+
+    // Existing content quality checks...
+    if (content.qualityScore < thresholds.LOW_QUALITY) {
+      issues.push(this.createIssue(
+        "critical",
+        "Low Content Quality",
+        `Content quality score is ${content.qualityScore}/100. Content lacks depth or value.`,
+        true
+      ));
+    }
+
+    if (content.readabilityScore < thresholds.POOR_READABILITY) {
+      issues.push(this.createIssue(
+        "warning",
+        "Poor Readability",
+        `Readability score is ${content.readabilityScore}/100. Content is difficult to understand.`,
+        true
+      ));
+    }
+
+    if (content.eatScore.overall < thresholds.LOW_EAT) {
+      issues.push(this.createIssue(
+        "warning",
+        "Low E-A-T Score",
+        `E-A-T score is ${content.eatScore.overall}/100. Content lacks expertise or trust signals.`,
+        false
+      ));
+    }
+
+    // Keyword optimization
+    if (content.keywordOptimization.keywordDistribution === "poor") {
+      issues.push(this.createIssue(
+        "warning",
+        "Poor Keyword Distribution",
+        "Keywords are not well distributed throughout the content.",
+        true
+      ));
+    }
+
+    if (content.keywordOptimization.primaryKeywordDensity > thresholds.HIGH_KEYWORD_DENSITY) {
+      issues.push(this.createIssue(
+        "warning",
+        "Keyword Over-Optimization",
+        `Keyword density is ${content.keywordOptimization.primaryKeywordDensity.toFixed(1)}%. Consider reducing to 1-3%.`,
+        true
+      ));
+    }
+
+    if (content.keywordOptimization.missingKeywords.length > 0) {
+      issues.push(this.createIssue(
+        "info",
+        "Missing Important Keywords",
+        `Consider adding: ${content.keywordOptimization.missingKeywords.join(", ")}`,
+        true
+      ));
+    }
+
+    // Content structure and uniqueness
+    if (content.contentStructureScore < thresholds.POOR_STRUCTURE) {
+      issues.push(this.createIssue(
+        "warning",
+        "Poor Content Structure",
+        `Content structure score is ${content.contentStructureScore}/100. Improve organization and flow.`,
+        true
+      ));
+    }
+
+    if (content.userIntentAlignment < thresholds.POOR_INTENT) {
+      issues.push(this.createIssue(
+        "warning",
+        "Poor User Intent Alignment",
+        `User intent alignment is ${content.userIntentAlignment}/100. Content doesn't match search intent.`,
+        false
+      ));
+    }
+
+    if (content.uniquenessScore < thresholds.LOW_UNIQUENESS) {
+      issues.push(this.createIssue(
+        "warning",
+        "Low Content Uniqueness",
+        `Uniqueness score is ${content.uniquenessScore}/100. Add more original insights.`,
+        false
+      ));
+    }
+
+    // Check for thin content (word count based)
+    if (content.wordCount && content.wordCount < 300) {
+      issues.push(this.createIssue(
+        "warning",
+        "Thin Content",
+        `Content has only ${content.wordCount} words. Expand to at least 500 words for better SEO.`,
+        true
+      ));
+    }
+
+    // Check for duplicate content indicators
+    if (content.duplicateContentRisk && content.duplicateContentRisk > 30) {
+      issues.push(this.createIssue(
+        "warning",
+        "Duplicate Content Risk",
+        "Content may be too similar to other pages. Add unique value.",
+        true
+      ));
+    }
   }
 
   private analyzeHeadings($: cheerio.CheerioAPI) {
@@ -1255,24 +1524,52 @@ Return ONLY valid JSON with the exact structure specified.`;
     };
   }
 
-  private analyzeLinks($: cheerio.CheerioAPI, url: string) {
+  private analyzeLinksEnhanced($: cheerio.CheerioAPI, url: string) {
     const domain = new URL(url).hostname;
     const allLinks = $("a[href]");
     let internal = 0;
     let external = 0;
+    let broken = 0;
+    let externalWithoutAttributes = 0;
+    const internalUrls = new Set<string>();
 
     allLinks.each((i, elem) => {
-      const href = $(elem).attr("href");
+      const $link = $(elem);
+      const href = $link.attr("href");
+      
       if (href) {
         if (href.startsWith("/") || href.includes(domain)) {
           internal++;
+          internalUrls.add(href);
+          
+          // Check for broken links (simplified check)
+          if (href.includes("404") || href.includes("error")) {
+            broken++;
+          }
         } else if (href.startsWith("http")) {
           external++;
+          
+          // Check for missing security attributes
+          const rel = $link.attr("rel") || "";
+          const target = $link.attr("target");
+          
+          if (!rel.includes("noopener") || !rel.includes("noreferrer") || !target) {
+            externalWithoutAttributes++;
+          }
         }
       }
     });
 
-    return { internal, external, broken: 0 };
+    // Check if this page is linked from anywhere (simplified)
+    const inboundLinks = $(`a[href="${url}"], a[href*="${url.split('/').pop()}"]`).length;
+
+    return { 
+      internal, 
+      external, 
+      broken,
+      externalWithoutAttributes,
+      inboundLinks
+    };
   }
 
   private analyzeMobile($: cheerio.CheerioAPI, html: string) {
@@ -1305,7 +1602,7 @@ Return ONLY valid JSON with the exact structure specified.`;
     );
   }
 
-  private extractTextContent(html: string): string {
+  private extractTextContent(html: string): { text: string; wordCount: number } {
     const $ = cheerio.load(html);
 
     $("script, style, nav, footer, header, aside, .menu, .sidebar, .ads").remove();
@@ -1315,31 +1612,46 @@ Return ONLY valid JSON with the exact structure specified.`;
       ".entry-content", ".main-content", "#content",
     ];
 
+    let textContent = "";
     for (const selector of mainSelectors) {
       const element = $(selector).first();
       if (element.length && element.text().trim().length > 200) {
-        return element.text().replace(/\s+/g, " ").trim();
+        textContent = element.text().replace(/\s+/g, " ").trim();
+        break;
       }
     }
 
-    return $("body").text().replace(/\s+/g, " ").trim();
+    if (!textContent) {
+      textContent = $("body").text().replace(/\s+/g, " ").trim();
+    }
+
+    const wordCount = this.countWords(textContent);
+
+    return { text: textContent, wordCount };
+  }
+
+  private countWords(text: string): number {
+    return text.trim().split(/\s+/).filter(word => word.length > 0).length;
   }
 
   //Issue Analysis
-  private analyzeForIssues(
+  private async analyzeForIssues(
     technicalDetails: TechnicalSEODetails,
     html: string,
-    contentAnalysis: ContentAnalysisResult
-  ): SEOIssue[] {
+    contentAnalysis: ContentAnalysisResult,
+    url: string
+  ): Promise<SEOIssue[]> {
     const issues: SEOIssue[] = [];
 
     this.analyzeTechnicalIssues(issues, technicalDetails);
     this.analyzeContentIssues(issues, contentAnalysis);
+    await this.analyzeSiteWideIssues(url, issues);
 
     return issues;
   }
 
   private analyzeTechnicalIssues(issues: SEOIssue[], technical: TechnicalSEODetails): void {
+    // Existing title tag checks
     if (!technical.metaTags.hasTitle) {
       issues.push(this.createIssue(
         "critical",
@@ -1366,6 +1678,7 @@ Return ONLY valid JSON with the exact structure specified.`;
       }
     }
 
+    // Existing meta description checks
     if (!technical.metaTags.hasDescription) {
       issues.push(this.createIssue(
         "critical",
@@ -1373,15 +1686,26 @@ Return ONLY valid JSON with the exact structure specified.`;
         "The page lacks a meta description, which impacts search result click-through rates.",
         true
       ));
-    } else if (technical.metaTags.descriptionLength > SEO_CONSTANTS.LIMITS.DESCRIPTION_MAX) {
-      issues.push(this.createIssue(
-        "warning",
-        "Meta Description Too Long",
-        `Meta description is ${technical.metaTags.descriptionLength} characters. Keep it under ${SEO_CONSTANTS.LIMITS.DESCRIPTION_MAX}.`,
-        true
-      ));
+    } else {
+      if (technical.metaTags.descriptionLength > SEO_CONSTANTS.LIMITS.DESCRIPTION_MAX) {
+        issues.push(this.createIssue(
+          "warning",
+          "Meta Description Too Long",
+          `Meta description is ${technical.metaTags.descriptionLength} characters. Keep it under ${SEO_CONSTANTS.LIMITS.DESCRIPTION_MAX}.`,
+          true
+        ));
+      }
+      if (technical.metaTags.descriptionLength < SEO_CONSTANTS.LIMITS.DESCRIPTION_MIN) {
+        issues.push(this.createIssue(
+          "warning",
+          "Meta Description Too Short",
+          `Meta description is ${technical.metaTags.descriptionLength} characters. Expand to at least ${SEO_CONSTANTS.LIMITS.DESCRIPTION_MIN}.`,
+          true
+        ));
+      }
     }
 
+    // Heading checks
     if (technical.headings.h1Count === 0) {
       issues.push(this.createIssue(
         "critical",
@@ -1407,6 +1731,7 @@ Return ONLY valid JSON with the exact structure specified.`;
       ));
     }
 
+    // Image issues
     if (technical.images.withoutAlt > 0) {
       issues.push(this.createIssue(
         "warning",
@@ -1416,6 +1741,26 @@ Return ONLY valid JSON with the exact structure specified.`;
       ));
     }
 
+    // Check for missing image dimensions and lazy loading
+    if (technical.images.withoutDimensions && technical.images.withoutDimensions > 0) {
+      issues.push(this.createIssue(
+        "warning",
+        "Images Missing Dimensions",
+        `${technical.images.withoutDimensions} images lack width/height attributes, causing layout shift.`,
+        true
+      ));
+    }
+
+    if (technical.images.withoutLazyLoading && technical.images.withoutLazyLoading > 0) {
+      issues.push(this.createIssue(
+        "info",
+        "Images Missing Lazy Loading",
+        `${technical.images.withoutLazyLoading} images could benefit from lazy loading.`,
+        true
+      ));
+    }
+
+    // Mobile and viewport
     if (!technical.mobile.viewportMeta) {
       issues.push(this.createIssue(
         "critical",
@@ -1434,6 +1779,7 @@ Return ONLY valid JSON with the exact structure specified.`;
       ));
     }
 
+    // Schema and structured data
     if (!technical.schema?.hasStructuredData) {
       issues.push(this.createIssue(
         "warning",
@@ -1443,6 +1789,26 @@ Return ONLY valid JSON with the exact structure specified.`;
       ));
     }
 
+    // Check for specific schema types
+    if (!technical.schema?.hasFAQSchema && technical.schema?.hasFAQContent) {
+      issues.push(this.createIssue(
+        "info",
+        "Missing FAQ Schema",
+        "FAQ content detected but no FAQ schema markup found.",
+        true
+      ));
+    }
+
+    if (!technical.schema?.hasBreadcrumbs) {
+      issues.push(this.createIssue(
+        "info",
+        "Missing Breadcrumbs",
+        "No breadcrumb navigation found. Breadcrumbs improve user experience and SEO.",
+        true
+      ));
+    }
+
+    // Social meta tags
     if (!technical.metaTags.hasOgTags) {
       issues.push(this.createIssue(
         "info",
@@ -1451,90 +1817,122 @@ Return ONLY valid JSON with the exact structure specified.`;
         true
       ));
     }
-  }
 
-  private analyzeContentIssues(issues: SEOIssue[], content: ContentAnalysisResult): void {
-    const thresholds = SEO_CONSTANTS.THRESHOLDS;
-
-    if (content.qualityScore < thresholds.LOW_QUALITY) {
-      issues.push(this.createIssue(
-        "critical",
-        "Low Content Quality",
-        `Content quality score is ${content.qualityScore}/100. Content lacks depth or value.`,
-        true
-      ));
-    }
-
-    if (content.readabilityScore < thresholds.POOR_READABILITY) {
-      issues.push(this.createIssue(
-        "warning",
-        "Poor Readability",
-        `Readability score is ${content.readabilityScore}/100. Content is difficult to understand.`,
-        true
-      ));
-    }
-
-    if (content.eatScore.overall < thresholds.LOW_EAT) {
-      issues.push(this.createIssue(
-        "warning",
-        "Low E-A-T Score",
-        `E-A-T score is ${content.eatScore.overall}/100. Content lacks expertise or trust signals.`,
-        false
-      ));
-    }
-
-    if (content.keywordOptimization.keywordDistribution === "poor") {
-      issues.push(this.createIssue(
-        "warning",
-        "Poor Keyword Distribution",
-        "Keywords are not well distributed throughout the content.",
-        true
-      ));
-    }
-
-    if (content.keywordOptimization.primaryKeywordDensity > thresholds.HIGH_KEYWORD_DENSITY) {
-      issues.push(this.createIssue(
-        "warning",
-        "Keyword Over-Optimization",
-        `Keyword density is ${content.keywordOptimization.primaryKeywordDensity.toFixed(1)}%. Consider reducing to 1-3%.`,
-        true
-      ));
-    }
-
-    if (content.keywordOptimization.missingKeywords.length > 0) {
+    if (!technical.metaTags.hasTwitterCards) {
       issues.push(this.createIssue(
         "info",
-        "Missing Important Keywords",
-        `Consider adding: ${content.keywordOptimization.missingKeywords.join(", ")}`,
+        "Missing Twitter Cards",
+        "Twitter Card tags optimize how your content appears on Twitter.",
         true
       ));
     }
 
-    if (content.contentStructureScore < thresholds.POOR_STRUCTURE) {
+    // Canonical URL check
+    if (!technical.metaTags.hasCanonical) {
       issues.push(this.createIssue(
         "warning",
-        "Poor Content Structure",
-        `Content structure score is ${content.contentStructureScore}/100. Improve organization and flow.`,
+        "Missing Canonical URL",
+        "No canonical URL specified. This can lead to duplicate content issues.",
         true
       ));
     }
 
-    if (content.userIntentAlignment < thresholds.POOR_INTENT) {
+    // Links analysis
+    if (technical.links.internal < 3) {
       issues.push(this.createIssue(
         "warning",
-        "Poor User Intent Alignment",
-        `User intent alignment is ${content.userIntentAlignment}/100. Content doesn't match search intent.`,
-        false
+        "Poor Internal Linking",
+        `Only ${technical.links.internal} internal links found. Add more to improve site structure.`,
+        true
       ));
     }
 
-    if (content.uniquenessScore < thresholds.LOW_UNIQUENESS) {
+    if (technical.links.broken > 0) {
       issues.push(this.createIssue(
         "warning",
-        "Low Content Uniqueness",
-        `Uniqueness score is ${content.uniquenessScore}/100. Add more original insights.`,
-        false
+        "Broken Internal Links",
+        `${technical.links.broken} broken internal links detected.`,
+        true
       ));
+    }
+
+    if (technical.links.externalWithoutAttributes && technical.links.externalWithoutAttributes > 0) {
+      issues.push(this.createIssue(
+        "info",
+        "External Links Missing Attributes",
+        `${technical.links.externalWithoutAttributes} external links lack security attributes.`,
+        true
+      ));
+    }
+
+    // Check for orphan pages indicator
+    if (technical.links.inboundLinks === 0) {
+      issues.push(this.createIssue(
+        "warning",
+        "Orphan Page",
+        "This page has no internal links pointing to it.",
+        true
+      ));
+    }
+  }
+
+  private async analyzeSiteWideIssues(
+    url: string,
+    issues: SEOIssue[]
+  ): Promise<void> {
+    const domain = new URL(url).origin;
+    
+    // Check for XML sitemap
+    try {
+      const sitemapResponse = await axios.head(`${domain}/sitemap.xml`, {
+        timeout: 5000,
+        maxRedirects: 2,
+      });
+      
+      if (sitemapResponse.status === 404) {
+        issues.push(this.createIssue(
+          "warning",
+          "Missing XML Sitemap",
+          "No XML sitemap found at /sitemap.xml. This helps search engines discover your pages.",
+          true
+        ));
+      }
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        issues.push(this.createIssue(
+          "warning",
+          "Missing XML Sitemap",
+          "No XML sitemap found. Create one to help search engines index your site.",
+          true
+        ));
+      }
+    }
+    
+    // Check for robots.txt
+    try {
+      const robotsResponse = await axios.get(`${domain}/robots.txt`, {
+        timeout: 5000,
+        maxRedirects: 2,
+      });
+      
+      const robotsContent = robotsResponse.data;
+      if (!robotsContent || robotsContent.length < 10) {
+        issues.push(this.createIssue(
+          "info",
+          "Robots.txt Issues",
+          "Robots.txt file is missing or empty. Configure it to control crawler access.",
+          true
+        ));
+      }
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        issues.push(this.createIssue(
+          "info",
+          "Robots.txt Issues", 
+          "No robots.txt file found. Create one to guide search engine crawlers.",
+          true
+        ));
+      }
     }
   }
 

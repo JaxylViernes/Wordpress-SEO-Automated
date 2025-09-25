@@ -1,4 +1,3 @@
-
 //server/index.ts
 import express from "express";
 import { type Request, Response, NextFunction } from "express";
@@ -56,36 +55,80 @@ const sessionStore = new PgSession({
 const app = express();
 
 // =============================================================================
+// TRUST PROXY - IMPORTANT FOR CLOUDFLARE
+// =============================================================================
+
+app.set('trust proxy', true);
+
+// =============================================================================
 // SECURITY MIDDLEWARE (Added - Early in the middleware stack)
 // =============================================================================
 
-// Rate limiting - Applied before other middleware
+// Custom JSON error handler for rate limiting
+const rateLimitHandler = (req: Request, res: Response) => {
+  res.status(429).json({
+    success: false,
+    message: 'Too many requests, please try again later.'
+  });
+};
+
+// General rate limiter
 const generalLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 100, // Limit each IP to 100 requests per minute
-  message: 'Too many requests from this IP, please try again later.',
+  max: 500, // 500 requests per minute
+  handler: rateLimitHandler, // JSON response
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const cfIp = req.headers['cf-connecting-ip'] as string;
+    const xForwardedFor = req.headers['x-forwarded-for'] as string;
+    const realIp = cfIp || (xForwardedFor ? xForwardedFor.split(',')[0] : null) || req.ip;
+    return realIp;
+  }
 });
 
-// Apply rate limiting to all routes
-app.use('/api/', generalLimiter);
-
-// Stricter rate limiting for auth routes
+// Auth rate limiter
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 auth requests per windowMs
-  message: 'Too many authentication attempts, please try again later.',
+  max: 100, // 100 attempts
+  handler: rateLimitHandler, // JSON response
   skipSuccessfulRequests: true,
+  keyGenerator: (req) => {
+    const cfIp = req.headers['cf-connecting-ip'] as string;
+    const xForwardedFor = req.headers['x-forwarded-for'] as string;
+    const realIp = cfIp || (xForwardedFor ? xForwardedFor.split(',')[0] : null) || req.ip;
+    return realIp;
+  }
 });
 
+// Apply rate limiting to routes
+app.use('/api/', generalLimiter);
 app.use('/api/auth/', authLimiter);
 app.use('/api/gsc/auth', authLimiter);
 app.use('/api/gsc/auth-url', authLimiter);
 app.use('/api/gsc/oauth-callback', authLimiter);
 
+// JSON response handler for API redirects (AFTER rate limiters)
+app.use('/api/*', (req: Request, res: Response, next: NextFunction) => {
+  const originalRedirect = res.redirect.bind(res);
+  res.redirect = function(url: string | number, status?: any) {
+    if (typeof url === 'number') {
+      return res.status(url).json({ 
+        success: false, 
+        message: 'Unauthorized', 
+        redirect: status 
+      });
+    }
+    return res.status(302).json({ 
+      success: false, 
+      message: 'Redirect required', 
+      redirect: url 
+    });
+  };
+  next();
+});
+
 // IMPORTANT: Custom COOP headers for OAuth popup communication
-// This MUST come before helmet to override its settings
 app.use((req: Request, res: Response, next: NextFunction) => {
   // Allow popup windows to communicate with parent window
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
@@ -100,21 +143,21 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Helmet for security headers (configured to not interfere with COOP)
+// Helmet for security headers
 app.use(helmet({
   crossOriginOpenerPolicy: false, // We set this manually above
   crossOriginEmbedderPolicy: false, // We set this manually above
   contentSecurityPolicy: {
-  directives: {
-    defaultSrc: ["'self'"],
-    connectSrc: ["'self'", "https://www.googleapis.com", "https://accounts.google.com", "https://oauth2.googleapis.com"],
-    scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-    styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://fonts.gstatic.com"], // ← FIXED
-    fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"], // ← ADD THIS LINE
-    imgSrc: ["'self'", "data:", "https:", "*.googleusercontent.com"],
-    frameAncestors: ["'self'"],
+    directives: {
+      defaultSrc: ["'self'"],
+      connectSrc: ["'self'", "https://www.googleapis.com", "https://accounts.google.com", "https://oauth2.googleapis.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://fonts.gstatic.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+      imgSrc: ["'self'", "data:", "https:", "*.googleusercontent.com"],
+      frameAncestors: ["'self'"],
+    },
   },
-},
   hsts: {
     maxAge: 31536000,
     includeSubDomains: true,
@@ -126,29 +169,24 @@ app.use(helmet({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false }));
 
-// Simple input sanitization middleware (non-breaking)
+// Simple input sanitization middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
-  // Basic XSS prevention for common fields
   const sanitizeString = (str: any): any => {
     if (typeof str !== 'string') return str;
-    // Only remove script tags and event handlers, don't block localhost URLs
     return str
       .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
       .replace(/on\w+\s*=/gi, '')
       .trim();
   };
 
-  // Sanitize body
   if (req.body && typeof req.body === 'object') {
     Object.keys(req.body).forEach(key => {
-      // Don't sanitize passwords, tokens, or URLs (they have their own validation)
       if (!['password', 'token', 'refreshToken', 'accessToken', 'url', 'redirectUri', 'clientSecret'].includes(key)) {
         req.body[key] = sanitizeString(req.body[key]);
       }
     });
   }
 
-  // Sanitize query params
   if (req.query && typeof req.query === 'object') {
     Object.keys(req.query).forEach(key => {
       if (typeof req.query[key] === 'string') {
@@ -161,7 +199,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // =============================================================================
-// SESSION CONFIGURATION (now AFTER app creation)
+// SESSION CONFIGURATION
 // =============================================================================
 
 app.use(session({
@@ -171,12 +209,13 @@ app.use(session({
   saveUninitialized: false,
   name: 'ai-seo-session',
   cookie: {
-    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-    httpOnly: true, // Prevent XSS
+    secure: true, // Keep false for testing with Cloudflare tunnel
+    httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: 'lax' // CSRF protection
+    sameSite: 'none', // Changed to 'none' for cross-origin
+    domain: undefined // Auto-detect domain
   },
-  rolling: true, // Reset expiration on activity
+  rolling: true
 }));
 
 // =============================================================================
@@ -214,15 +253,15 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // =============================================================================
-// CORS CONFIGURATION (optional but recommended)
+// CORS CONFIGURATION
 // =============================================================================
 
 app.use((req: Request, res: Response, next: NextFunction) => {
-  // Allow requests from your frontend domain
   const allowedOrigins = [
     'http://localhost:5173', // Vite dev server
     'http://localhost:3000', // Alternative dev port
     'http://localhost:5000', // Backend port
+    'https://leaders-necklace-themselves-collective.trycloudflare.com', // Your Cloudflare tunnel
     process.env.FRONTEND_URL, // Production frontend URL
   ].filter(Boolean);
 
@@ -251,10 +290,10 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   try {
     // Register all API routes
     const server = await registerRoutes(app);
-    // ADD: Manual trigger endpoint for testing scheduler
+    
+    // Manual trigger endpoint for testing scheduler
     app.post('/api/admin/trigger-scheduler', async (req: Request, res: Response) => {
       try {
-        // Check if user is authenticated
         if (!req.user) {
           return res.status(401).json({ success: false, message: 'Unauthorized' });
         }
@@ -280,7 +319,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
       console.error("Global error handler:", err);
       
-      // Don't expose internal error details in production
       const responseMessage = process.env.NODE_ENV === 'production' 
         ? status >= 500 ? 'Internal Server Error' : message
         : message;
@@ -361,13 +399,11 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught Exception:', error);
   process.exit(1);
 });
 
-// Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
   process.exit(1);

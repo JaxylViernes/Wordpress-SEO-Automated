@@ -1,5 +1,4 @@
-
-//revised
+//revised with delete buttons
 // client/src/pages/reports.tsx
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -14,6 +13,8 @@ import {
   RefreshCw,
   Plus,
   AlertTriangle,
+  Trash2,
+  CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,14 +34,26 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { api } from "@/lib/api";
 import { format } from "date-fns";
 
-/* ─────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────────
  * Dedupe helpers (client-side safety net)
  *  - Key prefers report.id; else (websiteId|reportType|period)
  *  - Keeps the newest by generatedAt when duplicates appear
- * ────────────────────────────────────────────────────────────────────────────*/
+ * ──────────────────────────────────────────────────────────────────────────────*/
 type AnyReport = {
   id?: string | number;
   websiteId?: string;
@@ -73,9 +86,9 @@ const dedupeReports = (arr: AnyReport[]) => {
   return Array.from(map.values());
 };
 
-/* ─────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────────
  * UI helpers
- * ────────────────────────────────────────────────────────────────────────────*/
+ * ──────────────────────────────────────────────────────────────────────────────*/
 const getTrendIcon = (change: number) => {
   if (change > 0) return <TrendingUp className="w-3 h-3" />;
   if (change < 0) return <TrendingDown className="w-3 h-3" />;
@@ -95,9 +108,9 @@ const formatNumber = (num: number) => {
   return num.toString();
 };
 
-/* ─────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────────
  * Duplicate detection for target period BEFORE triggering generation
- * ────────────────────────────────────────────────────────────────────────────*/
+ * ──────────────────────────────────────────────────────────────────────────────*/
 const checkForExistingReport = (
   reports: AnyReport[],
   websiteId: string,
@@ -112,10 +125,10 @@ const checkForExistingReport = (
   ) || null;
 };
 
-/* ─────────────────────────────────────────────────────────────────────────────
+/* ──────────────────────────────────────────────────────────────────────────────
  * Create a consistent "period" label for a new report
  * (Matches backend period calculation logic)
- * ────────────────────────────────────────────────────────────────────────────*/
+ * ──────────────────────────────────────────────────────────────────────────────*/
 const generatePeriodString = (reportType: "weekly" | "monthly" | "quarterly", date?: Date): string => {
   const targetDate = date || new Date();
   
@@ -149,6 +162,8 @@ export default function Reports() {
   const [message, setMessage] = useState<string>("");
   const [duplicateWarnings, setDuplicateWarnings] = useState<string[]>([]);
   const [isBulkGenerating, setIsBulkGenerating] = useState<boolean>(false);
+  const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
   const queryClient = useQueryClient();
 
   // Fetch websites
@@ -218,7 +233,54 @@ export default function Reports() {
         )
       : 0;
 
-  /* ───────────────────────────────────────────────────────────────────────────
+  /* ──────────────────────────────────────────────────────────────────────────
+   * Selection handlers
+   * ──────────────────────────────────────────────────────────────────────────*/
+  const handleSelectReport = (reportId: string, checked: boolean) => {
+    setSelectedReports(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(reportId);
+      } else {
+        newSet.delete(reportId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedReports.size === filteredReports.length) {
+      setSelectedReports(new Set());
+    } else {
+      setSelectedReports(new Set(filteredReports.map(r => reportKey(r))));
+    }
+  };
+
+  const handleCancelSelection = () => {
+    setIsSelectionMode(false);
+    setSelectedReports(new Set());
+  };
+
+  /* ──────────────────────────────────────────────────────────────────────────
+   * Delete handlers (UI only for now)
+   * ──────────────────────────────────────────────────────────────────────────*/
+  const handleDeleteReport = (reportId: string | number) => {
+    console.log('🗑️ Delete report:', reportId);
+    setMessage(`Delete functionality for report ${reportId} will be implemented`);
+    setTimeout(() => setMessage(""), 3000);
+    // TODO: Implement actual delete API call
+  };
+
+  const handleBulkDelete = () => {
+    console.log('🗑️ Bulk delete reports:', Array.from(selectedReports));
+    setMessage(`Bulk delete functionality for ${selectedReports.size} reports will be implemented`);
+    setIsSelectionMode(false);
+    setSelectedReports(new Set());
+    setTimeout(() => setMessage(""), 3000);
+    // TODO: Implement actual bulk delete API call
+  };
+
+  /* ──────────────────────────────────────────────────────────────────────────
    * PDF download
    * ──────────────────────────────────────────────────────────────────────────*/
   const handleDownloadPDF = async (report: AnyReport) => {
@@ -227,7 +289,7 @@ export default function Reports() {
 
     const doc = new jsPDF();
 
-    const title = `${report.websiteName || "Website"} — ${(report.reportType || "").toString().toUpperCase()} Report`;
+    const title = `${report.websiteName || "Website"} – ${(report.reportType || "").toString().toUpperCase()} Report`;
     doc.setFontSize(16);
     doc.text(title, 14, 18);
 
@@ -277,7 +339,7 @@ export default function Reports() {
     doc.save(`${safeName}.pdf`);
   };
 
-  /* ───────────────────────────────────────────────────────────────────────────
+  /* ──────────────────────────────────────────────────────────────────────────
    * Generate or Update Report
    *  - If reportId is provided, it updates the existing report
    *  - Otherwise, it checks for duplicates and creates a new report
@@ -320,7 +382,7 @@ export default function Reports() {
     }
   };
 
-  /* ───────────────────────────────────────────────────────────────────────────
+  /* ──────────────────────────────────────────────────────────────────────────
    * Bulk generate with duplicate guard
    *  - Skips websites that already have a report for the target period
    *  - Only calls the API for the remainder
@@ -417,31 +479,77 @@ export default function Reports() {
             </p>
           </div>
           <div className="mt-4 flex gap-2 md:mt-0 md:ml-4">
-            <Button variant="outline" onClick={() => refetch()} disabled={isLoading}>
-              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
-            <Button
-              onClick={handleBulkGenerate}
-              disabled={isGenerateDisabled}
-              className="bg-primary-500 hover:bg-primary-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              title={
-                reportType === "all"
-                  ? "Please select a report type first"
-                  : "Generate reports"
-              }
-            >
-              {isAnyGenerationInProgress ? (
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Plus className="w-4 h-4 mr-2" />
-              )}
-              {isAnyGenerationInProgress
-                ? "Generating..."
-                : reportType === "all"
-                ? "Select Report Type"
-                : "Generate Reports"}
-            </Button>
+            {isSelectionMode ? (
+              <>
+                <Button variant="outline" onClick={handleCancelSelection}>
+                  Cancel
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button 
+                      variant="destructive" 
+                      disabled={selectedReports.size === 0}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete Selected ({selectedReports.size})
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete {selectedReports.size} Reports?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. The selected reports will be permanently deleted.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction 
+                        onClick={handleBulkDelete}
+                        className="bg-red-600 hover:bg-red-700"
+                      >
+                        Delete Reports
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            ) : (
+              <>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsSelectionMode(true)}
+                  disabled={filteredReports.length === 0}
+                >
+                  <CheckSquare className="w-4 h-4 mr-2" />
+                  Select
+                </Button>
+                <Button variant="outline" onClick={() => refetch()} disabled={isLoading}>
+                  <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+                <Button
+                  onClick={handleBulkGenerate}
+                  disabled={isGenerateDisabled}
+                  className="bg-primary-500 hover:bg-primary-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={
+                    reportType === "all"
+                      ? "Please select a report type first"
+                      : "Generate reports"
+                  }
+                >
+                  {isAnyGenerationInProgress ? (
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 mr-2" />
+                  )}
+                  {isAnyGenerationInProgress
+                    ? "Generating..."
+                    : reportType === "all"
+                    ? "Select Report Type"
+                    : "Generate Reports"}
+                </Button>
+              </>
+            )}
           </div>
         </div>
 
@@ -478,6 +586,15 @@ export default function Reports() {
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-8">
+          {isSelectionMode && (
+            <Button
+              variant="outline"
+              onClick={handleSelectAll}
+              className="w-fit"
+            >
+              {selectedReports.size === filteredReports.length ? "Deselect All" : "Select All"}
+            </Button>
+          )}
           <Select value={selectedWebsite} onValueChange={setSelectedWebsite}>
             <SelectTrigger className="w-64">
               <SelectValue placeholder="All websites" />
@@ -578,165 +695,214 @@ export default function Reports() {
         {/* Reports List */}
         {!isLoading && (
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {filteredReports.map((report: AnyReport) => (
-              <Card key={reportKey(report)} className="hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">{report.websiteName || "Unknown Website"}</CardTitle>
-                    <Badge variant={report.reportType === "monthly" ? "default" : "secondary"}>
-                      {report.reportType}
-                    </Badge>
-                  </div>
-                  <CardDescription>{report.period}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Tabs defaultValue="overview" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="overview">Overview</TabsTrigger>
-                      <TabsTrigger value="details">Details</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="overview" className="space-y-3 mt-4">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">SEO Score Change</span>
-                        <span
-                          className={`font-medium flex items-center ${getTrendColor(
-                            report.data?.seoScoreChange || 0
-                          )}`}
-                        >
-                          {getTrendIcon(report.data?.seoScoreChange || 0)}
-                          <span className="ml-1">
-                            {(report.data?.seoScoreChange || 0) > 0 ? "+" : ""}
-                            {report.data?.seoScoreChange || 0}%
-                          </span>
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Content Published</span>
-                        <span className="font-medium">
-                          {report.data?.contentPublished || 0} posts
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Avg SEO Score</span>
-                        <span className="font-medium">
-                          {report.data?.avgSeoScore || 0}%
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">AI Cost</span>
-                        <span className="font-medium">
-                          $
-                          {(
-                            (report.data?.totalCostUsd ?? 0 as any).toFixed
-                              ? (report.data?.totalCostUsd as any).toFixed(2)
-                              : Number(report.data?.totalCostUsd ?? 0).toFixed(2)
-                          ).toString()}
-                        </span>
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="details" className="space-y-3 mt-4">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Analytics Data</span>
-                        <span className="font-medium text-gray-400">
-                          Connect Analytics
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Active Days</span>
-                        <span className="font-medium">
-                          {report.data?.activeDays || 0}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Readability Score</span>
-                        <span className="font-medium">
-                          {report.data?.avgReadabilityScore || 0}%
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Brand Voice Score</span>
-                        <span className="font-medium">
-                          {report.data?.avgBrandVoiceScore || 0}%
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Tokens Used</span>
-                        <span className="font-medium">
-                          {(report.data?.totalTokens || 0).toLocaleString()}
-                        </span>
-                      </div>
-
-                      <div className="text-xs text-gray-400 italic mt-2">* Traffic data requires analytics integration</div>
-                    </TabsContent>
-                  </Tabs>
-
-                  {/* Insights */}
-                  {report.insights && report.insights.length > 0 && (
-                    <div className="mt-4 pt-4 border-t">
-                      <h4 className="text-sm font-medium text-gray-900 mb-2">
-                        Key Insights
-                      </h4>
-                      <div className="space-y-1">
-                        {report.insights.slice(0, 2).map((insight: string, index: number) => (
-                          <p key={index} className="text-xs text-gray-600">
-                            {insight}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                    <span className="text-xs text-gray-500">
-                      Generated {format(new Date(report.generatedAt as any), "MMM dd, yyyy")}
-                    </span>
-                    <div className="flex gap-2">
-                      {/* Regenerate: now passes the report ID to update the existing report */}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          handleGenerateReport(
-                            report.websiteId as string, 
-                            report.reportType as any, 
-                            report.id
-                          );
-                        }}
-                        disabled={isAnyGenerationInProgress}
-                      >
-                        {isAnyGenerationInProgress ? (
-                          <RefreshCw className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <>
-                            <RefreshCw className="w-3 h-3 mr-1" />
-                            Regenerate
-                          </>
+            {filteredReports.map((report: AnyReport) => {
+              const key = reportKey(report);
+              const isSelected = selectedReports.has(key);
+              
+              return (
+                <Card 
+                  key={key} 
+                  className={`hover:shadow-md transition-shadow ${
+                    isSelected ? "ring-2 ring-primary-500" : ""
+                  }`}
+                >
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {isSelectionMode && (
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={(checked) => 
+                              handleSelectReport(key, checked as boolean)
+                            }
+                          />
                         )}
-                      </Button>
-                      {/* PDF */}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-primary-600"
-                        onClick={() => handleDownloadPDF(report)}
-                      >
-                        <Download className="w-3 h-3 mr-1" />
-                        PDF
-                      </Button>
+                        <CardTitle className="text-lg">{report.websiteName || "Unknown Website"}</CardTitle>
+                      </div>
+                      <Badge variant={report.reportType === "monthly" ? "default" : "secondary"}>
+                        {report.reportType}
+                      </Badge>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                    <CardDescription>{report.period}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Tabs defaultValue="overview" className="w-full">
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="overview">Overview</TabsTrigger>
+                        <TabsTrigger value="details">Details</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="overview" className="space-y-3 mt-4">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">SEO Score Change</span>
+                          <span
+                            className={`font-medium flex items-center ${getTrendColor(
+                              report.data?.seoScoreChange || 0
+                            )}`}
+                          >
+                            {getTrendIcon(report.data?.seoScoreChange || 0)}
+                            <span className="ml-1">
+                              {(report.data?.seoScoreChange || 0) > 0 ? "+" : ""}
+                              {report.data?.seoScoreChange || 0}%
+                            </span>
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Content Published</span>
+                          <span className="font-medium">
+                            {report.data?.contentPublished || 0} posts
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Avg SEO Score</span>
+                          <span className="font-medium">
+                            {report.data?.avgSeoScore || 0}%
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">AI Cost</span>
+                          <span className="font-medium">
+                            $
+                            {(
+                              (report.data?.totalCostUsd ?? 0 as any).toFixed
+                                ? (report.data?.totalCostUsd as any).toFixed(2)
+                                : Number(report.data?.totalCostUsd ?? 0).toFixed(2)
+                            ).toString()}
+                          </span>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="details" className="space-y-3 mt-4">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Analytics Data</span>
+                          <span className="font-medium text-gray-400">
+                            Connect Analytics
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Active Days</span>
+                          <span className="font-medium">
+                            {report.data?.activeDays || 0}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Readability Score</span>
+                          <span className="font-medium">
+                            {report.data?.avgReadabilityScore || 0}%
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Brand Voice Score</span>
+                          <span className="font-medium">
+                            {report.data?.avgBrandVoiceScore || 0}%
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Tokens Used</span>
+                          <span className="font-medium">
+                            {(report.data?.totalTokens || 0).toLocaleString()}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-gray-400 italic mt-2">* Traffic data requires analytics integration</div>
+                      </TabsContent>
+                    </Tabs>
+
+                    {/* Insights */}
+                    {report.insights && report.insights.length > 0 && (
+                      <div className="mt-4 pt-4 border-t">
+                        <h4 className="text-sm font-medium text-gray-900 mb-2">
+                          Key Insights
+                        </h4>
+                        <div className="space-y-1">
+                          {report.insights.slice(0, 2).map((insight: string, index: number) => (
+                            <p key={index} className="text-xs text-gray-600">
+                              {insight}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                      <span className="text-xs text-gray-500">
+                        Generated {format(new Date(report.generatedAt as any), "MMM dd, yyyy")}
+                      </span>
+                      <div className="flex gap-2">
+                        {/* Regenerate: now passes the report ID to update the existing report */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            handleGenerateReport(
+                              report.websiteId as string, 
+                              report.reportType as any, 
+                              report.id
+                            );
+                          }}
+                          disabled={isAnyGenerationInProgress}
+                        >
+                          {isAnyGenerationInProgress ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <>
+                              <RefreshCw className="w-3 h-3 mr-1" />
+                              Regenerate
+                            </>
+                          )}
+                        </Button>
+                        {/* PDF */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-primary-600"
+                          onClick={() => handleDownloadPDF(report)}
+                        >
+                          <Download className="w-3 h-3 mr-1" />
+                          PDF
+                        </Button>
+                        {/* Delete */}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Report?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will permanently delete the {report.reportType} report for {report.websiteName} ({report.period}). This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction 
+                                onClick={() => handleDeleteReport(report.id!)}
+                                className="bg-red-600 hover:bg-red-700"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
 

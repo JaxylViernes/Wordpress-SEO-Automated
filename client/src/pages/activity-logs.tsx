@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Filter, Download, Search, Calendar } from "lucide-react";
+import { 
+  Activity, 
+  Filter, 
+  Download, 
+  Search, 
+  Calendar, 
+  Trash2, 
+  CheckSquare,
+  X
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,6 +27,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { api } from "@/lib/api";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -180,6 +201,9 @@ export default function ActivityLogs() {
   const [selectedWebsite, setSelectedWebsite] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [activityFilter, setActivityFilter] = useState<string>("all");
+  const [selectedLogs, setSelectedLogs] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
+  const [deleteMessage, setDeleteMessage] = useState<string>("");
 
   const { data: websites } = useQuery({
     queryKey: ["/api/websites"],
@@ -223,6 +247,60 @@ export default function ActivityLogs() {
       }).length || 0,
     content: activities?.filter((a) => a.type.includes("content")).length || 0,
     seo: activities?.filter((a) => a.type.includes("seo")).length || 0,
+  };
+
+  /* ──────────────────────────────────────────────────────────────────────────
+   * Selection handlers
+   * ──────────────────────────────────────────────────────────────────────────*/
+  const handleSelectLog = (logId: string, checked: boolean) => {
+    setSelectedLogs(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(logId);
+      } else {
+        newSet.delete(logId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedLogs.size === filteredActivities.length) {
+      setSelectedLogs(new Set());
+    } else {
+      setSelectedLogs(new Set(filteredActivities.map(a => a.id)));
+    }
+  };
+
+  const handleCancelSelection = () => {
+    setIsSelectionMode(false);
+    setSelectedLogs(new Set());
+  };
+
+  const handleClearAllLogs = () => {
+    console.log('🗑️ Clear all activity logs');
+    setDeleteMessage(`Clear all logs functionality will be implemented`);
+    setTimeout(() => setDeleteMessage(""), 3000);
+    // TODO: Implement actual clear all API call
+  };
+
+  /* ──────────────────────────────────────────────────────────────────────────
+   * Delete handlers (UI only for now)
+   * ──────────────────────────────────────────────────────────────────────────*/
+  const handleDeleteLog = (logId: string) => {
+    console.log('🗑️ Delete activity log:', logId);
+    setDeleteMessage(`Delete functionality for log ${logId} will be implemented`);
+    setTimeout(() => setDeleteMessage(""), 3000);
+    // TODO: Implement actual delete API call
+  };
+
+  const handleBulkDelete = () => {
+    console.log('🗑️ Bulk delete logs:', Array.from(selectedLogs));
+    setDeleteMessage(`Bulk delete functionality for ${selectedLogs.size} logs will be implemented`);
+    setIsSelectionMode(false);
+    setSelectedLogs(new Set());
+    setTimeout(() => setDeleteMessage(""), 3000);
+    // TODO: Implement actual bulk delete API call
   };
 
   const handleExportLogsPDF = async () => {
@@ -331,26 +409,109 @@ export default function ActivityLogs() {
               Complete history of all automation activities across your websites
             </p>
           </div>
-          <div className="mt-4 flex md:mt-0 md:ml-4">
-            <Button variant="outline" className="mr-2">
-              <Filter className="w-4 h-4 mr-2" />
-              Advanced Filters
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleExportLogsPDF}
-              disabled={!activities || activities.length === 0}
-              title={
-                !activities || activities.length === 0
-                  ? "No logs to export yet"
-                  : "Download logs as PDF"
-              }
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Export PDF
-            </Button>
+          <div className="mt-4 flex gap-2 md:mt-0 md:ml-4">
+            {isSelectionMode ? (
+              <>
+                <Button variant="outline" onClick={handleCancelSelection}>
+                  <X className="w-4 h-4 mr-2" />
+                  Cancel
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button 
+                      variant="destructive" 
+                      disabled={selectedLogs.size === 0}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete Selected ({selectedLogs.size})
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete {selectedLogs.size} Activity Logs?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. The selected activity logs will be permanently deleted from the history.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction 
+                        onClick={handleBulkDelete}
+                        className="bg-red-600 hover:bg-red-700"
+                      >
+                        Delete Logs
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            ) : (
+              <>
+                <Button 
+                  variant="outline"
+                  onClick={() => setIsSelectionMode(true)}
+                  disabled={filteredActivities.length === 0}
+                >
+                  <CheckSquare className="w-4 h-4 mr-2" />
+                  Select
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button 
+                      variant="outline"
+                      className="text-red-600 hover:bg-red-50"
+                      disabled={!activities || activities.length === 0}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Clear All
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Clear All Activity Logs?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete ALL activity logs across all websites. This action cannot be undone and will remove your complete activity history.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction 
+                        onClick={handleClearAllLogs}
+                        className="bg-red-600 hover:bg-red-700"
+                      >
+                        Clear All Logs
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+                <Button variant="outline">
+                  <Filter className="w-4 h-4 mr-2" />
+                  Advanced Filters
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleExportLogsPDF}
+                  disabled={!activities || activities.length === 0}
+                  title={
+                    !activities || activities.length === 0
+                      ? "No logs to export yet"
+                      : "Download logs as PDF"
+                  }
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export PDF
+                </Button>
+              </>
+            )}
           </div>
         </div>
+
+        {/* Delete Message */}
+        {deleteMessage && (
+          <div className="mb-4 p-3 rounded-md bg-yellow-50 text-yellow-800 border border-yellow-200">
+            {deleteMessage}
+          </div>
+        )}
 
         {/* Activity Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -397,6 +558,15 @@ export default function ActivityLogs() {
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
+          {isSelectionMode && (
+            <Button
+              variant="outline"
+              onClick={handleSelectAll}
+              className="w-fit"
+            >
+              {selectedLogs.size === filteredActivities.length ? "Deselect All" : "Select All"}
+            </Button>
+          )}
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <Input
@@ -454,59 +624,115 @@ export default function ActivityLogs() {
                 </div>
               ) : filteredActivities.length > 0 ? (
                 <div className="space-y-4">
-                  {filteredActivities.map((activity, index) => (
-                    <div key={activity.id} className="relative">
-                      {index < filteredActivities.length - 1 && (
-                        <div className="absolute left-4 top-8 w-0.5 h-8 bg-gray-200"></div>
-                      )}
+                  {filteredActivities.map((activity, index) => {
+                    const isSelected = selectedLogs.has(activity.id);
+                    
+                    return (
+                      <div 
+                        key={activity.id} 
+                        className={`relative ${
+                          isSelected ? "bg-blue-50 rounded-lg p-2 -m-2" : ""
+                        }`}
+                      >
+                        {index < filteredActivities.length - 1 && (
+                          <div className="absolute left-4 top-8 w-0.5 h-8 bg-gray-200"></div>
+                        )}
 
-                      <div className="flex items-start space-x-4">
-                        <div className="flex-shrink-0 w-8 h-8 bg-white border-2 border-gray-300 rounded-full flex items-center justify-center">
-                          {getActivityIcon(activity.type)}
-                        </div>
+                        <div className="flex items-start space-x-4">
+                          {isSelectionMode && (
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={(checked) => 
+                                handleSelectLog(activity.id, checked as boolean)
+                              }
+                              className="mt-1.5"
+                            />
+                          )}
+                          
+                          <div className="flex-shrink-0 w-8 h-8 bg-white border-2 border-gray-300 rounded-full flex items-center justify-center">
+                            {getActivityIcon(activity.type)}
+                          </div>
 
-                        <div className="flex-1 min-w-0 pb-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center space-x-2 mb-1">
-                                <p className="text-sm font-medium text-gray-900">{activity.description}</p>
-                                <Badge
-                                  className={
-                                    activityTypeColors[
-                                      activity.type as keyof typeof activityTypeColors
-                                    ] || "bg-gray-100 text-gray-800"
-                                  }
-                                >
-                                  {activityTypeLabels[activity.type as keyof typeof activityTypeLabels] ||
-                                    activity.type}
-                                </Badge>
-                              </div>
-
-                              <div className="flex items-center space-x-4 text-xs text-gray-500">
-                                <span>{getWebsiteName(activity.websiteId)}</span>
-                                <span>
-                                  {format(new Date(activity.createdAt), "MMM dd, yyyy 'at' HH:mm")}
-                                </span>
-                                <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
-                              </div>
-
-                              {activity.metadata && Object.keys(activity.metadata).length > 0 && (
-                                <div className="mt-3">
-                                  <details className="cursor-pointer group">
-                                    <summary className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                                      <span className="group-open:hidden">Show details</span>
-                                      <span className="hidden group-open:inline">Hide details</span>
-                                    </summary>
-                                    <MetadataDisplay metadata={activity.metadata} />
-                                  </details>
+                          <div className="flex-1 min-w-0 pb-4">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center space-x-2 mb-1">
+                                  <p className="text-sm font-medium text-gray-900">{activity.description}</p>
+                                  <Badge
+                                    className={
+                                      activityTypeColors[
+                                        activity.type as keyof typeof activityTypeColors
+                                      ] || "bg-gray-100 text-gray-800"
+                                    }
+                                  >
+                                    {activityTypeLabels[activity.type as keyof typeof activityTypeLabels] ||
+                                      activity.type}
+                                  </Badge>
                                 </div>
+
+                                <div className="flex items-center space-x-4 text-xs text-gray-500">
+                                  <span>{getWebsiteName(activity.websiteId)}</span>
+                                  <span>
+                                    {format(new Date(activity.createdAt), "MMM dd, yyyy 'at' HH:mm")}
+                                  </span>
+                                  <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
+                                </div>
+
+                                {activity.metadata && Object.keys(activity.metadata).length > 0 && (
+                                  <div className="mt-3">
+                                    <details className="cursor-pointer group">
+                                      <summary className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                                        <span className="group-open:hidden">Show details</span>
+                                        <span className="hidden group-open:inline">Hide details</span>
+                                      </summary>
+                                      <MetadataDisplay metadata={activity.metadata} />
+                                    </details>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {!isSelectionMode && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-red-600 hover:bg-red-50 ml-2"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Delete Activity Log?</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        This will permanently delete this activity log entry:
+                                        <div className="mt-2 p-2 bg-gray-50 rounded">
+                                          <div className="text-sm font-medium">{activity.description}</div>
+                                          <div className="text-xs text-gray-500 mt-1">
+                                            {format(new Date(activity.createdAt), "MMM dd, yyyy 'at' HH:mm")}
+                                          </div>
+                                        </div>
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction 
+                                        onClick={() => handleDeleteLog(activity.id)}
+                                        className="bg-red-600 hover:bg-red-700"
+                                      >
+                                        Delete Log
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
                               )}
                             </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="text-center py-12">
