@@ -1080,7 +1080,7 @@ const handleBatchProcess = async () => {
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Author/Artist
+                        Alternative Text
                       </label>
                       <input
                         type="text"
