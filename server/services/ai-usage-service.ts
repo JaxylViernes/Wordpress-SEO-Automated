@@ -15,6 +15,7 @@ interface TrackingOptions {
   model: string;
   operation: string;
   tokens: TokenUsage;
+  keyType?: 'user' | 'system';
   metadata?: any;
 }
 
@@ -23,7 +24,7 @@ class AIUsageService {
    * Track AI usage with accurate cost calculation
    */
   async trackUsage(options: TrackingOptions): Promise<void> {
-    const { userId, websiteId, model, operation, tokens, metadata } = options;
+    const { userId, websiteId, model, operation, tokens, keyType, metadata } = options;
     
     // Calculate input/output tokens
     let inputTokens = tokens.inputTokens || 0;
@@ -46,7 +47,8 @@ class AIUsageService {
       outputTokens,
       totalTokens,
       costUsd: costUsd.toFixed(4),
-      costCents
+      costCents,
+      keyType
     });
     
     // Store in database
@@ -63,7 +65,8 @@ class AIUsageService {
             ...metadata,
             inputTokens,
             outputTokens,
-            actualCostUsd: costUsd
+            actualCostUsd: costUsd,
+            keyType
           }
         });
       } catch (error) {

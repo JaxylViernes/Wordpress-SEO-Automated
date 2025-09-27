@@ -457,6 +457,36 @@ const handleConfirmDelete = () => {
     },
   });
 
+
+  const deleteWebsite = useMutation({
+  mutationFn: async (websiteId: string) => {
+    const response = await fetch(`/api/websites/${websiteId}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to delete website');
+    }
+  },
+  onSuccess: () => {
+    toast({
+      title: "Website Disconnected",
+      description: "The website has been removed from your account.",
+    });
+    queryClient.invalidateQueries({ queryKey: ["/api/user/websites"] });
+  },
+  onError: (error: Error) => {
+    toast({
+      title: "Failed to Disconnect Website",
+      description: error.message,
+      variant: "destructive",
+    });
+  },
+});
+
+
   // UPDATED: handleSave with sanitization
   const handleSave = () => {
     if (settings) {
@@ -584,6 +614,40 @@ const handleConfirmDelete = () => {
       }
     });
   };
+
+
+  // Open delete confirmation dialog
+const openDeleteConfirmation = (type: 'apiKey' | 'website', itemId: string, itemName: string) => {
+  setDeleteConfirmation({
+    isOpen: true,
+    type,
+    itemId,
+    itemName
+  });
+};
+
+// Close delete confirmation dialog
+const closeDeleteConfirmation = () => {
+  setDeleteConfirmation({
+    isOpen: false,
+    type: null,
+    itemId: '',
+    itemName: ''
+  });
+};
+
+// Handle confirmed deletion
+const handleConfirmDelete = () => {
+  if (!deleteConfirmation.type || !deleteConfirmation.itemId) return;
+  
+  if (deleteConfirmation.type === 'apiKey') {
+    deleteApiKey.mutate(deleteConfirmation.itemId);
+  } else if (deleteConfirmation.type === 'website') {
+    deleteWebsite.mutate(deleteConfirmation.itemId);
+  }
+  
+  closeDeleteConfirmation();
+};
 
   // UPDATED: validatePasswordForm with enhanced validation
   const validatePasswordForm = (): boolean => {
@@ -1041,54 +1105,7 @@ const handleConfirmDelete = () => {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>WordPress Connections</CardTitle>
-                <CardDescription>
-                  Manage your connected WordPress websites
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {websites?.map((website) => (
-                    <div key={website.id} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <Globe className="w-5 h-5 text-gray-400" />
-                        <div>
-                          <p className="font-medium text-gray-900">{Sanitizer.escapeHtml(website.name)}</p>
-                          <p className="text-sm text-gray-500">{website.url}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Badge className={
-                          website.status === "active" ? "bg-green-100 text-green-800" :
-                          website.status === "processing" ? "bg-yellow-100 text-yellow-800" :
-                          "bg-red-100 text-red-800"
-                        }>
-                          {website.status}
-                        </Badge>
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => openDeleteConfirmation('website', website.id, website.name)}
-                          disabled={deleteWebsite.isPending}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  
-                  {(!websites || websites.length === 0) && (
-                    <div className="text-center py-8 text-gray-500">
-                      <Globe className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                      <p>No WordPress sites connected yet.</p>
-                      <p className="text-sm">Connect your first website to start generating content.</p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            
           </TabsContent>
 
           {/* Automation Settings */}

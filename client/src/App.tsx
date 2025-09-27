@@ -5,6 +5,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import AdminPanel from "@/pages/AdminPanel";
 
 // Page imports
 import NotFound from "@/pages/not-found";
@@ -32,6 +33,8 @@ import { AuthProvider, ProtectedRoute, AuthPage, useAuth } from "@/pages/authent
 // =============================================================================
 
 function ProtectedRouter() {
+  const { user } = useAuth();
+
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
@@ -44,6 +47,12 @@ function ProtectedRouter() {
       <Route path="/reports" component={Reports} />
       <Route path="/activity-logs" component={ActivityLogs} />
       <Route path="/settings" component={Settings} />
+
+       {/* Add admin route with conditional rendering */}
+      <Route path="/admin">
+        {user?.isAdmin ? <AdminPanel /> : <NotFound />}
+      </Route>
+      
       <Route component={NotFound} />
     </Switch>
   );
