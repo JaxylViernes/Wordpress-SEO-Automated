@@ -235,6 +235,60 @@ export const api = {
     });
   },
 
+
+async deleteActivityLog(logId: string): Promise<any> {
+    const response = await fetch(`/api/user/activity-logs/${logId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to delete activity log');
+    }
+    
+    return response.json();
+  },
+
+  async bulkDeleteActivityLogs(logIds: string[]): Promise<any> {
+    const response = await fetch('/api/user/activity-logs/bulk-delete', {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ ids: logIds }),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to delete activity logs');
+    }
+    
+    return response.json();
+  },
+
+async clearAllActivityLogs(websiteId?: string): Promise<any> {
+  // Don't append websiteId if it's undefined or empty
+  const url = websiteId && websiteId !== '' 
+    ? `/api/user/activity-logs/clear-all?websiteId=${websiteId}`
+    : '/api/user/activity-logs/clear-all';
+    
+  const response = await fetch(url, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  
+  const data = await response.json();
+  
+  // Check the success field in the response, not just response.ok
+  if (!data.success) {
+    throw new Error(data.message || 'Failed to clear activity logs');
+  }
+  
+  return data;
+},
+
   validateUrl: async (url: string) => {
     try {
       const response = await fetchWithCredentials('/api/validate-url', {
@@ -476,6 +530,44 @@ export const api = {
       data: result.status === 'fulfilled' ? result.value : null,
       error: result.status === 'rejected' ? result.reason.message : null
     }));
+  },
+
+
+   // Delete a single client report
+  deleteClientReport: async (reportId: string | number): Promise<void> => {
+    const response = await fetchWithCredentials(`/api/user/reports/${reportId}`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ 
+        message: 'Failed to delete report' 
+      }));
+      throw new Error(error.message || 'Failed to delete report');
+    }
+
+    // Return empty if successful (204 No Content) or parse JSON if the server returns data
+    if (response.status === 204) {
+      return;
+    }
+    return response.json();
+  },
+
+  // Bulk delete multiple client reports
+  bulkDeleteClientReports: async (reportIds: string[]): Promise<any> => {
+    const response = await fetchWithCredentials('/api/user/reports/bulk-delete', {
+      method: 'DELETE',
+      body: JSON.stringify({ reportIds }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ 
+        message: 'Failed to delete reports' 
+      }));
+      throw new Error(error.message || 'Failed to delete reports');
+    }
+
+    return response.json();
   },
 
   // Content Scheduling Methods

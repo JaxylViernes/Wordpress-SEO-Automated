@@ -273,6 +273,12 @@ export default function EnhancedImageMetadata() {
     currentUrl: string;
   } | null>(null);
 
+  const [lastCrawlStats, setLastCrawlStats] = useState<{
+  imagesFound: number;
+  pagesVisited: number;
+  duplicates: number;
+  timestamp: string;
+} | null>(null);
   // Processing options with scrambling
   const [processOptions, setProcessOptions] = useState<ProcessOptions>({
     action: 'add',
@@ -385,46 +391,67 @@ export default function EnhancedImageMetadata() {
     }
   };
 
-const handleCrawlWebsite = async (): Promise<void> => {
+
+
+const handleCrawlWebsite = async () => {
   if (!crawlUrl) {
     addToast("Please enter a URL to crawl", "warning");
     return;
   }
 
   setIsCrawling(true);
+  setLastCrawlStats(null);
+  // Just show that crawling started, without fake numbers
   setCrawlProgress({ current: 0, total: 0, currentUrl: crawlUrl });
 
   try {
-    // Use actual API call
     const result = await api.crawlWebsiteImages(crawlUrl, crawlOptions);
-
-    const crawledData = (result?.images ?? [])
-      .map((img: any) => ({
+    
+    if (result.images && Array.isArray(result.images)) {
+      const crawledData = result.images.map((img: any) => ({
         ...img,
-        // Ensure each crawled image has required properties
-        id:
-          img.id ||
-          `crawled_${(typeof crypto !== "undefined" && "randomUUID" in crypto
-            ? (crypto as any).randomUUID()
-            : Math.random().toString(36).slice(2, 11))}`,
-        url: img.url ?? img.src ?? img.source ?? "", // Ensure URL is set
-        websiteId: selectedWebsite ?? "crawled",
-        websiteName: "Crawled",
+        id: img.id || `crawled_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        url: img.url || img.src || img.source || '',
+        websiteId: selectedWebsite || 'crawled',
+        websiteName: 'Crawled',
         isCrawled: true,
         hasMetadata: false,
-        contentTitle: img.title ?? img.alt ?? "Crawled Image",
-        size: img.size ?? 0,
-        createdAt: img.createdAt ?? new Date().toISOString(),
-      }))
-      .filter((x: any) => x.url); // drop items without a usable URL
-
-    setCrawledImages((prev: any[]) => [...prev, ...crawledData]);
-    setImages((prev: any[]) => [...prev, ...crawledData]);
-  } catch (err) {
-    console.error(err);
-    addToast("Failed to crawl site. Please try again.", "error");
+        contentTitle: img.contentTitle || img.title || img.alt || 'Crawled Image',
+        size: img.size || 0,
+        createdAt: img.createdAt || new Date().toISOString(),
+      })).filter((img: any) => img.url);
+      
+      // Save real crawl stats
+      const stats = {
+        imagesFound: crawledData.length,
+        pagesVisited: result.stats?.pagesVisited || 1,
+        duplicates: result.stats?.duplicates || 0,
+        timestamp: new Date().toISOString()
+      };
+      setLastCrawlStats(stats);
+      
+      setCrawledImages(prev => [...prev, ...crawledData]);
+      setImages(prev => [...prev, ...crawledData]);
+      
+      // Show actual results
+      const message = stats.duplicates > 0 
+        ? `🎉 Crawl complete! Found ${stats.imagesFound} unique images from ${stats.pagesVisited} pages (${stats.duplicates} duplicates skipped)`
+        : `🎉 Crawl complete! Found ${stats.imagesFound} images from ${stats.pagesVisited} pages`;
+      
+      addToast(message, "success", 7000);
+      
+      if (result.stats) {
+        console.log('Crawl statistics:', result.stats);
+      }
+    } else {
+      addToast("No images found on the website. Try adjusting the crawl settings.", "warning");
+    }
+  } catch (error: any) {
+    console.error('Crawl error:', error);
+    addToast(`Crawl failed: ${error.message || "Unknown error occurred"}`, "error");
   } finally {
     setIsCrawling(false);
+    setCrawlProgress(null);
   }
 };
 
@@ -812,24 +839,25 @@ const handleBatchProcess = async () => {
                   </div>
                 </div>
 
+
                 {crawlProgress && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium text-blue-900">
-                        Crawling: {crawlProgress.current} / {crawlProgress.total} images
-                      </span>
-                      <span className="text-xs text-blue-700">
-                        {Math.round((crawlProgress.current / crawlProgress.total) * 100)}%
+                        Crawling in progress...
                       </span>
                     </div>
-                    <div className="w-full bg-blue-200 rounded-full h-2">
+                    <div className="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
                       <div 
-                        className="bg-blue-600 h-2 rounded-full transition-all"
-                        style={{ width: `${(crawlProgress.current / crawlProgress.total) * 100}%` }}
+                        className="bg-blue-600 h-2 rounded-full animate-pulse"
+                        style={{ 
+                          width: '100%',
+                          animation: 'slide 2s linear infinite'
+                        }}
                       />
                     </div>
                     <p className="text-xs text-blue-700 mt-2 truncate">
-                      Current: {crawlProgress.currentUrl}
+                      Scanning: {crawlProgress.currentUrl}
                     </p>
                   </div>
                 )}

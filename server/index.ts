@@ -1,3 +1,4 @@
+
 //server/index.ts
 import express from "express";
 import { type Request, Response, NextFunction } from "express";
@@ -59,7 +60,9 @@ const app = express();
 // TRUST PROXY - IMPORTANT FOR CLOUDFLARE
 // =============================================================================
 
-app.set('trust proxy', true);
+// Trust only the first proxy (Cloudflare) - prevents header spoofing
+// This tells Express to trust the first proxy in the chain (Cloudflare)
+app.set('trust proxy', 1);
 
 // =============================================================================
 // SECURITY MIDDLEWARE (Added - Early in the middleware stack)
@@ -74,32 +77,24 @@ const rateLimitHandler = (req: Request, res: Response) => {
 };
 
 // General rate limiter
+// FIXED: Removed custom keyGenerator to use default which handles IPv6 properly
 const generalLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 500, // 500 requests per minute
   handler: rateLimitHandler, // JSON response
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    const cfIp = req.headers['cf-connecting-ip'] as string;
-    const xForwardedFor = req.headers['x-forwarded-for'] as string;
-    const realIp = cfIp || (xForwardedFor ? xForwardedFor.split(',')[0] : null) || req.ip;
-    return realIp;
-  }
+  // Default keyGenerator uses req.ip which already handles Cloudflare headers and IPv6
 });
 
 // Auth rate limiter
+// FIXED: Removed custom keyGenerator here as well
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 attempts
   handler: rateLimitHandler, // JSON response
   skipSuccessfulRequests: true,
-  keyGenerator: (req) => {
-    const cfIp = req.headers['cf-connecting-ip'] as string;
-    const xForwardedFor = req.headers['x-forwarded-for'] as string;
-    const realIp = cfIp || (xForwardedFor ? xForwardedFor.split(',')[0] : null) || req.ip;
-    return realIp;
-  }
+  // Default keyGenerator uses req.ip which already handles Cloudflare headers and IPv6
 });
 
 // Apply rate limiting to routes

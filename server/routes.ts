@@ -27,6 +27,8 @@ import multer from 'multer';
 import { cloudinaryStorage } from "./services/cloudinary-storage";
 import {db} from './db'
 import { emailService } from './services/email-service';
+//added
+import { schedulerService } from './services/scheduler-service';
 
 
 
@@ -736,8 +738,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ===========================================================================
   
 
-
-  //added
 app.post("/api/auth/signup", async (req: Request, res: Response): Promise<void> => {
   try {
     console.log('🔐 Signup request received:', {
@@ -3494,373 +3494,948 @@ app.delete("/api/user/content/:id", requireAuth, async (req: Request, res: Respo
   // ===========================================================================
   // CONTENT SCHEDULING ROUTES
   // ===========================================================================
-  
-  app.get("/api/user/websites/:id/content-schedule", requireAuth, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = req.user!.id;
-      const websiteId = req.params.id;
-      
-      const website = await storage.getUserWebsite(websiteId, userId);
-      if (!website) {
-        res.status(404).json({ message: "Website not found or access denied" });
-        return;
-      }
-      
-      const scheduledContent = await storage.getContentSchedule(websiteId);
-      res.json(scheduledContent);
-    } catch (error) {
-      console.error("Failed to fetch content schedule:", error);
-      res.status(500).json({ message: "Failed to fetch content schedule" });
-    }
-  });
+// ===========================================================================
+// CONTENT SCHEDULING ROUTES WITH TIMEZONE SUPPORT
+// ===========================================================================
 
-  app.post("/api/user/websites/:id/schedule-content", requireAuth, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = req.user!.id;
-      const websiteId = req.params.id;
-      const { contentId, scheduledDate } = req.body;
+app.get("/api/user/websites/:id/content-schedule", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const websiteId = req.params.id;
+    
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+    
+    const scheduledContent = await storage.getContentSchedule(websiteId);
+    
+    // Get user's timezone from settings for display purposes
+    const userSettings = await storage.getUserSettings(userId);
+    const userTimezone = userSettings?.profile?.timezone || 'UTC';
+    
+    // Enhance scheduled content with timezone info
+    const enhancedContent = scheduledContent.map((schedule: any) => ({
+      ...schedule,
+      userTimezone,
+      // Include display-friendly time if timezone differs
+      localScheduledDate: schedule.timezone && schedule.timezone !== userTimezone 
+        ? convertUTCToLocalTime(schedule.scheduled_date, userTimezone)
+        : null
+    }));
+    
+    res.json(enhancedContent);
+  } catch (error) {
+    console.error("Failed to fetch content schedule:", error);
+    res.status(500).json({ message: "Failed to fetch content schedule" });
+  }
+});
+
+app.post("/api/user/websites/:id/schedule-content", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const websiteId = req.params.id;
+    const { 
+      contentId, 
+      scheduledDate, 
+      timezone,
+      localTime, // Optional: if provided, use this instead of scheduledDate
+      publishDelay = 0 // Hours to delay after scheduled time
+    } = req.body;
+    
+    console.log('📅 Scheduling existing content:', { 
+      websiteId, 
+      contentId, 
+      scheduledDate, 
+      timezone,
+      localTime 
+    });
+    
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+    
+    const content = await storage.getContent(contentId);
+    if (!content || content.userId !== userId || content.websiteId !== websiteId) {
+      res.status(404).json({ message: "Content not found or access denied" });
+      return;
+    }
+    
+    if (content.status === 'published') {
+      res.status(400).json({ message: "Content is already published" });
+      return;
+    }
+    
+    if (!contentId || (!scheduledDate && !localTime)) {
+      res.status(400).json({ message: "Content ID and scheduled date/time are required" });
+      return;
+    }
+    
+    // Get user's timezone if not provided
+    let scheduleTimezone = timezone;
+    if (!scheduleTimezone) {
+      const userSettings = await storage.getUserSettings(userId);
+      scheduleTimezone = userSettings?.profile?.timezone || 'UTC';
+    }
+    
+    // Handle scheduling time
+    let scheduleTime: Date;
+    let utcTime: string | null = null;
+    let localTimeDisplay: string | null = null;
+    
+    if (localTime && timezone) {
+      // Convert local time to UTC for storage
+      const [hours, minutes] = localTime.split(':').map(Number);
+      const now = new Date();
+      scheduleTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
       
-      console.log('📅 Scheduling existing content:', { websiteId, contentId, scheduledDate });
+      // Store both local and UTC representations
+      utcTime = convertLocalTimeToUTC(localTime, timezone);
+      localTimeDisplay = `${localTime} ${timezone}`;
       
-      const website = await storage.getUserWebsite(websiteId, userId);
-      if (!website) {
-        res.status(404).json({ message: "Website not found or access denied" });
-        return;
+      console.log(`🕐 Converting ${localTimeDisplay} to UTC: ${utcTime}`);
+    } else {
+      // Use the provided scheduledDate directly
+      scheduleTime = new Date(scheduledDate);
+    }
+    
+    // Add publish delay if specified
+    if (publishDelay > 0) {
+      scheduleTime = new Date(scheduleTime.getTime() + publishDelay * 60 * 60 * 1000);
+    }
+    
+    // Validate schedule time is in the future
+    if (scheduleTime <= new Date()) {
+      res.status(400).json({ message: "Scheduled date must be in the future" });
+      return;
+    }
+    
+    const existingSchedule = await storage.getContentScheduleByContentId(contentId);
+    if (existingSchedule) {
+      res.status(400).json({ message: "This content is already scheduled for publication" });
+      return;
+    }
+    
+    const scheduledContent = await storage.createContentSchedule({
+      userId,
+      websiteId,
+      scheduledDate: scheduleTime,
+      topic: content.title,
+      keywords: content.seoKeywords || [],
+      contentId,
+      status: "scheduled",
+      // Add timezone fields
+      timezone: scheduleTimezone,
+      metadata: {
+        utcTime,
+        localTime,
+        localTimeDisplay,
+        publishDelay,
+        originalScheduledDate: scheduledDate,
+        isManualSchedule: true
       }
-      
-      const content = await storage.getContent(contentId);
-      if (!content || content.userId !== userId || content.websiteId !== websiteId) {
-        res.status(404).json({ message: "Content not found or access denied" });
-        return;
-      }
-      
-      if (content.status === 'published') {
-        res.status(400).json({ message: "Content is already published" });
-        return;
-      }
-      
-      if (!contentId || !scheduledDate) {
-        res.status(400).json({ message: "Content ID and scheduled date are required" });
-        return;
-      }
-      
-      const scheduleTime = new Date(scheduledDate);
-      if (scheduleTime <= new Date()) {
-        res.status(400).json({ message: "Scheduled date must be in the future" });
-        return;
-      }
-      
-      const existingSchedule = await storage.getContentScheduleByContentId(contentId);
-      if (existingSchedule) {
-        res.status(400).json({ message: "This content is already scheduled for publication" });
-        return;
-      }
-      
-      const scheduledContent = await storage.createContentSchedule({
-        userId,
-        websiteId,
-        scheduledDate: scheduleTime,
-        topic: content.title,
-        keywords: content.seoKeywords || [],
+    });
+    
+    await storage.createActivityLog({
+      userId,
+      websiteId,
+      type: "content_scheduled",
+      description: `Content scheduled for publication: "${content.title}" on ${scheduleTime.toLocaleString()} ${scheduleTimezone}`,
+      metadata: { 
+        scheduleId: scheduledContent.id,
         contentId,
-        status: "scheduled"
-      });
-      
-      await storage.createActivityLog({
-        userId,
-        websiteId,
-        type: "content_scheduled",
-        description: `Content scheduled for publication: "${content.title}" on ${scheduleTime.toLocaleString()}`,
-        metadata: { 
-          scheduleId: scheduledContent.id,
-          contentId,
-          contentTitle: content.title,
-          scheduledDate: scheduledDate
-        }
-      });
-      
-      console.log('✅ Content scheduled successfully:', scheduledContent.id);
-      res.status(201).json({
-        ...scheduledContent,
         contentTitle: content.title,
-        contentExcerpt: content.excerpt,
-        seoKeywords: content.seoKeywords
-      });
-      
-    } catch (error) {
-      console.error("Failed to schedule content:", error);
-      res.status(500).json({ 
-        message: "Failed to schedule content",
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
+        scheduledDate: scheduleTime.toISOString(),
+        timezone: scheduleTimezone,
+        localTimeDisplay
+      }
+    });
+    
+    console.log('✅ Content scheduled successfully:', {
+      scheduleId: scheduledContent.id,
+      timezone: scheduleTimezone,
+      localTime: localTimeDisplay
+    });
+    
+    res.status(201).json({
+      ...scheduledContent,
+      contentTitle: content.title,
+      contentExcerpt: content.excerpt,
+      seoKeywords: content.seoKeywords,
+      timezone: scheduleTimezone,
+      localTimeDisplay
+    });
+    
+  } catch (error) {
+    console.error("Failed to schedule content:", error);
+    res.status(500).json({ 
+      message: "Failed to schedule content",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
 
-  app.put("/api/user/websites/:websiteId/content-schedule/:scheduleId", requireAuth, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = req.user!.id;
-      const { websiteId, scheduleId } = req.params;
-      const { scheduledDate, status } = req.body;
-      
-      const website = await storage.getUserWebsite(websiteId, userId);
-      if (!website) {
-        res.status(404).json({ message: "Website not found or access denied" });
-        return;
-      }
-      
-      const scheduleItem = await storage.getContentScheduleById(scheduleId);
-      if (!scheduleItem || scheduleItem.userId !== userId) {
-        res.status(404).json({ message: "Scheduled content not found or access denied" });
-        return;
-      }
-      
-      const updates: any = {};
-      if (scheduledDate !== undefined) {
-        const scheduleTime = new Date(scheduledDate);
-        if (scheduleTime <= new Date() && status !== 'cancelled') {
-          res.status(400).json({ message: "Scheduled date must be in the future unless cancelling" });
-          return;
-        }
-        updates.scheduledDate = scheduleTime;
-      }
-      if (status !== undefined) updates.status = status;
-      
-      const updatedSchedule = await storage.updateContentSchedule(scheduleId, updates);
-      
-      await storage.createActivityLog({
-        userId,
-        websiteId,
-        type: "content_schedule_updated",
-        description: `Publication schedule updated for content`,
-        metadata: { 
-          scheduleId,
-          updates: Object.keys(updates)
-        }
-      });
-      
-      res.json(updatedSchedule);
-      
-    } catch (error) {
-      console.error("Failed to update scheduled content:", error);
-      res.status(500).json({ 
-        message: "Failed to update scheduled content",
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+app.put("/api/user/websites/:websiteId/content-schedule/:scheduleId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { websiteId, scheduleId } = req.params;
+    const { 
+      scheduledDate, 
+      status, 
+      timezone,
+      localTime 
+    } = req.body;
+    
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
     }
-  });
+    
+    const scheduleItem = await storage.getContentScheduleById(scheduleId);
+    if (!scheduleItem || scheduleItem.userId !== userId) {
+      res.status(404).json({ message: "Scheduled content not found or access denied" });
+      return;
+    }
+    
+    const updates: any = {};
+    
+    // Handle timezone-aware date updates
+    if (scheduledDate !== undefined || localTime !== undefined) {
+      let scheduleTime: Date;
+      let scheduleTimezone = timezone || scheduleItem.timezone || 'UTC';
+      
+      if (localTime && timezone) {
+        // Convert local time to date
+        const [hours, minutes] = localTime.split(':').map(Number);
+        const now = new Date();
+        scheduleTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes);
+        
+        // Store timezone info
+        updates.timezone = scheduleTimezone;
+        updates.metadata = {
+          ...scheduleItem.metadata,
+          localTime,
+          localTimeDisplay: `${localTime} ${scheduleTimezone}`,
+          utcTime: convertLocalTimeToUTC(localTime, scheduleTimezone)
+        };
+      } else {
+        scheduleTime = new Date(scheduledDate);
+      }
+      
+      if (scheduleTime <= new Date() && status !== 'cancelled') {
+        res.status(400).json({ message: "Scheduled date must be in the future unless cancelling" });
+        return;
+      }
+      
+      updates.scheduledDate = scheduleTime;
+    }
+    
+    if (status !== undefined) {
+      updates.status = status;
+    }
+    
+    if (timezone !== undefined && !updates.timezone) {
+      updates.timezone = timezone;
+    }
+    
+    const updatedSchedule = await storage.updateContentSchedule(scheduleId, updates);
+    
+    await storage.createActivityLog({
+      userId,
+      websiteId,
+      type: "content_schedule_updated",
+      description: `Publication schedule updated for content`,
+      metadata: { 
+        scheduleId,
+        updates: Object.keys(updates),
+        timezone: updates.timezone || scheduleItem.timezone
+      }
+    });
+    
+    res.json(updatedSchedule);
+    
+  } catch (error) {
+    console.error("Failed to update scheduled content:", error);
+    res.status(500).json({ 
+      message: "Failed to update scheduled content",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
 
-  app.delete("/api/user/websites/:websiteId/content-schedule/:scheduleId", requireAuth, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = req.user!.id;
-      const { websiteId, scheduleId } = req.params;
-      
-      const website = await storage.getUserWebsite(websiteId, userId);
-      if (!website) {
-        res.status(404).json({ message: "Website not found or access denied" });
-        return;
-      }
-      
-      const scheduleItem = await storage.getContentScheduleById(scheduleId);
-      if (!scheduleItem || scheduleItem.userId !== userId) {
-        res.status(404).json({ message: "Scheduled content not found or access denied" });
-        return;
-      }
-      
-      const content = await storage.getContent(scheduleItem.contentId);
-      
-      const deleted = await storage.deleteContentSchedule(scheduleId);
-      
-      if (!deleted) {
-        res.status(404).json({ message: "Scheduled content not found" });
-        return;
-      }
-      
-      await storage.createActivityLog({
-        userId,
-        websiteId,
-        type: "content_schedule_deleted",
-        description: `Publication schedule removed: "${content?.title || 'Unknown'}"`,
-        metadata: { 
-          scheduleId,
-          contentId: scheduleItem.contentId,
-          contentTitle: content?.title
-        }
-      });
-      
-      res.status(204).send();
-      
-    } catch (error) {
-      console.error("Failed to delete scheduled content:", error);
-      res.status(500).json({ 
-        message: "Failed to delete scheduled content",
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+app.delete("/api/user/websites/:websiteId/content-schedule/:scheduleId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { websiteId, scheduleId } = req.params;
+    
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
     }
-  });
+    
+    const scheduleItem = await storage.getContentScheduleById(scheduleId);
+    if (!scheduleItem || scheduleItem.userId !== userId) {
+      res.status(404).json({ message: "Scheduled content not found or access denied" });
+      return;
+    }
+    
+    const content = await storage.getContent(scheduleItem.contentId);
+    
+    const deleted = await storage.deleteContentSchedule(scheduleId);
+    
+    if (!deleted) {
+      res.status(404).json({ message: "Scheduled content not found" });
+      return;
+    }
+    
+    await storage.createActivityLog({
+      userId,
+      websiteId,
+      type: "content_schedule_deleted",
+      description: `Publication schedule removed: "${content?.title || 'Unknown'}"`,
+      metadata: { 
+        scheduleId,
+        contentId: scheduleItem.contentId,
+        contentTitle: content?.title,
+        wasScheduledFor: scheduleItem.scheduledDate,
+        timezone: scheduleItem.timezone
+      }
+    });
+    
+    res.status(204).send();
+    
+  } catch (error) {
+    console.error("Failed to delete scheduled content:", error);
+    res.status(500).json({ 
+      message: "Failed to delete scheduled content",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
 
-  app.get("/api/user/content-schedule", requireAuth, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = req.user!.id;
-      
-      const websites = await storage.getUserWebsites(userId);
-      const allScheduledContent = [];
-      
-      for (const website of websites) {
-        const schedules = await storage.getContentScheduleWithDetails(website.id);
-        const schedulesWithWebsite = schedules.map(schedule => ({
-          ...schedule,
-          websiteName: website.name,
-          websiteUrl: website.url
-        }));
-        allScheduledContent.push(...schedulesWithWebsite);
-      }
-      
-      allScheduledContent.sort((a, b) => 
-        new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
-      );
-      
-      res.json(allScheduledContent);
-    } catch (error) {
-      console.error("Failed to fetch user's scheduled content:", error);
-      res.status(500).json({ message: "Failed to fetch scheduled content" });
-    }
-  });
+// ===========================================================================
+// HELPER FUNCTIONS FOR TIMEZONE CONVERSION
+// ===========================================================================
 
-  app.post("/api/system/publish-scheduled-content", async (req: Request, res: Response): Promise<void> => {
-    try {
-      console.log('🕐 Running scheduled content publication check...');
+/**
+ * Convert local time to UTC
+ */
+function convertLocalTimeToUTC(localTime: string, timezone: string): string {
+  try {
+    const [hours, minutes] = localTime.split(':').map(Number);
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const date = now.getDate();
+    
+    // Create a date in the user's timezone
+    const localDateStr = new Date(year, month, date, hours, minutes).toLocaleString('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    
+    // Parse and convert to UTC
+    const [datePart, timePart] = localDateStr.split(', ');
+    const [localMonth, localDay, localYear] = datePart.split('/').map(Number);
+    const [localHour, localMinute] = timePart.split(':').map(Number);
+    
+    const localDate = new Date(localYear, localMonth - 1, localDay, localHour, localMinute);
+    const utcHours = localDate.getUTCHours();
+    const utcMinutes = localDate.getUTCMinutes();
+    
+    return `${String(utcHours).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')}`;
+  } catch (error) {
+    console.error('Error converting time to UTC:', error);
+    return localTime; // Fallback to treating as UTC
+  }
+}
+
+/**
+ * Convert UTC date to local timezone for display
+ */
+function convertUTCToLocalTime(utcDate: Date | string, timezone: string): string {
+  try {
+    const date = typeof utcDate === 'string' ? new Date(utcDate) : utcDate;
+    
+    return date.toLocaleString('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch (error) {
+    console.error('Error converting UTC to local time:', error);
+    return new Date(utcDate).toISOString();
+  }
+}
+
+  // app.get("/api/user/content-schedule", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  //   try {
+  //     const userId = req.user!.id;
       
-      const overdueContent = await storage.getPendingScheduledContent();
+  //     const websites = await storage.getUserWebsites(userId);
+  //     const allScheduledContent = [];
       
-      const results = [];
+  //     for (const website of websites) {
+  //       const schedules = await storage.getContentScheduleWithDetails(website.id);
+  //       const schedulesWithWebsite = schedules.map(schedule => ({
+  //         ...schedule,
+  //         websiteName: website.name,
+  //         websiteUrl: website.url
+  //       }));
+  //       allScheduledContent.push(...schedulesWithWebsite);
+  //     }
       
-      for (const schedule of overdueContent) {
-        try {
-          console.log(`📤 Publishing scheduled content: ${schedule.contentId}`);
+  //     allScheduledContent.sort((a, b) => 
+  //       new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
+  //     );
+      
+  //     res.json(allScheduledContent);
+  //   } catch (error) {
+  //     console.error("Failed to fetch user's scheduled content:", error);
+  //     res.status(500).json({ message: "Failed to fetch scheduled content" });
+  //   }
+  // });
+
+  // app.post("/api/system/publish-scheduled-content", async (req: Request, res: Response): Promise<void> => {
+  //   try {
+  //     console.log('🕐 Running scheduled content publication check...');
+      
+  //     const overdueContent = await storage.getPendingScheduledContent();
+      
+  //     const results = [];
+      
+  //     for (const schedule of overdueContent) {
+  //       try {
+  //         console.log(`📤 Publishing scheduled content: ${schedule.contentId}`);
           
-          const content = await storage.getContent(schedule.contentId);
-          if (!content) {
-            console.error(`Content not found: ${schedule.contentId}`);
-            continue;
-          }
+  //         const content = await storage.getContent(schedule.contentId);
+  //         if (!content) {
+  //           console.error(`Content not found: ${schedule.contentId}`);
+  //           continue;
+  //         }
           
-          const website = await storage.getUserWebsite(content.websiteId, content.userId);
-          if (!website) {
-            console.error(`Website not found: ${content.websiteId}`);
-            continue;
-          }
+  //         const website = await storage.getUserWebsite(content.websiteId, content.userId);
+  //         if (!website) {
+  //           console.error(`Website not found: ${content.websiteId}`);
+  //           continue;
+  //         }
           
-          try {
-            const wpCredentials = {
-              url: website.url,
-              username: website.wpUsername || 'admin',
-              applicationPassword: website.wpApplicationPassword
-            };
+  //         try {
+  //           const wpCredentials = {
+  //             url: website.url,
+  //             username: website.wpUsername || 'admin',
+  //             applicationPassword: website.wpApplicationPassword
+  //           };
             
-            const postData = {
-              title: content.title,
-              content: content.body,
-              excerpt: content.excerpt || '',
-              status: 'publish' as const,
-              meta: {
-                description: content.metaDescription || content.excerpt || '',
-                title: content.metaTitle || content.title
-              }
-            };
+  //           const postData = {
+  //             title: content.title,
+  //             content: content.body,
+  //             excerpt: content.excerpt || '',
+  //             status: 'publish' as const,
+  //             meta: {
+  //               description: content.metaDescription || content.excerpt || '',
+  //               title: content.metaTitle || content.title
+  //             }
+  //           };
             
-            const wpResult = await wordpressService.publishPost(wpCredentials, postData);
+  //           const wpResult = await wordpressService.publishPost(wpCredentials, postData);
             
-            await storage.updateContent(content.id, {
-              status: "published",
-              publishDate: new Date(),
-              wordpressPostId: wpResult.id,
-              wordpressUrl: wpResult.link,
-              publishError: null
-            });
+  //           await storage.updateContent(content.id, {
+  //             status: "published",
+  //             publishDate: new Date(),
+  //             wordpressPostId: wpResult.id,
+  //             wordpressUrl: wpResult.link,
+  //             publishError: null
+  //           });
             
-            await storage.updateContentSchedule(schedule.id, { status: 'published' });
+  //           await storage.updateContentSchedule(schedule.id, { status: 'published' });
             
-            await storage.createActivityLog({
-              userId: content.userId,
-              websiteId: content.websiteId,
-              type: "scheduled_content_published",
-              description: `Scheduled content published: "${content.title}"`,
-              metadata: { 
-                scheduleId: schedule.id,
-                contentId: content.id,
-                wordpressPostId: wpResult.id,
-                wordpressUrl: wpResult.link
-              }
-            });
+  //           await storage.createActivityLog({
+  //             userId: content.userId,
+  //             websiteId: content.websiteId,
+  //             type: "scheduled_content_published",
+  //             description: `Scheduled content published: "${content.title}"`,
+  //             metadata: { 
+  //               scheduleId: schedule.id,
+  //               contentId: content.id,
+  //               wordpressPostId: wpResult.id,
+  //               wordpressUrl: wpResult.link
+  //             }
+  //           });
             
-            results.push({
-              scheduleId: schedule.id,
-              contentId: content.id,
-              success: true,
-              wordpressPostId: wpResult.id,
-              wordpressUrl: wpResult.link
-            });
+  //           results.push({
+  //             scheduleId: schedule.id,
+  //             contentId: content.id,
+  //             success: true,
+  //             wordpressPostId: wpResult.id,
+  //             wordpressUrl: wpResult.link
+  //           });
             
-            console.log(`✅ Successfully published: ${content.title}`);
+  //           console.log(`✅ Successfully published: ${content.title}`);
             
-          } catch (publishError) {
-            console.error(`Failed to publish content ${content.id}:`, publishError);
+  //         } catch (publishError) {
+  //           console.error(`Failed to publish content ${content.id}:`, publishError);
             
-            await storage.updateContentSchedule(schedule.id, { status: 'failed' });
+  //           await storage.updateContentSchedule(schedule.id, { status: 'failed' });
             
-            await storage.updateContent(content.id, {
-              status: "publish_failed",
-              publishError: publishError instanceof Error ? publishError.message : 'Unknown error'
-            });
+  //           await storage.updateContent(content.id, {
+  //             status: "publish_failed",
+  //             publishError: publishError instanceof Error ? publishError.message : 'Unknown error'
+  //           });
             
-            await storage.createActivityLog({
-              userId: content.userId,
-              websiteId: content.websiteId,
-              type: "scheduled_content_failed",
-              description: `Failed to publish scheduled content: "${content.title}"`,
-              metadata: { 
-                scheduleId: schedule.id,
-                contentId: content.id,
-                error: publishError instanceof Error ? publishError.message : 'Unknown error'
-              }
-            });
+  //           await storage.createActivityLog({
+  //             userId: content.userId,
+  //             websiteId: content.websiteId,
+  //             type: "scheduled_content_failed",
+  //             description: `Failed to publish scheduled content: "${content.title}"`,
+  //             metadata: { 
+  //               scheduleId: schedule.id,
+  //               contentId: content.id,
+  //               error: publishError instanceof Error ? publishError.message : 'Unknown error'
+  //             }
+  //           });
             
-            results.push({
-              scheduleId: schedule.id,
-              contentId: content.id,
-              success: false,
-              error: publishError instanceof Error ? publishError.message : 'Unknown error'
-            });
-          }
+  //           results.push({
+  //             scheduleId: schedule.id,
+  //             contentId: content.id,
+  //             success: false,
+  //             error: publishError instanceof Error ? publishError.message : 'Unknown error'
+  //           });
+  //         }
           
-        } catch (error) {
-          console.error(`Error processing schedule ${schedule.id}:`, error);
-          results.push({
-            scheduleId: schedule.id,
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-          });
-        }
-      }
+  //       } catch (error) {
+  //         console.error(`Error processing schedule ${schedule.id}:`, error);
+  //         results.push({
+  //           scheduleId: schedule.id,
+  //           success: false,
+  //           error: error instanceof Error ? error.message : 'Unknown error'
+  //         });
+  //       }
+  //     }
       
-      console.log(`🎯 Processed ${overdueContent.length} scheduled items, ${results.filter(r => r.success).length} published successfully`);
+  //     console.log(`🎯 Processed ${overdueContent.length} scheduled items, ${results.filter(r => r.success).length} published successfully`);
       
-      res.json({
-        success: true,
-        processed: overdueContent.length,
-        published: results.filter(r => r.success).length,
-        failed: results.filter(r => !r.success).length,
-        results
-      });
+  //     res.json({
+  //       success: true,
+  //       processed: overdueContent.length,
+  //       published: results.filter(r => r.success).length,
+  //       failed: results.filter(r => !r.success).length,
+  //       results
+  //     });
       
-    } catch (error) {
-      console.error("Scheduled publishing process failed:", error);
-      res.status(500).json({ 
-        message: "Failed to process scheduled content",
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+  //   } catch (error) {
+  //     console.error("Scheduled publishing process failed:", error);
+  //     res.status(500).json({ 
+  //       message: "Failed to process scheduled content",
+  //       error: error instanceof Error ? error.message : 'Unknown error'
+  //     });
+  //   }
+  // });
+
+app.get("/api/user/content-schedule", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    
+    const websites = await storage.getUserWebsites(userId);
+    const allScheduledContent = [];
+    
+    for (const website of websites) {
+      const schedules = await storage.getContentScheduleWithDetails(website.id);
+      const schedulesWithWebsite = schedules.map(schedule => ({
+        ...schedule,
+        websiteName: website.name,
+        websiteUrl: website.url,
+        // Add timezone information if available
+        timezone: schedule.timezone || 'UTC',
+        // Convert scheduled date to user's timezone for display
+        localScheduledDate: schedule.scheduledDate ? 
+          new Date(schedule.scheduledDate).toLocaleString('en-US', {
+            timeZone: schedule.timezone || 'UTC',
+            dateStyle: 'medium',
+            timeStyle: 'short'
+          }) : null
+      }));
+      allScheduledContent.push(...schedulesWithWebsite);
     }
-  });
+    
+    // Sort by scheduled date
+    allScheduledContent.sort((a, b) => 
+      new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
+    );
+    
+    res.json(allScheduledContent);
+  } catch (error) {
+    console.error("Failed to fetch user's scheduled content:", error);
+    res.status(500).json({ message: "Failed to fetch scheduled content" });
+  }
+});
+
+// Create new content schedule with timezone support
+app.post("/api/user/websites/:id/schedule-content", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const websiteId = req.params.id;
+    const { 
+      contentId, 
+      scheduledDate, 
+      timezone = 'UTC' // Default to UTC if not provided
+    } = req.body;
+    
+    console.log('📅 Scheduling content:', { websiteId, contentId, scheduledDate, timezone });
+    
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+    
+    const content = await storage.getContent(contentId);
+    if (!content || content.userId !== userId || content.websiteId !== websiteId) {
+      res.status(404).json({ message: "Content not found or access denied" });
+      return;
+    }
+    
+    if (content.status === 'published') {
+      res.status(400).json({ message: "Content is already published" });
+      return;
+    }
+    
+    if (!contentId || !scheduledDate) {
+      res.status(400).json({ message: "Content ID and scheduled date are required" });
+      return;
+    }
+    
+    // Parse the scheduled date and validate it's in the future
+    const scheduleTime = new Date(scheduledDate);
+    const nowInTimezone = new Date().toLocaleString('en-US', { timeZone: timezone });
+    const nowInTimezoneDate = new Date(nowInTimezone);
+    
+    if (scheduleTime <= nowInTimezoneDate) {
+      res.status(400).json({ 
+        message: `Scheduled date must be in the future (current time in ${timezone} is ${nowInTimezone})` 
+      });
+      return;
+    }
+    
+    const existingSchedule = await storage.getContentScheduleByContentId(contentId);
+    if (existingSchedule) {
+      res.status(400).json({ message: "This content is already scheduled for publication" });
+      return;
+    }
+    
+    const scheduledContent = await storage.createContentSchedule({
+      userId,
+      websiteId,
+      scheduledDate: scheduleTime,
+      timezone, // Store the timezone
+      topic: content.title,
+      keywords: content.seoKeywords || [],
+      contentId,
+      status: "scheduled"
+    });
+    
+    await storage.createActivityLog({
+      userId,
+      websiteId,
+      type: "content_scheduled",
+      description: `Content scheduled for publication: "${content.title}" on ${scheduleTime.toLocaleString('en-US', { timeZone: timezone })} ${timezone}`,
+      metadata: { 
+        scheduleId: scheduledContent.id,
+        contentId,
+        contentTitle: content.title,
+        scheduledDate: scheduledDate,
+        timezone
+      }
+    });
+    
+    console.log('✅ Content scheduled successfully:', scheduledContent.id, 'in timezone:', timezone);
+    res.status(201).json({
+      ...scheduledContent,
+      contentTitle: content.title,
+      contentExcerpt: content.excerpt,
+      seoKeywords: content.seoKeywords,
+      timezone
+    });
+    
+  } catch (error) {
+    console.error("Failed to schedule content:", error);
+    res.status(500).json({ 
+      message: "Failed to schedule content",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Update scheduled content with timezone support
+app.put("/api/user/websites/:websiteId/content-schedule/:scheduleId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { websiteId, scheduleId } = req.params;
+    const { scheduledDate, status, timezone } = req.body;
+    
+    const website = await storage.getUserWebsite(websiteId, userId);
+    if (!website) {
+      res.status(404).json({ message: "Website not found or access denied" });
+      return;
+    }
+    
+    const scheduleItem = await storage.getContentScheduleById(scheduleId);
+    if (!scheduleItem || scheduleItem.userId !== userId) {
+      res.status(404).json({ message: "Scheduled content not found or access denied" });
+      return;
+    }
+    
+    const updates: any = {};
+    
+    // Handle timezone update
+    if (timezone !== undefined) {
+      updates.timezone = timezone;
+    }
+    
+    // Handle scheduled date update with timezone consideration
+    if (scheduledDate !== undefined) {
+      const scheduleTime = new Date(scheduledDate);
+      const checkTimezone = timezone || scheduleItem.timezone || 'UTC';
+      const nowInTimezone = new Date().toLocaleString('en-US', { timeZone: checkTimezone });
+      const nowInTimezoneDate = new Date(nowInTimezone);
+      
+      if (scheduleTime <= nowInTimezoneDate && status !== 'cancelled') {
+        res.status(400).json({ 
+          message: `Scheduled date must be in the future (current time in ${checkTimezone} is ${nowInTimezone}) unless cancelling` 
+        });
+        return;
+      }
+      updates.scheduledDate = scheduleTime;
+    }
+    
+    if (status !== undefined) updates.status = status;
+    
+    const updatedSchedule = await storage.updateContentSchedule(scheduleId, updates);
+    
+    await storage.createActivityLog({
+      userId,
+      websiteId,
+      type: "content_schedule_updated",
+      description: `Publication schedule updated for content`,
+      metadata: { 
+        scheduleId,
+        updates: Object.keys(updates),
+        timezone: updates.timezone || scheduleItem.timezone || 'UTC'
+      }
+    });
+    
+    res.json({
+      ...updatedSchedule,
+      timezone: updatedSchedule.timezone || scheduleItem.timezone || 'UTC'
+    });
+    
+  } catch (error) {
+    console.error("Failed to update scheduled content:", error);
+    res.status(500).json({ 
+      message: "Failed to update scheduled content",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// System endpoint to manually trigger scheduled content publishing
+app.post("/api/system/publish-scheduled-content", async (req: Request, res: Response): Promise<void> => {
+  try {
+    console.log('🕐 Manually triggering scheduled content publication...');
+    
+    // Use the scheduler service's method which handles timezone properly
+    const result = await schedulerService.manualProcess();
+    
+    console.log(`🎯 Manual processing complete: ${result.published} published, ${result.failed} failed`);
+    
+    res.json({
+      success: true,
+      ...result
+    });
+    
+  } catch (error) {
+    console.error("Manual scheduled publishing process failed:", error);
+    res.status(500).json({ 
+      message: "Failed to process scheduled content",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// System endpoint to check what schedules should run now (for debugging)
+app.get("/api/system/check-schedules", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const currentSchedules = await schedulerService.checkCurrentSchedules();
+    
+    res.json({
+      success: true,
+      ...currentSchedules,
+      message: `Found ${currentSchedules.schedulesToRun.length} schedules that should run now`
+    });
+    
+  } catch (error) {
+    console.error("Failed to check current schedules:", error);
+    res.status(500).json({ 
+      message: "Failed to check schedules",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// System endpoint to manually trigger auto-generation schedules
+app.post("/api/system/process-auto-schedules", async (req: Request, res: Response): Promise<void> => {
+  try {
+    console.log('🤖 Manually triggering auto-generation schedules...');
+    
+    const result = await schedulerService.manualProcessAutoSchedules();
+    
+    res.json({
+      success: true,
+      message: "Auto-generation schedules processed",
+      result
+    });
+    
+  } catch (error) {
+    console.error("Failed to process auto-generation schedules:", error);
+    res.status(500).json({ 
+      message: "Failed to process auto-generation schedules",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Get timezone information for debugging
+app.get("/api/system/timezone-info", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { timezone = 'UTC' } = req.query;
+    
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      dateStyle: 'full',
+      timeStyle: 'long',
+      timeZone: timezone as string
+    });
+    
+    const timeInZone = formatter.format(now);
+    const offset = new Intl.DateTimeFormat('en-US', {
+      timeZoneName: 'short',
+      timeZone: timezone as string
+    }).formatToParts(now).find(p => p.type === 'timeZoneName')?.value;
+    
+    res.json({
+      timezone,
+      currentTime: timeInZone,
+      offset,
+      serverTime: now.toISOString(),
+      serverTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    });
+    
+  } catch (error) {
+    res.status(400).json({ 
+      message: "Invalid timezone",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+app.post("/api/user/auto-schedules", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { utcTime, ...scheduleDataWithoutUtc } = req.body; // Remove utcTime if sent
+    
+    console.log('API received schedule request:', {
+      localTime: scheduleDataWithoutUtc.localTime,
+      timezone: scheduleDataWithoutUtc.timezone,
+      utcTimeFromClient: utcTime, // Log if client sent it (shouldn't)
+    });
+    
+    // Pass data WITHOUT utcTime to force backend calculation
+    const newSchedule = await storage.createAutoSchedule({
+      ...scheduleDataWithoutUtc,
+      userId,
+      // Explicitly don't include utcTime
+    });
+    
+    res.json(newSchedule);
+  } catch (error) {
+    console.error("Failed to create auto-schedule:", error);
+    res.status(500).json({ 
+      message: "Failed to create schedule",
+      error: error instanceof Error ? error.message : "Unknown error" 
+    });
+  }
+});
+
+
+// SIMPLE UTC CONVERSION FUNCTION
+function convertLocalTimeToUTC(localTime: string, timezone: string): string {
+  const [hours, minutes] = localTime.split(':').map(Number);
+  
+  // Timezone offset map (in hours ahead of UTC)
+  const timezoneOffsets: Record<string, number> = {
+    'Asia/Tokyo': 9,        // Japan
+    'Asia/Manila': 8,       // Philippines  
+    'Asia/Shanghai': 8,     // China
+    'Asia/Singapore': 8,    // Singapore
+    'Asia/Hong_Kong': 8,    // Hong Kong
+    'Asia/Taipei': 8,       // Taiwan
+    'Asia/Seoul': 9,        // South Korea
+    'Asia/Jakarta': 7,      // Indonesia (West)
+    'Asia/Bangkok': 7,      // Thailand
+    'Asia/Ho_Chi_Minh': 7,  // Vietnam
+    'Asia/Kolkata': 5.5,    // India
+    'Asia/Dubai': 4,        // UAE
+    'Europe/London': 0,     // UK (GMT, varies with DST)
+    'Europe/Paris': 1,      // France (CET, varies with DST)
+    'America/New_York': -5, // US East Coast (EST, varies with DST)
+    'America/Los_Angeles': -8, // US West Coast (PST, varies with DST)
+    'UTC': 0,
+  };
+  
+  const offset = timezoneOffsets[timezone] ?? 0;
+  
+  // Convert to UTC by subtracting the offset
+  let utcHours = hours - offset;
+  let utcMinutes = minutes - Math.floor((offset % 1) * 60); // Handle half-hour offsets like India
+  
+  // Handle minute overflow/underflow
+  if (utcMinutes < 0) {
+    utcMinutes += 60;
+    utcHours -= 1;
+  } else if (utcMinutes >= 60) {
+    utcMinutes -= 60;
+    utcHours += 1;
+  }
+  
+  // Handle hour overflow/underflow (day boundaries)
+  if (utcHours < 0) {
+    utcHours += 24; // Previous day in UTC
+  } else if (utcHours >= 24) {
+    utcHours -= 24; // Next day in UTC
+  }
+  
+  const result = `${String(Math.floor(utcHours)).padStart(2, '0')}:${String(utcMinutes).padStart(2, '0')}`;
+  
+  console.log(`⏰ Timezone conversion: ${localTime} ${timezone} (UTC+${offset}) → ${result} UTC`);
+  
+  return result;
+}
+
+
 
   // ===========================================================================
   // SEO ANALYSIS & TRACKING ROUTES
@@ -4574,6 +5149,119 @@ app.delete("/api/user/content/:id", requireAuth, async (req: Request, res: Respo
       });
     }
   });
+
+
+
+
+
+
+
+
+
+//added
+// ======================================================================
+// BULK DELETE MUST COME FIRST - BEFORE THE :id ROUTE
+// ======================================================================
+app.delete("/api/user/reports/bulk-delete", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { reportIds } = req.body;
+    
+    console.log(`🗑️ Bulk DELETE request for ${reportIds?.length || 0} reports from user: ${userId}`);
+    
+    // Validate input
+    if (!reportIds || !Array.isArray(reportIds) || reportIds.length === 0) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid request: reportIds array is required'
+      });
+      return;
+    }
+    
+    // Your bulk delete logic here...
+    const reports = await storage.getReportsByIds(reportIds, userId);
+    const foundReportIds = reports.map((r: any) => r.id);
+    const notFoundIds = reportIds.filter(id => !foundReportIds.includes(id));
+
+    if (foundReportIds.length === 0) {
+      res.status(404).json({
+        success: false,
+        message: 'No reports found or authorized for deletion',
+        notFoundIds
+      });
+      return;
+    }
+
+    const deleteCount = await storage.bulkDeleteReports(foundReportIds, userId);
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully deleted ${deleteCount} report(s)`,
+      deleted: deleteCount,
+      deletedIds: foundReportIds,
+      notFoundIds: notFoundIds.length > 0 ? notFoundIds : undefined
+    });
+
+  } catch (error) {
+    console.error("Failed to bulk delete reports:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete reports",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// ======================================================================
+// SINGLE DELETE COMES SECOND - AFTER BULK-DELETE
+// ======================================================================
+app.delete("/api/user/reports/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const reportId = req.params.id;
+    
+    console.log(`🗑️ DELETE request for report ${reportId} from user: ${userId}`);
+    
+    // Your single delete logic here...
+    const report = await storage.getReportById(reportId, userId);
+    
+    if (!report) {
+      console.log(`❌ Report ${reportId} not found or unauthorized for user ${userId}`);
+      res.status(404).json({
+        success: false,
+        message: 'Report not found or access denied'
+      });
+      return;
+    }
+
+    const success = await storage.deleteReport(reportId, userId);
+    
+    if (success) {
+      res.status(204).send();
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to delete report'
+      });
+    }
+
+  } catch (error) {
+    console.error("Failed to delete report:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete report",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+
+
+
+
+
+
+
 
   // ===========================================================================
   // IMAGE MANAGEMENT & BATCH PROCESSING ROUTES  
@@ -5688,6 +6376,133 @@ app.delete("/api/user/content/images/:imageId", requireAuth, async (req: Request
       res.status(500).json({ message: "Failed to fetch activity logs" });
     }
   });
+
+
+// ===========================================================================
+// ACTIVITY LOGS DELETE ROUTES
+// ===========================================================================
+
+// Bulk delete activity logs
+app.delete("/api/user/activity-logs/bulk-delete", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ 
+        success: false, 
+        message: "Log IDs array is required" 
+      });
+      return;
+    }
+
+    // Verify all logs belong to the user before deleting
+    const userLogs = await storage.getUserActivityLogsByIds(ids, userId);
+    
+    if (userLogs.length !== ids.length) {
+      res.status(403).json({ 
+        success: false, 
+        message: "Some activity logs not found or access denied" 
+      });
+      return;
+    }
+
+    // Delete the activity logs
+    const deletedCount = await storage.bulkDeleteActivityLogs(ids, userId);
+
+    res.json({ 
+      success: true, 
+      message: `${deletedCount} activity logs deleted successfully`,
+      deletedCount 
+    });
+  } catch (error) {
+    console.error("Failed to bulk delete activity logs:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to delete activity logs" 
+    });
+  }
+});
+
+app.delete("/api/user/activity-logs/clear-all", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const websiteId = req.query.websiteId as string | undefined;
+    
+    console.log(`Clearing logs - User: ${userId}, Website: ${websiteId || 'all'}`);
+
+    // Only verify website if websiteId is actually provided and not empty
+    if (websiteId && websiteId !== '' && websiteId !== 'undefined') {
+      const website = await storage.getUserWebsite(websiteId, userId);
+      if (!website) {
+        res.status(404).json({ 
+          success: false,
+          message: "Website not found or access denied" 
+        });
+        return;
+      }
+    }
+
+    // Clear activity logs
+    const deletedCount = await storage.clearAllActivityLogs(userId, websiteId);
+
+    res.json({ 
+      success: true, 
+      message: websiteId 
+        ? `All activity logs for website cleared successfully` 
+        : `All activity logs cleared successfully`,
+      deletedCount
+    });
+  } catch (error) {
+    console.error("Failed to clear all activity logs:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to clear activity logs" 
+    });
+  }
+});
+
+app.delete("/api/user/activity-logs/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const logId = req.params.id;
+
+    if (!logId) {
+      res.status(400).json({ 
+        success: false, 
+        message: "Activity log ID is required" 
+      });
+      return;
+    }
+
+    // Verify the log belongs to the user
+    const activityLog = await storage.getActivityLog(logId, userId);
+    
+    if (!activityLog) {
+      res.status(404).json({ 
+        success: false, 
+        message: "Activity log not found or access denied" 
+      });
+      return;
+    }
+
+    // Delete the activity log
+    await storage.deleteActivityLog(logId, userId);
+
+    res.json({ 
+      success: true, 
+      message: "Activity log deleted successfully",
+      deletedId: logId 
+    });
+  } catch (error) {
+    console.error("Failed to delete activity log:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to delete activity log" 
+    });
+  }
+});
+
 
   // ===========================================================================
   // SYSTEM/GLOBAL ROUTES (No authentication required)
