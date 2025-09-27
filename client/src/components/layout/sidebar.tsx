@@ -11,14 +11,15 @@ import {
   Settings,
   X,
   Image,
-  SearchCheck, // Add this import for Google Search Console icon
+  SearchCheck,
+  Shield, // Add this import
 } from "lucide-react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { useState, createContext, useContext } from "react";
+import { useState, createContext, useContext, useEffect } from "react"; // Add useEffect
 import { useIsMobile } from "@/hooks/use-mobile";
 import { CompactSidebarUserMenu, UserMenu } from "@/pages/authentication";
 
-// Mobile sidebar context
+// Mobile sidebar context (keep your existing code)
 const MobileSidebarContext = createContext<{
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
@@ -44,17 +45,38 @@ const navigation = [
   { name: "Websites", href: "/websites", icon: Globe },
   { name: "AI Content", href: "/ai-content", icon: Bot },
   { name: "SEO Analysis", href: "/seo-analysis", icon: Search },
-  { name: "Search Console", href: "/googlesearchconsole", icon: SearchCheck }, // Add this line
+  { name: "Search Console", href: "/googlesearchconsole", icon: SearchCheck },
   { name: "Content Schedule", href: "/content-schedule", icon: Calendar },
   { name: "Image Metadata", href: "/image-metadata", icon: Image },
   { name: "Reports", href: "/reports", icon: BarChart3 },
   { name: "Activity Logs", href: "/activity-logs", icon: History },
   { name: "Settings", href: "/settings", icon: Settings },
+  { name: "Admin Panel", href: "/admin", icon: Shield, adminOnly: true },
 ];
 
 // Shared sidebar content component
 function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
   const [location] = useLocation();
+  const [user, setUser] = useState<any>(null); // Add this state
+
+  // Add this useEffect to fetch user data
+  useEffect(() => {
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then(res => {
+        if (res.ok) {
+          return res.json();
+        }
+        return null;
+      })
+      .then(data => {
+        if (data) {
+          setUser(data);
+        }
+      })
+      .catch(error => {
+        console.error('Failed to fetch user:', error);
+      });
+  }, []);
 
   return (
     <div className="flex flex-col h-full">
@@ -71,6 +93,11 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
       {/* Navigation */}
       <nav className="mt-8 flex-1 px-2 space-y-1">
         {navigation.map((item) => {
+          // Skip admin-only items for non-admin users
+          if (item.adminOnly && !user?.isAdmin) {
+            return null;
+          }
+
           const isActive = location === item.href;
           const Icon = item.icon;
 

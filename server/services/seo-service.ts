@@ -882,7 +882,8 @@ export class EnhancedSEOService {
         userId,
         websiteId,
         aiResponse.tokensUsed,
-        aiResponse.provider
+        aiResponse.provider,
+        aiResponse.keyType
       );
 
       console.log("AI content analysis completed:", {
@@ -969,12 +970,20 @@ Return ONLY valid JSON with the exact structure specified.`;
   private async getAIAnalysisResponse(
     prompt: string,
     userId?: string
-  ): Promise<{ result: string; tokensUsed: number; provider: string } | null> {
+  ): Promise<{ result: string; tokensUsed: number; provider: string; keyType: 'user' | 'system' } | null> {
     const openai = await this.getUserOpenAI(userId);
     const anthropic = await this.getUserAnthropic(userId);
 
+    let keyType: 'user' | 'system' = 'system';
+
     if (openai) {
       try {
+
+        if (userId) {
+        const userKey = await storage.getDecryptedApiKey(userId, "openai");
+        keyType = userKey ? 'user' : 'system';
+      }
+
         const response = await openai.chat.completions.create({
           model: "gpt-4o",
           messages: [
@@ -992,7 +1001,8 @@ Return ONLY valid JSON with the exact structure specified.`;
         return {
           result: response.choices[0].message.content || "",
           tokensUsed: response.usage?.total_tokens || 0,
-          provider: "openai"
+          provider: "openai",
+          keyType
         };
       } catch (error) {
         console.error("OpenAI API error:", error);
@@ -1001,6 +1011,11 @@ Return ONLY valid JSON with the exact structure specified.`;
 
     if (anthropic) {
       try {
+      if (userId) {
+        const userKey = await storage.getDecryptedApiKey(userId, "anthropic");
+        keyType = userKey ? 'user' : 'system';
+      }
+
         const response = await anthropic.messages.create({
           model: "claude-3-5-sonnet-latest",
           max_tokens: 2000,
@@ -1015,7 +1030,8 @@ Return ONLY valid JSON with the exact structure specified.`;
         return {
           result: text,
           tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
-          provider: "anthropic"
+          provider: "anthropic",
+          keyType
         };
       } catch (error) {
         console.error("Anthropic API error:", error);
@@ -1117,7 +1133,8 @@ Return ONLY valid JSON with the exact structure specified.`;
     userId: string | undefined,
     websiteId: string | undefined,
     tokensUsed: number,
-    provider: string
+    provider: string,
+    keyType: 'user' | 'system'
   ): Promise<void> {
     if (!userId || !websiteId || tokensUsed <= 0) return;
 
@@ -1134,6 +1151,7 @@ Return ONLY valid JSON with the exact structure specified.`;
           tokensUsed,
           costUsd: Math.round(costUsd * 100),
           operation: "seo_content_analysis",
+          keyType
         });
       }
     } catch (error: any) {
@@ -1197,6 +1215,10 @@ Return ONLY valid JSON with the exact structure specified.`;
     try {
       const scores = await this.fetchPageSpeedScores(url, googleApiKey);
       
+      if (userId) {
+      await storage.incrementApiKeyUsage(userId, "google_pagespeed", 0);
+    }
+    
       if (scores.mobile === 0 && scores.desktop === 0) {
         throw new Error("No valid PageSpeed data received");
       }

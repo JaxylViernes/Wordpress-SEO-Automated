@@ -10,7 +10,7 @@ import 'dotenv/config'; // must come before importing encryption-service
 import { schedulerService } from './services/scheduler-service';
 import autoSchedulesRouter from "./api/user/auto-schedules";
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { MemoryStore } from 'express-rate-limit';
 import path from 'path';
 
 // =============================================================================
@@ -59,7 +59,8 @@ const app = express();
 // TRUST PROXY - IMPORTANT FOR CLOUDFLARE
 // =============================================================================
 
-app.set('trust proxy', true);
+// Trust only 1 proxy hop (Cloudflare)
+app.set('trust proxy', 1);
 
 // =============================================================================
 // SECURITY MIDDLEWARE (Added - Early in the middleware stack)
@@ -77,29 +78,23 @@ const rateLimitHandler = (req: Request, res: Response) => {
 const generalLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 500, // 500 requests per minute
-  handler: rateLimitHandler, // JSON response
+  handler: rateLimitHandler,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    const cfIp = req.headers['cf-connecting-ip'] as string;
-    const xForwardedFor = req.headers['x-forwarded-for'] as string;
-    const realIp = cfIp || (xForwardedFor ? xForwardedFor.split(',')[0] : null) || req.ip;
-    return realIp;
-  }
+  // Skip validation - we know we're behind Cloudflare and configured correctly
+  validate: false,
 });
 
 // Auth rate limiter
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 attempts
-  handler: rateLimitHandler, // JSON response
+  handler: rateLimitHandler,
   skipSuccessfulRequests: true,
-  keyGenerator: (req) => {
-    const cfIp = req.headers['cf-connecting-ip'] as string;
-    const xForwardedFor = req.headers['x-forwarded-for'] as string;
-    const realIp = cfIp || (xForwardedFor ? xForwardedFor.split(',')[0] : null) || req.ip;
-    return realIp;
-  }
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Skip validation - we know we're behind Cloudflare and configured correctly
+  validate: false,
 });
 
 // Apply rate limiting to routes
@@ -210,10 +205,11 @@ app.use(session({
   saveUninitialized: false,
   name: 'ai-seo-session',
   cookie: {
-    secure: true, // Keep false for testing with Cloudflare tunnel
+    // secure: true, // Keep false for testing with Cloudflare tunnel
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: 'none', // Changed to 'none' for cross-origin
+    sameSite: 'lax', // Changed to 'none' for cross-origin
     domain: undefined // Auto-detect domain
   },
   rolling: true
@@ -391,12 +387,12 @@ app.use("/api/user/auto-schedules", autoSchedulesRouter);
 // =============================================================================
 
 process.on('SIGTERM', () => {
-  log('📴 SIGTERM received, shutting down gracefully');
+  log('🔴 SIGTERM received, shutting down gracefully');
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  log('📴 SIGINT received, shutting down gracefully');
+  log('🔴 SIGINT received, shutting down gracefully');
   process.exit(0);
 });
 

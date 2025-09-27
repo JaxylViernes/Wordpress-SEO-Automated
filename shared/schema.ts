@@ -27,6 +27,9 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   email: text("email").notNull().unique(),
   name: text("name"), 
+  isAdmin: boolean('is_admin').default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export interface ResetTokenMetadata {
@@ -623,6 +626,7 @@ export const aiUsageTracking = pgTable(
     tokensUsed: integer("tokens_used").notNull(),
     costUsd: integer("cost_usd").notNull(), // Store as cents
     operation: text("operation").notNull(), // content_generation, seo_analysis, etc.
+    keyType: text("key_type").notNull().default("system"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

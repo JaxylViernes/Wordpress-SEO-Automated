@@ -8,6 +8,7 @@ import PerformanceChart from "@/components/dashboard/performance-chart";
 import RecentActivity from "@/components/dashboard/recent-activity";
 import WebsitesTable from "@/components/dashboard/websites-table";
 import { Button } from "@/components/ui/button";
+import ApiKeyUsage from "@/components/dashboard/api-key-usage";
 import { useState, useEffect } from "react";
 import {
   DropdownMenu,
@@ -241,9 +242,12 @@ export default function Dashboard() {
           </div>
           <div>
             <RecentActivity />
+            
           </div>
         </div>
-
+<div>
+  <ApiKeyUsage />
+</div>
         <div className="mb-8">
           <WebsitesTable />
         </div>

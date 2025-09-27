@@ -44,17 +44,18 @@ export class ImageService {
   };
 
   // Cache for API keys to avoid repeated database queries
-  private apiKeyCache: Map<string, { key: string; timestamp: number }> = new Map();
+   private apiKeyCache: Map<string, { key: string; type: 'user' | 'system'; timestamp: number }> = new Map();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   /**
    * Get the OpenAI API key for image generation, checking user's keys first, then falling back to env vars
    */
-  private async getOpenAIApiKey(userId?: string): Promise<string | null> {
+  private async getOpenAIApiKey(userId?: string): Promise<{ key: string; type: 'user' | 'system' } | null> {
     // If no userId provided, use environment variables
-    if (!userId) {
+      if (!userId) {
       console.log('⚠️ No userId provided for image generation, using environment variables');
-      return process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || null;
+      const envKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR;
+      return envKey ? { key: envKey, type: 'system' } : null;
     }
 
     const cacheKey = `${userId}-openai`;
@@ -62,8 +63,8 @@ export class ImageService {
     // Check cache first
     const cached = this.apiKeyCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
-      console.log(`✅ Using cached OpenAI API key for image generation`);
-      return cached.key;
+      console.log(`✅ Using cached OpenAI API key for image generation (${cached.type} key)`);
+      return { key: cached.key, type: cached.type };
     }
 
     try {
@@ -84,14 +85,15 @@ export class ImageService {
             // Decrypt the API key
             const decryptedKey = apiKeyEncryptionService.decrypt(validKey.encryptedApiKey);
             
-            // Cache the decrypted key
+            // Cache with type information
             this.apiKeyCache.set(cacheKey, {
               key: decryptedKey,
+              type: 'user',
               timestamp: Date.now()
             });
 
             console.log(`✅ Using user's OpenAI API key for image generation (${validKey.keyName})`);
-            return decryptedKey;
+            return { key: decryptedKey, type: 'user' };
           } catch (decryptError: any) {
             console.error(`Failed to decrypt user's OpenAI key:`, decryptError.message);
           }
@@ -104,16 +106,17 @@ export class ImageService {
     // Fallback to environment variables
     console.log(`⚠️ No user OpenAI key found for image generation, falling back to environment variables`);
     
-    // Log this fallback for monitoring
+    // Log this fallback for monitoring (include key type in metadata)
     if (userId) {
       try {
         await storage.createActivityLog({
           userId: userId,
           type: "api_key_fallback",
-          description: "Using environment OpenAI key for image generation (no user key configured)",
+          description: "Using system OpenAI key for image generation (no user key configured)",
           metadata: { 
             provider: 'openai',
-            feature: 'image_generation'
+            feature: 'image_generation',
+            keyType: 'system'
           }
         });
       } catch (logError) {
@@ -121,16 +124,27 @@ export class ImageService {
       }
     }
     
-    return process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || null;
+    const envKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR;
+    if (envKey) {
+      // Cache system key
+      this.apiKeyCache.set(cacheKey, {
+        key: envKey,
+        type: 'system',
+        timestamp: Date.now()
+      });
+      return { key: envKey, type: 'system' };
+    }
+    
+    return null;
   }
 
   /**
    * Create an OpenAI client with the appropriate API key
    */
-  private async createOpenAIClient(userId?: string): Promise<OpenAI> {
-    const apiKey = await this.getOpenAIApiKey(userId);
+ private async createOpenAIClient(userId?: string): Promise<{ client: OpenAI; keyType: 'user' | 'system' }> {
+    const keyInfo = await this.getOpenAIApiKey(userId);
     
-    if (!apiKey) {
+    if (!keyInfo) {
       throw new Error(
         userId 
           ? 'No OpenAI API key available. Please add your OpenAI API key in settings to generate images.'
@@ -138,25 +152,34 @@ export class ImageService {
       );
     }
 
-    return new OpenAI({ apiKey });
+    return {
+      client: new OpenAI({ apiKey: keyInfo.key }),
+      keyType: keyInfo.type
+    };
   }
 
   /**
    * Clear cached API key for a user (call this when user updates their keys)
    */
-  public clearApiKeyCache(userId: string): void {
+    public clearApiKeyCache(userId: string): void {
     this.apiKeyCache.delete(`${userId}-openai`);
     console.log(`🗑️ Cleared OpenAI API key cache for user ${userId}`);
   }
 
+
   async generateImages(
     request: ImageGenerationRequest,
-    userId?: string
-  ): Promise<ImageGenerationResult> {
-    // Create OpenAI client with appropriate API key (user's or env)
+    userId?: string,
+    websiteId?: string 
+  ): Promise<ImageGenerationResult & { keyType?: 'user' | 'system' }> {
+    // Create OpenAI client and track key type
     let openai: OpenAI;
+    let keyType: 'user' | 'system' = 'system';
+    
     try {
-      openai = await this.createOpenAIClient(userId);
+      const clientInfo = await this.createOpenAIClient(userId);
+      openai = clientInfo.client;
+      keyType = clientInfo.keyType;
     } catch (error: any) {
       console.error('Failed to initialize OpenAI client for image generation:', error.message);
       throw error;
@@ -164,7 +187,7 @@ export class ImageService {
 
     console.log(
       `🎨 Starting image generation: ${request.count} images for "${request.topic}"${
-        userId ? ` (user: ${userId})` : ' (system key)'
+        userId ? ` (user: ${userId}, ${keyType} key)` : ' (system key)'
       }`
     );
 
@@ -182,7 +205,7 @@ export class ImageService {
         );
 
         console.log(
-          `🖼️ Generating image ${i + 1}/${request.count}: ${prompt.substring(
+          `🖼️ Generating image ${i + 1}/${request.count} with ${keyType} key: ${prompt.substring(
             0,
             100
           )}...`
@@ -216,36 +239,41 @@ export class ImageService {
         console.log(
           `✅ Generated image ${i + 1}/${
             request.count
-          } (Cost: $${imageCost.toFixed(4)})`
+          } (Cost: $${imageCost.toFixed(4)}, Key: ${keyType})`
         );
 
-        // Track API key usage
-        if (userId) {
-          try {
-            await this.trackApiKeyUsage(userId, 'image_generation');
-          } catch (trackError) {
-            console.warn('Failed to track API key usage:', trackError);
-          }
-        }
+        // Track API key usage with type
+        if (userId && websiteId) {
+    try {
+      await storage.trackAiUsage({
+        userId,
+        websiteId,  // Now we have a valid websiteId
+        model: 'dall-e-3',
+        operation: 'image_generation',
+        tokensUsed: 0,
+        costUsd: Math.round(this.DALLE_COSTS["1024x1024"] * 100),
+        keyType
+      });
+    } catch (trackError) {
+      console.warn('Failed to track AI usage:', trackError);
+    }
+  }
 
-        // Rate limiting: DALL-E 3 allows 5 requests per minute
+        // Rate limiting
         if (i < request.count - 1) {
           console.log("⏳ Waiting to respect rate limits...");
-          await new Promise((resolve) => setTimeout(resolve, 12000)); // 12 seconds between requests
+          await new Promise((resolve) => setTimeout(resolve, 12000));
         }
       } catch (error: any) {
         console.error(`❌ Failed to generate image ${i + 1}:`, error.message);
 
-        // Handle specific OpenAI errors
-        if (error.status === 429) {
-          throw new Error(
-            `Rate limit exceeded during image generation. Generated ${i} of ${request.count} images. Please wait a minute and try again.`
-          );
-        } else if (error.status === 401) {
-          // Clear cache on auth error
+        // Handle errors...
+        if (error.status === 401) {
           if (userId) this.clearApiKeyCache(userId);
           throw new Error(
-            `Invalid OpenAI API key. Please check your API key in settings.`
+            `Invalid OpenAI API key (${keyType} key). Please check your API key${
+              keyType === 'user' ? ' in settings' : ' configuration'
+            }.`
           );
         } else if (
           error.status === 400 &&
@@ -281,45 +309,63 @@ export class ImageService {
     console.log(
       `🎉 Image generation complete: ${images.length}/${
         request.count
-      } images (Total cost: $${totalCost.toFixed(4)})`
+      } images (Total cost: $${totalCost.toFixed(4)}, Key type: ${keyType})`
     );
 
+    // Return with key type information
     return {
       images,
       totalCost,
+      keyType
     };
   }
 
   /**
    * Track API key usage for monitoring
    */
- private async trackApiKeyUsage(userId: string, operation: string): Promise<void> {
-  try {
-    const userApiKeys = await storage.getUserApiKeys(userId);
-    const openaiKey = userApiKeys.find(
-      (key: any) => 
-        key.provider === 'openai' && 
-        key.isActive && 
-        key.validationStatus === 'valid'
-    );
+private async trackApiKeyUsage(userId: string, operation: string, keyType: 'user' | 'system'): Promise<void> {
+    try {
+      // Track in AI usage table with key type
+      await storage.trackAiUsage({
+        userId,
+        websiteId: undefined, // Images might not always have websiteId
+        model: 'dall-e-3',
+        operation,
+        tokensUsed: 0, // Images don't use tokens
+        costUsd: Math.round(this.DALLE_COSTS["1024x1024"] * 100), // Convert to cents
+        keyType // Pass the key type
+      });
 
-    if (openaiKey && openaiKey.id) {
-      const currentCount = typeof openaiKey.usageCount === 'number' 
-        ? openaiKey.usageCount 
-        : 0;
-      
-      // Only update if we have valid data
-      if (!isNaN(currentCount)) {
-        await storage.updateUserApiKey(userId, openaiKey.id, {
-          usageCount: currentCount + 1,
-          lastUsed: new Date()
-        });
+      console.log(`📊 Image generation usage: ${operation} (${keyType} key)`);
+
+      // Also update the user's API key usage counter if using their key
+      if (keyType === 'user') {
+        const userApiKeys = await storage.getUserApiKeys(userId);
+        const openaiKey = userApiKeys.find(
+          (key: any) => 
+            key.provider === 'openai' && 
+            key.isActive && 
+            key.validationStatus === 'valid'
+        );
+
+        if (openaiKey && openaiKey.id) {
+          const currentCount = typeof openaiKey.usageCount === 'number' 
+            ? openaiKey.usageCount 
+            : 0;
+          
+          if (!isNaN(currentCount)) {
+            await storage.updateUserApiKey(userId, openaiKey.id, {
+              usageCount: currentCount + 1,
+              lastUsed: new Date()
+            });
+          }
+        }
       }
+    } catch (error: any) {
+      console.warn('Failed to track API key usage:', error.message);
     }
-  } catch (error: any) {
-    console.warn('Failed to track API key usage:', error.message);
   }
-}
+
 
   private createImagePrompt(
     topic: string,
@@ -504,44 +550,61 @@ export class ImageService {
     };
   }
 
-  async generateAltTextForUpload(
-  imageBuffer: Buffer, 
-  filename: string,
-  userId?: string
-): Promise<string> {
-  try {
-    // Use GPT-4 Vision for actual image analysis
-    const openai = await this.createOpenAIClient(userId);
-    const base64Image = imageBuffer.toString('base64');
-    const dataUrl = `data:image/jpeg;base64,${base64Image}`;
-    
-    const response = await openai.chat.completions.create({
-      model: "gpt-4-vision-preview",
-      messages: [{
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: "Generate concise, descriptive alt text for this image suitable for web accessibility. Maximum 125 characters."
-          },
-          {
-            type: "image_url",
-            image_url: { url: dataUrl }
-          }
-        ]
-      }],
-      max_tokens: 100
-    });
-    
-    return response.choices[0]?.message?.content || 
-           filename.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-           
-  } catch (error) {
-    console.warn('Failed to generate alt text:', error);
-    // Fallback to filename-based alt text
-    return filename.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+ async generateAltTextForUpload(
+    imageBuffer: Buffer, 
+    filename: string,
+    userId?: string
+  ): Promise<{ altText: string; keyType: 'user' | 'system' }> {
+    try {
+      // Get client with key type tracking
+      const clientInfo = await this.createOpenAIClient(userId);
+      const openai = clientInfo.client;
+      const keyType = clientInfo.keyType;
+      
+      const base64Image = imageBuffer.toString('base64');
+      const dataUrl = `data:image/jpeg;base64,${base64Image}`;
+      
+      console.log(`🔍 Generating alt text with ${keyType} key`);
+      
+      const response = await openai.chat.completions.create({
+        model: "gpt-4-vision-preview",
+        messages: [{
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Generate concise, descriptive alt text for this image suitable for web accessibility. Maximum 125 characters."
+            },
+            {
+              type: "image_url",
+              image_url: { url: dataUrl }
+            }
+          ]
+        }],
+        max_tokens: 100
+      });
+      
+      // Track usage with key type
+      if (userId) {
+        await this.trackApiKeyUsage(userId, 'alt_text_generation', keyType);
+      }
+      
+      return {
+        altText: response.choices[0]?.message?.content || 
+                filename.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+        keyType
+      };
+      
+    } catch (error) {
+      console.warn('Failed to generate alt text:', error);
+      // Fallback to filename-based alt text
+      return {
+        altText: filename.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '),
+        keyType: 'system' // Fallback doesn't use any API
+      };
+    }
   }
-}
+
 
   /**
    * Optimize uploaded images

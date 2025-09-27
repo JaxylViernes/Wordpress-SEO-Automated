@@ -1,8 +1,5 @@
-//client/src/lib/api.ts
 import { apiRequest } from "./queryClient";
 
-// Remove this standalone fetch - it shouldn't be here
-// const apiUrl = window.location.origin;
 
 // Helper function to ensure all fetches include credentials
 const fetchWithCredentials = (url: string, options: RequestInit = {}) => {
@@ -756,7 +753,26 @@ export const api = {
       if (!res.ok) throw new Error('Failed to replace image');
       return res.json();
     });
-  }
+  },
+
+    //API USAGE
+  getApiKeyStatus: () => 
+  fetchWithCredentials('/api/user/api-keys/status').then(res => {
+    if (!res.ok) throw new Error('Failed to fetch API key status');
+    return res.json();
+  }),
+
+getUserApiKeys: () =>
+  fetchWithCredentials('/api/user/api-keys').then(res => {
+    if (!res.ok) throw new Error('Failed to fetch API keys');
+    return res.json();
+  }),
+
+getApiKeyUsage: (keyId: string) =>
+  fetchWithCredentials(`/api/user/api-keys/${keyId}/usage`).then(res => {
+    if (!res.ok) throw new Error('Failed to fetch API key usage');
+    return res.json();
+  }),
 };
 
 // SEO helpers
@@ -793,6 +809,9 @@ export const seoHelpers = {
       trend: Math.abs(change) < 1 ? 'stable' : change > 0 ? 'up' : 'down'
     };
   },
+
+
+
 };
 
 export default api;

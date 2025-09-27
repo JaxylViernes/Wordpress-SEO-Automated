@@ -5,7 +5,7 @@ import { aiService } from "./services/ai-service";
 import { seoService } from "./services/seo-service";
 import { approvalWorkflowService } from "./services/approval-workflow";
 import { insertWebsiteSchema, insertContentSchema, passwordResetTokens } from "@shared/schema";
-import { eq, gt, desc, and, sql } from 'drizzle-orm';
+import { eq, gt, desc, and, sql, count, gte } from 'drizzle-orm';
 import { AuthService } from "./services/auth-service";
 import { wordpressService } from "./services/wordpress-service";
 import { wordPressAuthService } from './services/wordpress-auth';
@@ -27,6 +27,8 @@ import multer from 'multer';
 import { cloudinaryStorage } from "./services/cloudinary-storage";
 import {db} from './db'
 import { emailService } from './services/email-service';
+import { users, websites, aiUsageTracking,  content, seoReports, activityLogs } from "@shared/schema";
+
 
 
 
@@ -123,6 +125,36 @@ const requireAuth = async (req: Request, res: Response, next: NextFunction): Pro
     res.status(500).json({ message: "Authentication error" });
   }
 };
+
+
+const requireAdmin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    // First check if user is authenticated
+    if (!req.session?.userId) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
+
+    const user = await storage.getUser(req.session.userId);
+    if (!user) {
+      res.status(401).json({ message: "Invalid session" });
+      return;
+    }
+
+    // Check if user is admin
+    if (!user.isAdmin) {
+      res.status(403).json({ message: "Admin access required" });
+      return;
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error("Admin middleware error:", error);
+    res.status(500).json({ message: "Authorization error" });
+  }
+};
+
 
 // =============================================================================
 // HELPER FUNCTIONS - REPORTS
@@ -1060,7 +1092,8 @@ app.post("/api/auth/signup", async (req: Request, res: Response): Promise<void> 
         id: user.id,
         username: user.username,
         email: user.email || null,
-        name: user.name || null
+        name: user.name || null,
+        isAdmin: user.isAdmin || false
       });
     } catch (error) {
       console.error("⌠ Auth check error:", error);
@@ -2065,6 +2098,384 @@ app.post("/api/auth/resend-code", async (req: Request, res: Response): Promise<v
     }
   });
 
+
+  //============================================================================
+  //ADMIN ROUTES
+  //============================================================================
+  app.get("/api/admin/users", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Simple query without select object
+    const allUsers = await db
+      .select()
+      .from(users)
+      .orderBy(desc(users.createdAt));
+
+    res.json(allUsers);
+  } catch (error) {
+    console.error("Failed to fetch users:", error);
+    res.status(500).json({ message: "Failed to fetch users" });
+  }
+});
+
+// Get system statistics (admin only)  
+app.get("/api/admin/statistics", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const [userCount] = await db.select({ count: count() }).from(users);
+    const [websiteCount] = await db.select({ count: count() }).from(websites);
+    const [contentCount] = await db.select({ count: count() }).from(content);
+    const [reportCount] = await db.select({ count: count() }).from(seoReports);
+    
+    // Get recent activity - fixed with correct table name
+    const recentActivity = await db
+      .select()
+      .from(activityLogs)
+      .orderBy(desc(activityLogs.createdAt))
+      .limit(10);
+
+    res.json({
+      users: userCount.count || 0,
+      websites: websiteCount.count || 0,
+      content: contentCount.count || 0,
+      reports: reportCount.count || 0,
+      recentActivity
+    });
+  } catch (error) {
+    console.error("Failed to fetch statistics:", error);
+    res.status(500).json({ message: "Failed to fetch statistics" });
+  }
+});
+
+// Update user admin status
+app.put("/api/admin/users/:userId/admin-status", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    const { isAdmin } = req.body;
+    
+    // Prevent admin from removing their own admin status
+    if (userId === req.user!.id && !isAdmin) {
+      res.status(400).json({ message: "Cannot remove your own admin status" });
+      return;
+    }
+
+    const [updatedUser] = await db
+      .update(users)
+      .set({ isAdmin, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+
+    if (!updatedUser) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    await storage.createActivityLog({
+      userId: req.user!.id,
+      type: "admin_status_changed",
+      description: `Admin status ${isAdmin ? 'granted to' : 'removed from'} user ${updatedUser.username}`,
+      metadata: { targetUserId: userId, isAdmin }
+    });
+
+    res.json({
+      id: updatedUser.id,
+      username: updatedUser.username,
+      email: updatedUser.email,
+      isAdmin: updatedUser.isAdmin
+    });
+  } catch (error) {
+    console.error("Failed to update admin status:", error);
+    res.status(500).json({ message: "Failed to update admin status" });
+  }
+});
+
+// Delete user (admin only)
+app.delete("/api/admin/users/:userId", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    
+    // Prevent self-deletion
+    if (userId === req.user!.id) {
+      res.status(400).json({ message: "Cannot delete your own account" });
+      return;
+    }
+
+    const user = await storage.getUser(userId);
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    // Delete user and cascade to related data
+    await db.delete(users).where(eq(users.id, userId));
+
+    await storage.createActivityLog({
+      userId: req.user!.id,
+      type: "user_deleted",
+      description: `User ${user.username} deleted by admin`,
+      metadata: { deletedUserId: userId, deletedUsername: user.username }
+    });
+
+    res.status(204).send();
+  } catch (error) {
+    console.error("Failed to delete user:", error);
+    res.status(500).json({ message: "Failed to delete user" });
+  }
+});
+
+// Get system API key usage (admin only)
+app.get("/api/admin/system-api-usage", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get all AI usage tracking grouped by provider
+    const systemUsage = await db
+      .select({
+        model: aiUsageTracking.model,
+        operation: aiUsageTracking.operation,
+        totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        usageCount: sql<number>`COUNT(*)::integer`,
+        lastUsed: sql<Date>`MAX(${aiUsageTracking.createdAt})`,
+      })
+      .from(aiUsageTracking)
+      .groupBy(aiUsageTracking.model, aiUsageTracking.operation)
+      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+    // Get usage by time period (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const dailyUsage = await db
+      .select({
+        date: sql<string>`DATE(${aiUsageTracking.createdAt})`,
+        totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        requests: sql<number>`COUNT(*)::integer`,
+      })
+      .from(aiUsageTracking)
+      .where(gte(aiUsageTracking.createdAt, thirtyDaysAgo))
+      .groupBy(sql`DATE(${aiUsageTracking.createdAt})`)
+      .orderBy(desc(sql`DATE(${aiUsageTracking.createdAt})`));
+
+    // Get current month usage
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const [monthlyStats] = await db
+      .select({
+        totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        totalRequests: sql<number>`COUNT(*)::integer`,
+      })
+      .from(aiUsageTracking)
+      .where(gte(aiUsageTracking.createdAt, startOfMonth));
+
+    // Check which system keys are configured
+    const systemKeysStatus = {
+      openai: !!process.env.OPENAI_API_KEY,
+      anthropic: !!process.env.ANTHROPIC_API_KEY,
+      google: !!process.env.GOOGLE_AI_API_KEY,
+      googlePageSpeed: !!process.env.GOOGLE_PAGESPEED_API_KEY,
+      cloudinary: !!process.env.CLOUDINARY_API_KEY,
+    };
+
+    // Calculate estimated costs per provider
+    const providerCosts = systemUsage.reduce((acc: any, usage: any) => {
+      const provider = usage.model.includes('gpt') ? 'openai' : 
+                      usage.model.includes('claude') ? 'anthropic' : 
+                      usage.model.includes('gemini') ? 'google' : 'other';
+      
+      if (!acc[provider]) {
+        acc[provider] = { tokens: 0, costCents: 0, requests: 0 };
+      }
+      
+      acc[provider].tokens += usage.totalTokens;
+      acc[provider].costCents += usage.totalCostCents;
+      acc[provider].requests += usage.usageCount;
+      
+      return acc;
+    }, {});
+
+    res.json({
+      systemKeysStatus,
+      usageByModel: systemUsage,
+      dailyUsage,
+      monthlyStats: monthlyStats || { totalTokens: 0, totalCostCents: 0, totalRequests: 0 },
+      providerCosts,
+      currentDate: new Date().toISOString(),
+      billingPeriod: {
+        start: startOfMonth.toISOString(),
+        end: new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0).toISOString()
+      }
+    });
+  } catch (error) {
+    console.error("Failed to fetch system API usage:", error);
+    res.status(500).json({ message: "Failed to fetch system API usage" });
+  }
+});
+
+// Get per-user API usage (admin only)
+app.get("/api/admin/users-api-usage", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get usage grouped by user
+    const userUsage = await db
+      .select({
+        userId: aiUsageTracking.userId,
+        username: users.username,
+        email: users.email,
+        totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        requestCount: sql<number>`COUNT(*)::integer`,
+        lastUsed: sql<Date>`MAX(${aiUsageTracking.createdAt})`,
+      })
+      .from(aiUsageTracking)
+      .innerJoin(users, eq(aiUsageTracking.userId, users.id))
+      .groupBy(aiUsageTracking.userId, users.username, users.email)
+      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+    // Get detailed breakdown for each user
+    const userBreakdowns = await Promise.all(
+      userUsage.map(async (user) => {
+        const breakdown = await db
+          .select({
+            model: aiUsageTracking.model,
+            operation: aiUsageTracking.operation,
+            tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+            costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+            requests: sql<number>`COUNT(*)::integer`,
+          })
+          .from(aiUsageTracking)
+          .where(eq(aiUsageTracking.userId, user.userId))
+          .groupBy(aiUsageTracking.model, aiUsageTracking.operation);
+
+        return {
+          ...user,
+          breakdown
+        };
+      })
+    );
+
+    // Get current month usage per user
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const monthlyUserUsage = await db
+      .select({
+        userId: aiUsageTracking.userId,
+        username: users.username,
+        monthlyTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        monthlyCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        monthlyRequests: sql<number>`COUNT(*)::integer`,
+      })
+      .from(aiUsageTracking)
+      .innerJoin(users, eq(aiUsageTracking.userId, users.id))
+      .where(gte(aiUsageTracking.createdAt, startOfMonth))
+      .groupBy(aiUsageTracking.userId, users.username)
+      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+    res.json({
+      userUsage: userBreakdowns,
+      monthlyUserUsage,
+      totalUsers: userUsage.length,
+      billingPeriod: {
+        start: startOfMonth.toISOString(),
+        end: new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0).toISOString()
+      }
+    });
+  } catch (error) {
+    console.error("Failed to fetch per-user API usage:", error);
+    res.status(500).json({ message: "Failed to fetch per-user API usage" });
+  }
+});
+
+// Get specific user's API usage details (admin only)
+app.get("/api/admin/users/:userId/api-usage", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    
+    // Get user info
+    const user = await storage.getUser(userId);
+    if (!user) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    // Get usage summary
+    const [summary] = await db
+      .select({
+        totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        totalRequests: sql<number>`COUNT(*)::integer`,
+        firstUsed: sql<Date>`MIN(${aiUsageTracking.createdAt})`,
+        lastUsed: sql<Date>`MAX(${aiUsageTracking.createdAt})`,
+      })
+      .from(aiUsageTracking)
+      .where(eq(aiUsageTracking.userId, userId));
+
+    // Get usage by model
+    const modelUsage = await db
+      .select({
+        model: aiUsageTracking.model,
+        tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        requests: sql<number>`COUNT(*)::integer`,
+      })
+      .from(aiUsageTracking)
+      .where(eq(aiUsageTracking.userId, userId))
+      .groupBy(aiUsageTracking.model)
+      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+    // Get usage by operation
+    const operationUsage = await db
+      .select({
+        operation: aiUsageTracking.operation,
+        tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        requests: sql<number>`COUNT(*)::integer`,
+      })
+      .from(aiUsageTracking)
+      .where(eq(aiUsageTracking.userId, userId))
+      .groupBy(aiUsageTracking.operation)
+      .orderBy(desc(sql`COUNT(*)`));
+
+    // Get daily usage for last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const dailyUsage = await db
+      .select({
+        date: sql<string>`DATE(${aiUsageTracking.createdAt})`,
+        tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        requests: sql<number>`COUNT(*)::integer`,
+      })
+      .from(aiUsageTracking)
+      .where(
+        and(
+          eq(aiUsageTracking.userId, userId),
+          gte(aiUsageTracking.createdAt, thirtyDaysAgo)
+        )
+      )
+      .groupBy(sql`DATE(${aiUsageTracking.createdAt})`)
+      .orderBy(desc(sql`DATE(${aiUsageTracking.createdAt})`));
+
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+      },
+      summary,
+      modelUsage,
+      operationUsage,
+      dailyUsage,
+    });
+  } catch (error) {
+    console.error("Failed to fetch user API usage:", error);
+    res.status(500).json({ message: "Failed to fetch user API usage" });
+  }
+});
+
+
   // ===========================================================================
   // API KEY MANAGEMENT ROUTES
   // ===========================================================================
@@ -2447,6 +2858,42 @@ app.post("/api/auth/resend-code", async (req: Request, res: Response): Promise<v
       });
     }
   });
+
+
+  app.get("/api/user/api-keys/:id/usage", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const keyId = req.params.id;
+    
+    const apiKey = await storage.getUserApiKey(userId, keyId);
+    if (!apiKey) {
+      res.status(404).json({ message: "API key not found" });
+      return;
+    }
+    
+    // Get usage stats from aiUsageTracking table
+    const usageStats = await storage.getApiKeyUsageStats(userId, apiKey.provider);
+    
+    console.log(`API Key Usage for ${apiKey.provider}:`, {
+      keyUsageCount: apiKey.usageCount,
+      dbStats: usageStats
+    });
+    
+    res.json({
+      keyId: apiKey.id,
+      provider: apiKey.provider,
+      keyName: apiKey.keyName,
+      totalUsageCount: apiKey.usageCount || 0,
+      lastUsed: apiKey.lastUsed,
+      totalTokens: usageStats.totalTokens,
+      totalCostCents: usageStats.totalCostCents,
+      operationsCount: usageStats.operationsCount
+    });
+  } catch (error) {
+    console.error("Failed to fetch API key usage:", error);
+    res.status(500).json({ message: "Failed to fetch usage statistics" });
+  }
+});
 
   // ===========================================================================
   // WEBSITE MANAGEMENT ROUTES

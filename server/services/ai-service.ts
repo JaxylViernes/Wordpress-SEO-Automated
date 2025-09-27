@@ -31,7 +31,7 @@ const AI_MODELS = {
     },
   },
   gemini: {
-    model: "gemini-1.5-flash",
+    model: "gemini-1.5-flash-8b",
     pricing: {
       input: 0.0025,
       output: 0.0075,
@@ -233,13 +233,13 @@ export class ContentFormatter {
 
 export class AIService {
   // Cache for API keys to avoid repeated database queries
-  private apiKeyCache: Map<string, { key: string; timestamp: number }> = new Map();
+  private apiKeyCache: Map<string, { key: string; type: 'user' | 'system'; timestamp: number }> = new Map();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   /**
    * Get the API key for a provider, checking user's keys first, then falling back to env vars
    */
- private async getApiKey(provider: AIProvider, userId: string): Promise<string | null> {
+private async getApiKey(provider: AIProvider, userId: string): Promise<{ key: string; type: 'user' | 'system' } | null> {
   const cacheKey = `${userId}-${provider}`;
   
   console.log(`🔍 DEBUG getApiKey called:`, { provider, userId, cacheKey });
@@ -248,48 +248,23 @@ export class AIService {
   const cached = this.apiKeyCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
     console.log(`✅ Using cached API key for ${provider}`);
-    return cached.key;
+    // Need to determine if this cached key is user or system
+    // We'll need to update the cache structure to store this info
+    return { key: cached.key, type: cached.type };
   }
-  console.log(`🔍 DEBUG: No cached key found, fetching from database...`);
 
   try {
-    // Map provider names to database provider values
-    const providerMap: Record<AIProvider, string> = {
-      'openai': 'openai',
-      'anthropic': 'anthropic',
-      'gemini': 'google_pagespeed'
-    };
-
-    const dbProvider = providerMap[provider];
-    console.log(`🔍 DEBUG: Looking for provider '${dbProvider}'`);
-    
-    // Get user's API keys from database
+    // Try to get user's API key first
     const userApiKeys = await storage.getUserApiKeys(userId);
-    console.log(`🔍 DEBUG: getUserApiKeys returned ${userApiKeys?.length || 0} keys`);
     
     if (userApiKeys && userApiKeys.length > 0) {
-      // Log the structure of the first key
-      console.log(`🔍 DEBUG: First key structure:`, {
-        hasIsActive: 'isActive' in userApiKeys[0],
-        hasValidationStatus: 'validationStatus' in userApiKeys[0],
-        hasEncryptedApiKey: 'encryptedApiKey' in userApiKeys[0],
-        hasEncrypted_api_key: 'encrypted_api_key' in userApiKeys[0],
-        actualKeys: Object.keys(userApiKeys[0])
-      });
-      
-      // Log each key's details
-      userApiKeys.forEach((key, index) => {
-        console.log(`🔍 DEBUG: Key ${index + 1}:`, {
-          provider: key.provider,
-          isActive: key.isActive,
-          validationStatus: key.validationStatus,
-          keyName: key.keyName,
-          hasEncryptedKey: !!key.encryptedApiKey,
-          matches: key.provider === dbProvider
-        });
-      });
-      
-      // Find valid key for the provider
+      const providerMap: Record<AIProvider, string> = {
+        'openai': 'openai',
+        'anthropic': 'anthropic',
+        'gemini': 'gemini'
+      };
+
+      const dbProvider = providerMap[provider];
       const validKey = userApiKeys.find(
         (key: any) => 
           key.provider === dbProvider && 
@@ -297,112 +272,97 @@ export class AIService {
           key.validationStatus === 'valid'
       );
 
-      console.log(`🔍 DEBUG: Valid key found:`, !!validKey);
+      if (validKey && validKey.encryptedApiKey) {
+        try {
+          const decryptedKey = apiKeyEncryptionService.decrypt(validKey.encryptedApiKey);
+          
+          // Cache with type information
+          this.apiKeyCache.set(cacheKey, {
+            key: decryptedKey,
+            type: 'user',
+            timestamp: Date.now()
+          });
 
-      if (validKey) {
-        console.log(`🔍 DEBUG: Valid key details:`, {
-          keyName: validKey.keyName,
-          hasEncryptedApiKey: !!validKey.encryptedApiKey,
-          encryptedKeyLength: validKey.encryptedApiKey?.length
-        });
-        
-        if (validKey.encryptedApiKey) {
-          try {
-            // Decrypt the API key
-            console.log(`🔍 DEBUG: Attempting to decrypt key...`);
-            const decryptedKey = apiKeyEncryptionService.decrypt(validKey.encryptedApiKey);
-            console.log(`🔍 DEBUG: Decryption successful, key length: ${decryptedKey?.length}`);
-            
-            // Verify the decrypted key format
-            if (provider === 'openai' && !decryptedKey.startsWith('sk-')) {
-              console.error(`🔍 DEBUG: ERROR - Decrypted OpenAI key doesn't start with 'sk-'`);
-            }
-            
-            // Cache the decrypted key
-            this.apiKeyCache.set(cacheKey, {
-              key: decryptedKey,
-              timestamp: Date.now()
-            });
-
-            console.log(`✅ Using user's API key for ${provider} (${validKey.keyName})`);
-            return decryptedKey;
-          } catch (decryptError: any) {
-            console.error(`🔍 DEBUG: Decryption error:`, decryptError);
-            console.error(`Failed to decrypt user's ${provider} key:`, decryptError.message);
-          }
-        } else {
-          console.log(`🔍 DEBUG: Valid key found but encryptedApiKey is undefined/null`);
+          console.log(`✅ Using user's API key for ${provider} (${validKey.keyName})`);
+          return { key: decryptedKey, type: 'user' };
+        } catch (decryptError: any) {
+          console.error(`Failed to decrypt user's ${provider} key:`, decryptError.message);
         }
-      } else {
-        console.log(`🔍 DEBUG: No valid key found. Search criteria:`, {
-          requiredProvider: dbProvider,
-          requiredIsActive: true,
-          requiredValidationStatus: 'valid'
-        });
       }
-    } else {
-      console.log(`🔍 DEBUG: No API keys returned from storage.getUserApiKeys()`);
     }
   } catch (error: any) {
-    console.error(`🔍 DEBUG: Exception in getApiKey:`, error);
     console.warn(`Failed to fetch user's API keys: ${error.message}`);
   }
 
-  // Fallback to environment variables
+  // Fallback to environment variables (system keys)
   console.log(`⚠️ No user API key found for ${provider}, falling back to environment variables`);
   
+  let systemKey: string | null = null;
   switch (provider) {
     case 'openai':
-      const envKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR;
-      console.log(`🔍 DEBUG: Environment key found: ${!!envKey}`);
-      return envKey || null;
+      systemKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || null;
+      break;
     case 'anthropic':
-      return process.env.ANTHROPIC_API_KEY || null;
+      systemKey = process.env.ANTHROPIC_API_KEY || null;
+      break;
     case 'gemini':
-      return process.env.GOOGLE_GEMINI_API_KEY || null;
-    default:
-      return null;
+      systemKey = process.env.GOOGLE_GEMINI_API_KEY || null;
+      break;
   }
+
+  if (systemKey) {
+    // Cache system key with type
+    this.apiKeyCache.set(cacheKey, {
+      key: systemKey,
+      type: 'system',
+      timestamp: Date.now()
+    });
+    return { key: systemKey, type: 'system' };
+  }
+
+  return null;
 }
   /**
    * Create an OpenAI client with the appropriate API key
    */
-  private async createOpenAIClient(userId: string): Promise<OpenAI> {
-    const apiKey = await this.getApiKey('openai', userId);
-    
-    if (!apiKey) {
-      throw new AIProviderError('openai', 'No API key available. Please add your OpenAI API key in settings or contact support.');
-    }
-
-    return new OpenAI({ apiKey });
+private async createOpenAIClient(userId: string): Promise<{ client: OpenAI; keyType: 'user' | 'system' }> {
+  const keyInfo = await this.getApiKey('openai', userId);
+  
+  if (!keyInfo) {
+    throw new AIProviderError('openai', 'No API key available. Please add your OpenAI API key in settings or contact support.');
   }
 
-  /**
-   * Create an Anthropic client with the appropriate API key
-   */
-  private async createAnthropicClient(userId: string): Promise<Anthropic> {
-    const apiKey = await this.getApiKey('anthropic', userId);
-    
-    if (!apiKey) {
-      throw new AIProviderError('anthropic', 'No API key available. Please add your Anthropic API key in settings or contact support.');
-    }
+  return {
+    client: new OpenAI({ apiKey: keyInfo.key }),
+    keyType: keyInfo.type
+  };
+}
 
-    return new Anthropic({ apiKey });
+private async createAnthropicClient(userId: string): Promise<{ client: Anthropic; keyType: 'user' | 'system' }> {
+  const keyInfo = await this.getApiKey('anthropic', userId);
+  
+  if (!keyInfo) {
+    throw new AIProviderError('anthropic', 'No API key available. Please add your Anthropic API key in settings or contact support.');
   }
 
-  /**
-   * Create a Gemini client with the appropriate API key
-   */
-  private async createGeminiClient(userId: string): Promise<GoogleGenerativeAI> {
-    const apiKey = await this.getApiKey('gemini', userId);
-    
-    if (!apiKey) {
-      throw new AIProviderError('gemini', 'No API key available. Please add your Google Gemini API key in settings or contact support.');
-    }
+  return {
+    client: new Anthropic({ apiKey: keyInfo.key }),
+    keyType: keyInfo.type
+  };
+}
 
-    return new GoogleGenerativeAI(apiKey);
+private async createGeminiClient(userId: string): Promise<{ client: GoogleGenerativeAI; keyType: 'user' | 'system' }> {
+  const keyInfo = await this.getApiKey('gemini', userId);
+  
+  if (!keyInfo) {
+    throw new AIProviderError('gemini', 'No API key available. Please add your Google Gemini API key in settings or contact support.');
   }
 
+  return {
+    client: new GoogleGenerativeAI(keyInfo.key),
+    keyType: keyInfo.type
+  };
+}
   /**
    * Clear cached API key for a user (call this when user updates their keys)
    */
@@ -417,39 +377,50 @@ export class AIService {
         }
       }
     }
+     console.log(`🔄 Cleared API key cache for user ${userId}${provider ? ` (${provider})` : ' (all providers)'}`);
   }
 
   public async callOpenAI(
-    messages: any[],
-    responseFormat?: any,
-    temperature = 0.7,
-    userId?: string
-  ): Promise<{ content: string; tokens: number }> {
-    // For backwards compatibility, if no userId provided, use env vars
-    const openai = userId 
-      ? await this.createOpenAIClient(userId)
-      : new OpenAI({ 
-          apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR 
-        });
-
-    try {
-      const response = await openai.chat.completions.create({
-        model: AI_MODELS.openai.model,
-        messages,
-        response_format: responseFormat,
-        temperature,
+  messages: any[],
+  responseFormat?: any,
+  temperature = 0.7,
+  userId?: string
+): Promise<{ content: string; tokens: number; keyType?: 'user' | 'system' }> {
+  let keyType: 'user' | 'system' = 'system';
+  
+  try {
+    let openai: OpenAI;
+    
+    if (userId) {
+      const clientInfo = await this.createOpenAIClient(userId);
+      openai = clientInfo.client;
+      keyType = clientInfo.keyType;
+    } else {
+      // Backwards compatibility - use env vars directly
+      openai = new OpenAI({ 
+        apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR 
       });
+      keyType = 'system';
+    }
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new AIProviderError("openai", "No content returned from API");
-      }
+    const response = await openai.chat.completions.create({
+      model: AI_MODELS.openai.model,
+      messages,
+      response_format: responseFormat,
+      temperature,
+    });
 
-      return {
-        content,
-        tokens: response.usage?.total_tokens || 0,
-      };
-    } catch (error: any) {
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new AIProviderError("openai", "No content returned from API");
+    }
+
+    return {
+      content,
+      tokens: response.usage?.total_tokens || 0,
+      keyType
+    };
+  } catch (error: any) {
       if (error instanceof AIProviderError) throw error;
 
       if (error.status === 401) {
@@ -473,24 +444,44 @@ export class AIService {
   }
 
   private async callGemini(
-    messages: any[],
-    temperature = 0.7,
-    userId?: string
-  ): Promise<{ content: string; tokens: number }> {
-    const gemini = userId
-      ? await this.createGeminiClient(userId)
-      : process.env.GOOGLE_GEMINI_API_KEY 
-        ? new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY)
-        : null;
-
-    if (!gemini) {
-      throw new AIProviderError("gemini", "No API key available. Please add your Google API key in settings.");
+  messages: any[],
+  temperature = 0.7,
+  userId?: string
+): Promise<{ content: string; tokens: number; keyType?: 'user' | 'system' }> {
+  let keyType: 'user' | 'system' = 'system';
+  
+  try {
+    let gemini: GoogleGenerativeAI;
+    
+    if (userId) {
+      // Get the API key with type information
+      const keyInfo = await this.getApiKey('gemini', userId);
+      
+      if (!keyInfo) {
+        throw new AIProviderError("gemini", "No API key available. Please add your Google API key in settings.");
+      }
+      
+      // Create the Gemini client with the key
+      gemini = new GoogleGenerativeAI(keyInfo.key);
+      keyType = keyInfo.type;
+      
+      console.log(`✅ Created Gemini client with ${keyType} key`);
+    } else {
+      // Fallback to environment variable
+      const envKey = process.env.GOOGLE_GEMINI_API_KEY;
+      
+      if (!envKey) {
+        throw new AIProviderError("gemini", "No Google API key available in environment.");
+      }
+      
+      gemini = new GoogleGenerativeAI(envKey);
+      keyType = 'system';
     }
 
-    try {
-      const model = gemini.getGenerativeModel({
-        model: AI_MODELS.gemini.model,
-      });
+    // Rest of the Gemini implementation...
+    const model = gemini.getGenerativeModel({
+      model: AI_MODELS.gemini.model,
+    });
 
       const systemMessage = messages.find((m) => m.role === "system");
       const userMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
@@ -572,77 +563,102 @@ export class AIService {
     }
   }
 
+  
+
   private async callAnthropic(
-    messages: any[],
-    temperature = 0.7,
-    userId?: string
-  ): Promise<{ content: string; tokens: number }> {
-    const anthropic = userId
-      ? await this.createAnthropicClient(userId)
-      : process.env.ANTHROPIC_API_KEY
-        ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-        : null;
-
-    if (!anthropic) {
-      throw new AIProviderError("anthropic", "No API key available. Please add your Anthropic API key in settings.");
+  messages: any[],
+  temperature = 0.7,
+  userId?: string
+): Promise<{ content: string; tokens: number; keyType?: 'user' | 'system' }> {
+  let keyType: 'user' | 'system' = 'system';
+  
+  try {
+    let anthropic: Anthropic;
+    
+    if (userId) {
+      // Get the API key with type information
+      const keyInfo = await this.getApiKey('anthropic', userId);
+      
+      if (!keyInfo) {
+        throw new AIProviderError("anthropic", "No API key available. Please add your Anthropic API key in settings.");
+      }
+      
+      // Create the Anthropic client with the key
+      anthropic = new Anthropic({ apiKey: keyInfo.key });
+      keyType = keyInfo.type;
+      
+      console.log(`✅ Created Anthropic client with ${keyType} key`);
+    } else {
+      // Fallback to environment variable
+      const envKey = process.env.ANTHROPIC_API_KEY;
+      
+      if (!envKey) {
+        throw new AIProviderError("anthropic", "No Anthropic API key available in environment.");
+      }
+      
+      anthropic = new Anthropic({ apiKey: envKey });
+      keyType = 'system';
     }
 
-    try {
-      const systemMessage = messages.find((m) => m.role === "system");
-      const userMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+    // Now anthropic should be properly initialized
+    const systemMessage = messages.find((m) => m.role === "system");
+    const userMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
 
-      let systemContent = systemMessage?.content || "";
-      if (systemContent.includes("JSON") || systemContent.includes("json")) {
-        systemContent +=
-          "\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object. Start your response with { and end with }.";
-      }
-
-      const response = await anthropic.messages.create({
-        model: AI_MODELS.anthropic.model,
-        max_tokens: 4000,
-        temperature,
-        system: systemContent,
-        messages: userMessages.map((m) => ({
-          role: m.role === "user" ? "user" : "assistant",
-          content: m.content,
-        })),
-      });
-
-      const content = response.content[0];
-      if (content.type !== "text" || !content.text) {
-        throw new AIProviderError("anthropic", "No text content returned from API");
-      }
-
-      let responseText = content.text.trim();
-
-      if (!responseText.startsWith("{") && responseText.includes("{")) {
-        const jsonStart = responseText.indexOf("{");
-        const jsonEnd = responseText.lastIndexOf("}") + 1;
-        if (jsonStart !== -1 && jsonEnd > jsonStart) {
-          responseText = responseText.substring(jsonStart, jsonEnd);
-        }
-      }
-
-      return {
-        content: responseText,
-        tokens: response.usage.input_tokens + response.usage.output_tokens,
-      };
-    } catch (error: any) {
-      if (error instanceof AIProviderError) throw error;
-
-      if (error.status === 401) {
-        if (userId) this.clearApiKeyCache(userId, 'anthropic');
-        throw new AIProviderError(
-          "anthropic",
-          "Invalid API key. Please check your Anthropic API key in settings."
-        );
-      } else if (error.status === 429) {
-        throw new AIProviderError("anthropic", "Rate limit exceeded. Please try again later.");
-      }
-
-      throw new AIProviderError("anthropic", error.message || "Unknown API error");
+    let systemContent = systemMessage?.content || "";
+    if (systemContent.includes("JSON") || systemContent.includes("json")) {
+      systemContent +=
+        "\n\nIMPORTANT: You must respond with valid JSON only. Do not include any text before or after the JSON object. Start your response with { and end with }.";
     }
+
+    const response = await anthropic.messages.create({
+      model: AI_MODELS.anthropic.model,
+      max_tokens: 4000,
+      temperature,
+      system: systemContent,
+      messages: userMessages.map((m) => ({
+        role: m.role === "user" ? "user" : "assistant",
+        content: m.content,
+      })),
+    });
+
+    const content = response.content[0];
+    if (content.type !== "text" || !content.text) {
+      throw new AIProviderError("anthropic", "No text content returned from API");
+    }
+
+    let responseText = content.text.trim();
+
+    // Clean up JSON response if needed
+    if (!responseText.startsWith("{") && responseText.includes("{")) {
+      const jsonStart = responseText.indexOf("{");
+      const jsonEnd = responseText.lastIndexOf("}") + 1;
+      if (jsonStart !== -1 && jsonEnd > jsonStart) {
+        responseText = responseText.substring(jsonStart, jsonEnd);
+      }
+    }
+
+    return {
+      content: responseText,
+      tokens: response.usage.input_tokens + response.usage.output_tokens,
+      keyType
+    };
+    
+  } catch (error: any) {
+    if (error instanceof AIProviderError) throw error;
+
+    if (error.status === 401) {
+      if (userId) this.clearApiKeyCache(userId, 'anthropic');
+      throw new AIProviderError(
+        "anthropic",
+        "Invalid API key. Please check your Anthropic API key in settings."
+      );
+    } else if (error.status === 429) {
+      throw new AIProviderError("anthropic", "Rate limit exceeded. Please try again later.");
+    }
+
+    throw new AIProviderError("anthropic", error.message || "Unknown API error");
   }
+}
 
   private async callAI(
     provider: AIProvider,
@@ -650,7 +666,7 @@ export class AIService {
     responseFormat?: any,
     temperature = 0.7,
     userId?: string
-  ): Promise<{ content: string; tokens: number }> {
+  ): Promise<{ content: string; tokens: number; keyType?: 'user' | 'system' }> {
     switch (provider) {
       case "openai":
         return this.callOpenAI(messages, responseFormat, temperature, userId);
@@ -885,6 +901,8 @@ Return JSON but write the content field like you're having a conversation. Inclu
         request.userId  // Pass userId for API key lookup
       );
 
+      const keyTypeUsed = contentResponse.keyType || 'system';
+
       let contentResult;
       try {
         let cleanedContent = contentResponse.content.trim();
@@ -953,6 +971,7 @@ Return JSON but write the content field like you're having a conversation. Inclu
         cloudinaryPublicId?: string;
       }> = [];
       let totalImageCost = 0;
+      let imageKeyType: 'user' | 'system' = 'system';
 
       if (request.includeImages && request.imageCount && request.imageCount > 0) {
         try {
@@ -978,8 +997,11 @@ Return JSON but write the content field like you're having a conversation. Inclu
           // Pass userId to imageService for API key lookup
            const imageResult = await imageService.generateImages(
       imageGenerationRequest, 
-      request.userId  // <-- Pass userId here!
+      request.userId,  // <-- Pass userId here!
+      request.websiteId
     );
+
+    imageKeyType = imageResult.keyType || 'system';
 
           // CRITICAL: Upload to Cloudinary immediately after generation
           console.log(`☁️ Uploading images to Cloudinary for permanent storage...`);
@@ -1085,6 +1107,7 @@ Return JSON but write the content field like you're having a conversation. Inclu
           tokensUsed: contentTokens,
           costUsd: Math.max(1, Math.round(textCostUsd * 100)),
           operation: "content_generation",
+          keyType: keyTypeUsed
         });
 
         if (images.length > 0) {
@@ -1095,6 +1118,7 @@ Return JSON but write the content field like you're having a conversation. Inclu
             tokensUsed: 0,
             costUsd: Math.round(totalImageCost * 100),
             operation: "image_generation",
+            keyType: imageKeyType
           });
         }
       } catch (trackingError: any) {
@@ -1366,6 +1390,7 @@ Return JSON but write the content field like you're having a conversation. Inclu
     let seoScore = 50;
     let readabilityScore = 50;
     let brandVoiceScore = 50;
+   let keyType: 'user' | 'system' = 'system';
 
     try {
       console.log(`Starting content analysis with ${request.aiProvider.toUpperCase()}`);
@@ -1426,6 +1451,7 @@ Evaluate each criterion and provide a realistic score.`,
       );
 
       totalTokens += Math.max(1, seoAnalysisResponse.tokens);
+      keyType = seoAnalysisResponse.keyType || 'system';
 
       // Parse SEO response
       try {
@@ -1639,6 +1665,7 @@ Evaluate how well the content aligns with these brand requirements.`,
           tokensUsed: totalTokens,
           costUsd: Math.max(1, Math.round(analysisCostUsd * 100)),
           operation: "content_analysis",
+          keyType: keyType
         });
       } catch (trackingError: any) {
         console.warn("AI usage tracking failed:", trackingError.message);

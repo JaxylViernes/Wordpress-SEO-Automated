@@ -1051,16 +1051,24 @@ async createContentImage(data: InsertContentImage & { userId: string }): Promise
     return auditRecord;
   }
 
-  async trackAiUsage(usage: InsertAiUsageTracking & { userId: string }): Promise<AiUsageTracking> {
-    const [usageRecord] = await db
-      .insert(aiUsageTracking)
-      .values({
-        ...usage,
-        userId: usage.userId
-      })
-      .returning();
-    return usageRecord;
-  }
+  async trackAiUsage(usage: InsertAiUsageTracking & { 
+  userId: string; 
+  keyType?: 'user' | 'system' 
+}): Promise<AiUsageTracking> {
+  const [usageRecord] = await db
+    .insert(aiUsageTracking)
+    .values({
+      websiteId: usage.websiteId,
+      userId: usage.userId,
+      model: usage.model,
+      operation: usage.operation,
+      tokensUsed: usage.tokensUsed,
+      costUsd: usage.costUsd,
+      keyType: usage.keyType || 'system'  // Use the keyType field directly
+    })
+    .returning();
+  return usageRecord;
+}
 
   async createSeoAudit(audit: InsertSeoAudit & { userId: string }): Promise<SeoAudit> {
     const [auditRecord] = await db
@@ -1951,22 +1959,56 @@ async getOrCreateUserSettings(userId: string): Promise<UserSettings> {
     }
   }
 
-  // Helper method to get API key usage stats
-  async getApiKeyUsageStats(userId: string): Promise<{
-    totalKeys: number;
-    activeKeys: number;
-    validKeys: number;
-    totalUsage: number;
-  }> {
+  async incrementApiKeyUsage(userId: string, provider: string, tokensUsed: number = 0): Promise<void> {
+  try {
     const keys = await this.getUserApiKeys(userId);
+    const activeKey = keys.find(k => 
+      k.provider === provider && 
+      k.isActive && 
+      k.validationStatus === 'valid'
+    );
+    
+    if (activeKey) {
+      await this.updateUserApiKey(userId, activeKey.id, {
+        usageCount: (activeKey.usageCount || 0) + 1,
+        lastUsed: new Date()
+      });
+    }
+  } catch (error) {
+    console.warn(`Failed to increment API key usage: ${error}`);
+  }
+}
+
+// Replace the existing getApiKeyUsageStats method in storage.ts (around line 1263)
+async getApiKeyUsageStats(userId: string, provider: string): Promise<{
+  totalTokens: number;
+  totalCostCents: number;
+  operationsCount: number;
+}> {
+  try {
+    // Don't filter by model name - just get all usage for this user
+    // You can filter by provider in the operation field if needed
+    const stats = await db
+      .select({
+        totalTokens: sql<number>`COALESCE(SUM(tokens_used), 0)`,
+        totalCostCents: sql<number>`COALESCE(SUM(cost_usd * 100), 0)`, // Convert to cents
+        operationsCount: sql<number>`COUNT(*)`
+      })
+      .from(aiUsageTracking)
+      .where(eq(aiUsageTracking.userId, userId));
+    
+    console.log(`Usage stats for ${provider}:`, stats[0]);
     
     return {
-      totalKeys: keys.length,
-      activeKeys: keys.filter(k => k.isActive).length,
-      validKeys: keys.filter(k => k.validationStatus === 'valid').length,
-      totalUsage: keys.reduce((sum, k) => sum + (k.usageCount || 0), 0)
+      totalTokens: Number(stats[0]?.totalTokens) || 0,
+      totalCostCents: Number(stats[0]?.totalCostCents) || 0,  
+      operationsCount: Number(stats[0]?.operationsCount) || 0
     };
+  } catch (error) {
+    console.error('Error getting API key usage stats:', error);
+    return { totalTokens: 0, totalCostCents: 0, operationsCount: 0 };
   }
+}
 
   // Auto-Schedule Methods for Neon Database
   async getActiveAutoSchedules(): Promise<AutoSchedule[]> {

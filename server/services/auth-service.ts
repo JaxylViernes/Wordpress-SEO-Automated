@@ -140,7 +140,7 @@ export class AuthService {
   async authenticateUser(
     username: string,
     password: string
-  ): Promise<AuthUser> {
+  ): Promise<AuthUser & { isAdmin?: boolean }> {
     try {
       console.log("🔍 Authenticating user:", username);
 
@@ -177,6 +177,7 @@ export class AuthService {
         username: user.username,
         email: undefined, // Not stored in current schema
         name: undefined, // Not stored in current schema
+        isAdmin: user.isAdmin || false
       };
     } catch (error) {
       if (

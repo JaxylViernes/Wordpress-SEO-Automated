@@ -1010,12 +1010,7 @@ private async fetchPriorityContent(
       
       // Add H1 at the beginning of content
       const newH1 = `<h1>${cleanTitle}</h1>`;
-      
-      if ($('body').length) {
-        $('body').prepend(newH1);
-      } else {
-        $.root().prepend(newH1);
-      }
+      $.root().prepend(newH1);
       
       changes.push(`Added missing H1 tag with title: "${cleanTitle}"`);
       updated = true;
@@ -1054,14 +1049,8 @@ private async fetchPriorityContent(
       };
     }
 
-    // Get final content
-    let finalContent;
-    const bodyHtml = $('body').html();
-    if (bodyHtml) {
-      finalContent = bodyHtml;
-    } else {
-      finalContent = $.root().children().map((_, el) => $.html(el)).get().join('');
-    }
+    // FIXED: Use the safe extraction method
+    const finalContent = this.extractHtmlContent($);
 
     // Create detailed description
     const description = changes.length === 1
@@ -1077,7 +1066,7 @@ private async fetchPriorityContent(
 }
 
   // Fix Image Alt Text
-  private async fixImageAltText(creds: WordPressCredentials, fixes: AIFix[], userId?: string, processingOptions?: ProcessingOptions) {
+ private async fixImageAltText(creds: WordPressCredentials, fixes: AIFix[], userId?: string, processingOptions?: ProcessingOptions) {
   return this.fixWordPressContent(creds, fixes, async (content, fix) => {
     const contentHtml = content.content?.rendered || content.content || "";
     const $ = cheerio.load(contentHtml, {
@@ -1110,13 +1099,8 @@ private async fetchPriorityContent(
       }
     });
 
-    let finalContent;
-    const bodyHtml = $('body').html();
-    if (bodyHtml) {
-      finalContent = bodyHtml;
-    } else {
-      finalContent = $.root().children().map((_, el) => $.html(el)).get().join('');
-    }
+    // FIXED: Better HTML extraction that preserves all elements including images
+    const finalContent = this.extractHtmlContent($);
 
     const description = specificChanges.length === 1
       ? `Added alt text to ${specificChanges[0]}`
@@ -1128,6 +1112,31 @@ private async fetchPriorityContent(
       description: updated ? description : "All images already have descriptive alt text"
     };
   }, userId, processingOptions);
+}
+
+// 2. Add this new helper method for safe HTML extraction
+private extractHtmlContent($: cheerio.CheerioAPI): string {
+  // Try to get body content first
+  let content = $('body').html();
+  
+  if (content) {
+    return content;
+  }
+  
+  // If no body tag, get the entire HTML
+  // Use $.html() without parameters to get the full document
+  content = $.html();
+  
+  // If the content has HTML/HEAD/BODY tags, extract just the body content
+  if (content.includes('<html') || content.includes('<body')) {
+    const bodyMatch = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    if (bodyMatch) {
+      return bodyMatch[1];
+    }
+  }
+  
+  // Return the content as-is (it's already just the inner HTML)
+  return content;
 }
 
   // Fix Meta Descriptions
@@ -1196,25 +1205,27 @@ private async fetchPriorityContent(
 
   // Fix Content Quality
   private async fixContentQuality(creds: WordPressCredentials, fixes: AIFix[], userId?: string) {
-    return this.fixWordPressContent(creds, fixes, async (content, fix) => {
-      const title = content.title?.rendered || content.title || "";
-      const contentText = content.content?.rendered || content.content || "";
-      const analysis = await this.analyzeContentQuality(contentText, title, userId);
-      
-      if (analysis.score >= 75) {
-        return { updated: false, data: {}, description: "Content quality already good" };
-      }
-      
-      const improvedContent = await this.improveContent(contentText, title, analysis.improvements, userId);
-      const cleanedContent = this.extractContentOnly(improvedContent);
-      
-      return {
-        updated: true,
-        data: { content: cleanedContent },
-        description: `Improved content quality (score: ${analysis.score} → ~${analysis.score + 15})`
-      };
-    }, userId);
-  }
+  return this.fixWordPressContent(creds, fixes, async (content, fix) => {
+    const title = content.title?.rendered || content.title || "";
+    const contentText = content.content?.rendered || content.content || "";
+    const analysis = await this.analyzeContentQuality(contentText, title, userId);
+    
+    if (analysis.score >= 75) {
+      return { updated: false, data: {}, description: "Content quality already good" };
+    }
+    
+    const improvedContent = await this.improveContent(contentText, title, analysis.improvements, userId);
+    // Don't use extractContentOnly here as it might strip images
+    // The improvedContent should already be clean from the AI
+    const cleanedContent = this.cleanAndValidateContent(improvedContent);
+    
+    return {
+      updated: true,
+      data: { content: cleanedContent },
+      description: `Improved content quality (score: ${analysis.score} → ~${analysis.score + 15})`
+    };
+  }, userId);
+}
 
   // Fix Keyword Optimization
   private async fixKeywordOptimization(creds: WordPressCredentials, fixes: AIFix[], userId?: string) {
@@ -1338,12 +1349,19 @@ private async fetchPriorityContent(
     maxTokens: number,
     temperature: number,
     userId?: string
-  ): Promise<string> {
+  ): Promise<{ content: string; keyType: 'user' | 'system' }> {
+    let keyType: 'user' | 'system' = 'system';
+
     if (provider === "claude" || provider === "anthropic") {
       const anthropic = await this.getUserAnthropic(userId);
       if (!anthropic) {
         throw new Error("Anthropic API not available");
       }
+
+      if (userId) {
+      const userKey = await storage.getDecryptedApiKey(userId, "anthropic");
+      keyType = userKey ? 'user' : 'system';
+    }
 
       const response = await anthropic.messages.create({
         model: "claude-3-5-sonnet-latest",
@@ -1354,13 +1372,32 @@ private async fetchPriorityContent(
       });
 
       const content = response.content[0];
-      return content.type === "text" ? content.text : "";
+
+       if (userId && this.currentWebsiteId) {
+      const tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
+      await storage.trackAiUsage({
+        userId,
+        websiteId: this.currentWebsiteId,
+        model: "claude-3-5-sonnet-latest",
+        tokensUsed,
+        costUsd: Math.round((tokensUsed * 0.003 / 1000) * 100),
+        operation: "ai_fix_content",
+        keyType // ADD THIS
+      });
+    }
+
+      return { content: content.type === "text" ? content.text : "", keyType};
       
     } else if (provider === "openai") {
       const openai = await this.getUserOpenAI(userId);
       if (!openai) {
         throw new Error("OpenAI API not available");
       }
+
+      if (userId) {
+      const userKey = await storage.getDecryptedApiKey(userId, "openai");
+      keyType = userKey ? 'user' : 'system';
+    }
 
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
@@ -1372,8 +1409,24 @@ private async fetchPriorityContent(
         max_tokens: maxTokens,
       });
 
-      return response.choices[0]?.message?.content || "";
+       if (userId && this.currentWebsiteId) {
+      const tokensUsed = response.usage?.total_tokens || 0;
+      await storage.trackAiUsage({
+        userId,
+        websiteId: this.currentWebsiteId,
+        model: "gpt-4o-mini",
+        tokensUsed,
+        costUsd: Math.round((tokensUsed * 0.01 / 1000) * 100),
+        operation: "ai_fix_content",
+        keyType // ADD THIS
+      });
     }
+
+     return {
+      content: response.choices[0]?.message?.content || "",
+      keyType
+    };
+  }
     
     throw new Error(`Unsupported AI provider: ${provider}`);
   }
@@ -1597,92 +1650,91 @@ private removeAIArtifacts(content: string): string {
   }
 
   private applyBasicContentImprovements(content: string): string {
-    const $ = cheerio.load(content, {
-      xml: false,
-      decodeEntities: false
-    });
+  const $ = cheerio.load(content, {
+    xml: false,
+    decodeEntities: false,
+    normalizeWhitespace: false // Preserve formatting
+  });
 
-    // Basic improvements without AI
-    
-    // 1. Ensure paragraphs aren't too long
-    $('p').each((i, elem) => {
-      const text = $(elem).text();
-      if (text.length > 500) {
-        // Split long paragraphs
-        const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-        const midPoint = Math.floor(sentences.length / 2);
+  // Basic improvements without AI
+  
+  // 1. Ensure paragraphs aren't too long
+  $('p').each((i, elem) => {
+    const text = $(elem).text();
+    if (text.length > 500) {
+      // Split long paragraphs
+      const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+      const midPoint = Math.floor(sentences.length / 2);
+      
+      if (sentences.length > 3) {
+        const firstHalf = sentences.slice(0, midPoint).join(' ');
+        const secondHalf = sentences.slice(midPoint).join(' ');
         
-        if (sentences.length > 3) {
-          const firstHalf = sentences.slice(0, midPoint).join(' ');
-          const secondHalf = sentences.slice(midPoint).join(' ');
+        // Preserve any HTML within the paragraph (like images)
+        const innerHtml = $(elem).html() || '';
+        // Only split if there are no images or other elements inside
+        if (!innerHtml.includes('<img') && !innerHtml.includes('<a')) {
           $(elem).replaceWith(`<p>${firstHalf}</p><p>${secondHalf}</p>`);
         }
       }
-    });
+    }
+  });
 
-    // 2. Add subheadings if content is too long without structure
-    const paragraphs = $('p').toArray();
-    if (paragraphs.length > 5) {
-      let hasSubheadings = $('h2, h3').length > 0;
-      
-      if (!hasSubheadings) {
-        // Add a subheading every 3-4 paragraphs
-        $(paragraphs[3]).before('<h2>Key Points</h2>');
-        if (paragraphs.length > 8) {
-          $(paragraphs[7]).before('<h2>Additional Information</h2>');
-        }
+  // 2. Add subheadings if content is too long without structure
+  const paragraphs = $('p').toArray();
+  if (paragraphs.length > 5) {
+    let hasSubheadings = $('h2, h3').length > 0;
+    
+    if (!hasSubheadings) {
+      // Add a subheading every 3-4 paragraphs
+      $(paragraphs[3]).before('<h2>Key Points</h2>');
+      if (paragraphs.length > 8) {
+        $(paragraphs[7]).before('<h2>Additional Information</h2>');
       }
     }
-
-    // 3. Ensure lists aren't too long
-    $('ul, ol').each((i, elem) => {
-      const items = $(elem).find('li');
-      if (items.length > 10) {
-        // Split into multiple lists
-        const midPoint = Math.floor(items.length / 2);
-        const firstList = items.slice(0, midPoint);
-        const secondList = items.slice(midPoint);
-        
-        const listType = elem.tagName;
-        const newList = $(`<${listType}></${listType}>`);
-        secondList.each((i, item) => {
-          newList.append($(item).clone());
-          $(item).remove();
-        });
-        
-        $(elem).after(newList);
-      }
-    });
-
-    // Return the improved HTML
-    const bodyHtml = $('body').html();
-    if (bodyHtml) {
-      return bodyHtml;
-    }
-    return $.root().children().map((_, el) => $.html(el)).get().join('');
   }
 
-  private extractContentOnly(html: string): string {
-    if (html.includes('<!DOCTYPE') || html.includes('<html') || html.includes('"html')) {
-      const $ = cheerio.load(html, {
-        xml: false,
-        decodeEntities: false
+  // 3. Ensure lists aren't too long
+  $('ul, ol').each((i, elem) => {
+    const items = $(elem).find('li');
+    if (items.length > 10) {
+      // Split into multiple lists
+      const midPoint = Math.floor(items.length / 2);
+      const firstList = items.slice(0, midPoint);
+      const secondList = items.slice(midPoint);
+      
+      const listType = elem.tagName;
+      const newList = $(`<${listType}></${listType}>`);
+      secondList.each((i, item) => {
+        newList.append($(item).clone());
+        $(item).remove();
       });
       
-      let content = $('body').html();
-    
-      if (!content) {
-        content = $.root().children()
-          .filter((_, el) => el.type === 'tag' && el.name !== 'html' && el.name !== 'head')
-          .map((_, el) => $.html(el))
-          .get()
-          .join('');
-      }
-      
-      return content || html;
+      $(elem).after(newList);
     }
-    return html;
+  });
+
+  // Use safe extraction method
+  return this.extractHtmlContent($);
+}
+
+  private extractContentOnly(html: string): string {
+  if (!html) return '';
+  
+  // If it looks like a full HTML document
+  if (html.includes('<!DOCTYPE') || html.includes('<html') || html.includes('<HTML')) {
+    const $ = cheerio.load(html, {
+      xml: false,
+      decodeEntities: false
+    });
+    
+    // Use the safe extraction method
+    return this.extractHtmlContent($);
   }
+  
+  // Already just content, return as-is
+  return html;
+}
 
   // WordPress API Methods
   private async getWordPressContent(creds: WordPressCredentials, type: "posts" | "pages") {
@@ -1795,6 +1847,7 @@ private removeAIArtifacts(content: string): string {
   private cleanAndValidateContent(content: string): string {
   if (!content) return '';
   
+  // Remove AI-generated preambles but preserve images
   const invalidPatterns = [
     /in this optimized version/gi,
     /i've integrated.*keywords/gi,
@@ -1807,21 +1860,18 @@ private removeAIArtifacts(content: string): string {
     cleaned = cleaned.replace(pattern, '');
   }
 
-  // Parse and clean HTML
+  // Parse with cheerio but be careful to preserve all elements
   const $ = cheerio.load(cleaned, {
     xml: false,
-    decodeEntities: false
+    decodeEntities: false,
+    // Important: don't normalize whitespace which can affect inline elements
+    normalizeWhitespace: false
   });
   
-  // Extract body content if it exists
-  const bodyContent = $('body').html();
-  if (bodyContent) {
-    cleaned = bodyContent;
-  } else {
-    cleaned = $.root().html() || cleaned;
-  }
+  // Use safe extraction that preserves images
+  cleaned = this.extractHtmlContent($);
   
-  // Clean up broken HTML artifacts
+  // Fix broken HTML artifacts without removing images
   cleaned = this.fixBrokenHtmlArtifacts(cleaned);
   
   // Validate HTML structure
