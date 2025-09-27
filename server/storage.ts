@@ -241,6 +241,33 @@ export interface IStorage {
   markPasswordResetTokenVerified(tokenId: string): Promise<void>;
   getVerifiedPasswordResetToken(userId: string, hashedCode: string): Promise<SelectPasswordResetToken | null>;
 
+
+   // Client Reports - ADD THESE NEW METHODS
+  getClientReports(websiteId: string): Promise<ClientReport[]>;
+  createClientReport(report: InsertClientReport & { userId: string }): Promise<ClientReport>;
+  updateClientReport(id: string, updates: Partial<{
+    data: any;
+    insights: any[];
+    roiData: any;
+    generatedAt: Date;
+  }>): Promise<ClientReport | undefined>;
+  
+  // NEW DELETE METHODS
+  getReportById(reportId: string, userId: string): Promise<ClientReport | null>;
+  getReportsByIds(reportIds: string[], userId: string): Promise<ClientReport[]>;
+  deleteReport(reportId: string, userId: string): Promise<boolean>;
+  bulkDeleteReports(reportIds: string[], userId: string): Promise<number>;
+  deleteReportsByWebsiteId(websiteId: string, userId: string): Promise<number>;
+  getUserClientReports(userId: string): Promise<ClientReport[]>;
+  
+
+  //NEW DELETE ACTIVITY LOGS
+    getActivityLog(logId: string, userId: string): Promise<ActivityLog | undefined>;
+  getUserActivityLogsByIds(ids: string[], userId: string): Promise<ActivityLog[]>;
+  deleteActivityLog(logId: string, userId: string): Promise<boolean>;
+  bulkDeleteActivityLogs(ids: string[], userId: string): Promise<number>;
+  clearAllActivityLogs(userId: string, websiteId?: string): Promise<number>;
+
 }
 
 export class DatabaseStorage implements IStorage {
@@ -586,10 +613,152 @@ async markPasswordResetTokenAsUsed(tokenId: string): Promise<void> {
     return website;
   }
 
-  async deleteWebsite(id: string): Promise<boolean> {
-    const result = await db.delete(websites).where(eq(websites.id, id));
-    return (result.rowCount ?? 0) > 0;
+
+
+
+
+  // Replace the deleteWebsite method in your DatabaseStorage class (storage.ts around line 345)
+
+async deleteWebsite(id: string): Promise<boolean> {
+  try {
+    console.log(`Starting deletion of website: ${id}`);
+    
+    // Delete related records in the correct order (without transaction)
+    // Each deletion happens independently
+    
+    // 1. Delete activity logs first (this is what's causing the error)
+    const activityResult = await db
+      .delete(activityLogs)
+      .where(eq(activityLogs.websiteId, id));
+    console.log(`Deleted ${activityResult.rowCount || 0} activity logs`);
+    
+    // 2. Delete content schedules
+    try {
+      const scheduleResult = await db
+        .delete(contentSchedule)
+        .where(eq(contentSchedule.websiteId, id));
+      console.log(`Deleted ${scheduleResult.rowCount || 0} content schedules`);
+    } catch (e) {
+      console.log('No content schedules to delete or error:', e);
+    }
+    
+    // 3. Delete content images
+    try {
+      const imagesResult = await db
+        .delete(contentImages)
+        .where(eq(contentImages.websiteId, id));
+      console.log(`Deleted ${imagesResult.rowCount || 0} content images`);
+    } catch (e) {
+      console.log('No content images to delete or error:', e);
+    }
+    
+    // 4. Delete content
+    try {
+      const contentResult = await db
+        .delete(content)
+        .where(eq(content.websiteId, id));
+      console.log(`Deleted ${contentResult.rowCount || 0} content items`);
+    } catch (e) {
+      console.log('No content to delete or error:', e);
+    }
+    
+    // 5. Delete SEO reports
+    try {
+      const seoResult = await db
+        .delete(seoReports)
+        .where(eq(seoReports.websiteId, id));
+      console.log(`Deleted ${seoResult.rowCount || 0} SEO reports`);
+    } catch (e) {
+      console.log('No SEO reports to delete or error:', e);
+    }
+    
+    // 6. Delete SEO issue tracking
+    try {
+      const issuesResult = await db
+        .delete(seoIssueTracking)
+        .where(eq(seoIssueTracking.websiteId, id));
+      console.log(`Deleted ${issuesResult.rowCount || 0} SEO issues`);
+    } catch (e) {
+      console.log('No SEO issues to delete or error:', e);
+    }
+    
+    // 7. Delete SEO audits
+    try {
+      const auditsResult = await db
+        .delete(seoAudits)
+        .where(eq(seoAudits.websiteId, id));
+      console.log(`Deleted ${auditsResult.rowCount || 0} SEO audits`);
+    } catch (e) {
+      console.log('No SEO audits to delete or error:', e);
+    }
+    
+    // 8. Delete client reports
+    try {
+      const clientResult = await db
+        .delete(clientReports)
+        .where(eq(clientReports.websiteId, id));
+      console.log(`Deleted ${clientResult.rowCount || 0} client reports`);
+    } catch (e) {
+      console.log('No client reports to delete or error:', e);
+    }
+    
+    // 9. Delete security audits
+    try {
+      const securityResult = await db
+        .delete(securityAudits)
+        .where(eq(securityAudits.websiteId, id));
+      console.log(`Deleted ${securityResult.rowCount || 0} security audits`);
+    } catch (e) {
+      console.log('No security audits to delete or error:', e);
+    }
+    
+    // 10. Delete auto schedules
+    try {
+      const autoResult = await db
+        .delete(autoSchedules)
+        .where(eq(autoSchedules.websiteId, id));
+      console.log(`Deleted ${autoResult.rowCount || 0} auto schedules`);
+    } catch (e) {
+      console.log('No auto schedules to delete or error:', e);
+    }
+    
+    // 11. Delete backups
+    try {
+      const backupResult = await db
+        .delete(backups)
+        .where(eq(backups.websiteId, id));
+      console.log(`Deleted ${backupResult.rowCount || 0} backups`);
+    } catch (e) {
+      console.log('No backups to delete or error:', e);
+    }
+    
+    // 12. Delete AI usage tracking
+    try {
+      const aiResult = await db
+        .delete(aiUsageTracking)
+        .where(eq(aiUsageTracking.websiteId, id));
+      console.log(`Deleted ${aiResult.rowCount || 0} AI usage records`);
+    } catch (e) {
+      console.log('No AI usage records to delete or error:', e);
+    }
+    
+    // Finally, delete the website itself
+    const websiteResult = await db
+      .delete(websites)
+      .where(eq(websites.id, id));
+    
+    console.log(`✅ Successfully deleted website ${id} and all related data`);
+    return (websiteResult.rowCount ?? 0) > 0;
+    
+  } catch (error) {
+    console.error('Failed to delete website:', error);
+    throw error;
   }
+}
+  // async deleteWebsite(id: string): Promise<boolean> {
+  //   const result = await db.delete(websites).where(eq(websites.id, id));
+  //   return (result.rowCount ?? 0) > 0;
+  // }
 
   async validateWebsiteOwnership(websiteId: string, userId: string): Promise<boolean> {
     const website = await this.getUserWebsite(websiteId, userId);
@@ -1025,6 +1194,397 @@ async createContentImage(data: InsertContentImage & { userId: string }): Promise
       .returning();
     return report;
   }
+
+
+// Get single report with ownership verification - FIXED VERSION
+async getReportById(reportId: string, userId: string): Promise<ClientReport | null> {
+  try {
+    const result = await db
+      .select()
+      .from(clientReports)
+      .innerJoin(websites, eq(clientReports.websiteId, websites.id))
+      .where(
+        and(
+          eq(clientReports.id, reportId),
+          eq(websites.userId, userId)
+        )
+      )
+      .limit(1);
+    
+    if (result.length === 0) {
+      return null;
+    }
+    
+    // Extract the client_reports data from the joined result
+    const report = result[0].client_reports;
+    return report;
+  } catch (error) {
+    console.error(`Error fetching report ${reportId}:`, error);
+    throw error;
+  }
+}
+
+// Get multiple reports by IDs - FIXED VERSION
+async getReportsByIds(reportIds: string[], userId: string): Promise<ClientReport[]> {
+  try {
+    if (reportIds.length === 0) return [];
+    
+    console.log(`Fetching reports for IDs: ${reportIds.join(', ')}`);
+    
+    const result = await db
+      .select()
+      .from(clientReports)
+      .innerJoin(websites, eq(clientReports.websiteId, websites.id))
+      .where(
+        and(
+          inArray(clientReports.id, reportIds),
+          eq(websites.userId, userId)
+        )
+      );
+    
+    console.log(`Found ${result.length} reports for user ${userId}`);
+    
+    // Extract just the client_reports data from joined results
+    return result.map(row => row.client_reports);
+  } catch (error) {
+    console.error(`Error fetching reports by IDs:`, error);
+    throw error;
+  }
+}
+
+// Alternative simpler implementation without JOIN
+async getReportByIdSimple(reportId: string, userId: string): Promise<ClientReport | null> {
+  try {
+    // First get the report
+    const [report] = await db
+      .select()
+      .from(clientReports)
+      .where(eq(clientReports.id, reportId))
+      .limit(1);
+    
+    if (!report) {
+      return null;
+    }
+    
+    // Then verify ownership through website
+    const [website] = await db
+      .select()
+      .from(websites)
+      .where(
+        and(
+          eq(websites.id, report.websiteId),
+          eq(websites.userId, userId)
+        )
+      )
+      .limit(1);
+    
+    if (!website) {
+      return null; // User doesn't own this report's website
+    }
+    
+    return report;
+  } catch (error) {
+    console.error(`Error fetching report ${reportId}:`, error);
+    throw error;
+  }
+}
+
+// Get all reports for a user - FIXED VERSION
+async getUserClientReports(userId: string): Promise<ClientReport[]> {
+  try {
+    // Get all websites for the user first
+    const userWebsites = await db
+      .select()
+      .from(websites)
+      .where(eq(websites.userId, userId));
+    
+    if (userWebsites.length === 0) {
+      return [];
+    }
+    
+    const websiteIds = userWebsites.map(w => w.id);
+    
+    // Get all reports for those websites
+    const reports = await db
+      .select()
+      .from(clientReports)
+      .where(inArray(clientReports.websiteId, websiteIds))
+      .orderBy(desc(clientReports.generatedAt));
+    
+    return reports;
+  } catch (error) {
+    console.error(`Error fetching user client reports:`, error);
+    throw error;
+  }
+}
+
+// Delete single report - IMPROVED VERSION
+async deleteReport(reportId: string, userId: string): Promise<boolean> {
+  try {
+    // Use the simpler method to verify ownership
+    const report = await this.getReportByIdSimple(reportId, userId);
+    
+    if (!report) {
+      console.log(`Report ${reportId} not found or doesn't belong to user ${userId}`);
+      return false;
+    }
+    
+    // Delete the report
+    const result = await db
+      .delete(clientReports)
+      .where(eq(clientReports.id, reportId));
+    
+    const success = (result.rowCount ?? 0) > 0;
+    
+    if (success) {
+      console.log(`✅ Report ${reportId} deleted successfully`);
+      
+      // Log activity
+      await this.createActivityLog({
+        userId,
+        websiteId: report.websiteId,
+        type: 'report_deleted',
+        description: `Deleted ${report.reportType} report for ${report.period}`,
+        metadata: {
+          reportId,
+          reportType: report.reportType,
+          period: report.period,
+          websiteName: report.websiteName
+        }
+      });
+    }
+    
+    return success;
+  } catch (error) {
+    console.error(`Error deleting report ${reportId}:`, error);
+    throw error;
+  }
+}
+
+// Bulk delete reports - IMPROVED VERSION
+async bulkDeleteReports(reportIds: string[], userId: string): Promise<number> {
+  try {
+    if (reportIds.length === 0) return 0;
+    
+    console.log(`Starting bulk delete for ${reportIds.length} reports`);
+    
+    // Get all valid reports using simpler method
+    const validReports: ClientReport[] = [];
+    for (const reportId of reportIds) {
+      const report = await this.getReportByIdSimple(reportId, userId);
+      if (report) {
+        validReports.push(report);
+      }
+    }
+    
+    if (validReports.length === 0) {
+      console.log('No valid reports found for deletion');
+      return 0;
+    }
+    
+    const validReportIds = validReports.map(r => r.id);
+    console.log(`Found ${validReportIds.length} valid reports to delete`);
+    
+    // Delete the reports
+    const result = await db
+      .delete(clientReports)
+      .where(inArray(clientReports.id, validReportIds));
+    
+    const deletedCount = result.rowCount ?? 0;
+    
+    if (deletedCount > 0) {
+      console.log(`✅ Successfully deleted ${deletedCount} reports`);
+      
+      // Log activity for each unique website
+      const websiteGroups = validReports.reduce((acc, report) => {
+        if (!acc[report.websiteId]) {
+          acc[report.websiteId] = [];
+        }
+        acc[report.websiteId].push(report);
+        return acc;
+      }, {} as Record<string, ClientReport[]>);
+      
+      for (const [websiteId, reports] of Object.entries(websiteGroups)) {
+        await this.createActivityLog({
+          userId,
+          websiteId,
+          type: 'bulk_reports_deleted',
+          description: `Bulk deleted ${reports.length} reports`,
+          metadata: {
+            deletedCount: reports.length,
+            reportIds: reports.map(r => r.id),
+            reportTypes: [...new Set(reports.map(r => r.reportType))]
+          }
+        });
+      }
+    }
+    
+    return deletedCount;
+  } catch (error) {
+    console.error(`Error bulk deleting reports:`, error);
+    throw error;
+  }
+}
+
+
+
+
+
+
+// ===============================
+  // ACTIVITY LOG DELETE METHODS
+  // ===============================
+
+  async getActivityLog(logId: string, userId: string): Promise<ActivityLog | undefined> {
+    const [log] = await db
+      .select()
+      .from(activityLogs)
+      .where(
+        and(
+          eq(activityLogs.id, logId),
+          eq(activityLogs.userId, userId)
+        )
+      );
+    return log;
+  }
+
+  async getUserActivityLogsByIds(ids: string[], userId: string): Promise<ActivityLog[]> {
+    if (ids.length === 0) return [];
+    
+    return await db
+      .select()
+      .from(activityLogs)
+      .where(
+        and(
+          inArray(activityLogs.id, ids),
+          eq(activityLogs.userId, userId)
+        )
+      );
+  }
+
+  async deleteActivityLog(logId: string, userId: string): Promise<boolean> {
+    try {
+      // First verify ownership
+      const log = await this.getActivityLog(logId, userId);
+      if (!log) {
+        console.log(`Log ${logId} not found or doesn't belong to user ${userId}`);
+        return false;
+      }
+
+      const result = await db
+        .delete(activityLogs)
+        .where(
+          and(
+            eq(activityLogs.id, logId),
+            eq(activityLogs.userId, userId)
+          )
+        );
+      
+      const deleted = (result.rowCount ?? 0) > 0;
+      console.log(`Delete activity log ${logId}: ${deleted ? 'success' : 'failed'}`);
+      return deleted;
+    } catch (error) {
+      console.error('Error in deleteActivityLog:', error);
+      throw error;
+    }
+  }
+
+  async bulkDeleteActivityLogs(ids: string[], userId: string): Promise<number> {
+    try {
+      if (ids.length === 0) return 0;
+
+      // First verify all logs belong to the user
+      const userLogs = await this.getUserActivityLogsByIds(ids, userId);
+      if (userLogs.length !== ids.length) {
+        console.log(`User ${userId} doesn't own all specified logs. Found ${userLogs.length} of ${ids.length}`);
+        throw new Error("Some logs do not belong to the user");
+      }
+
+      const result = await db
+        .delete(activityLogs)
+        .where(
+          and(
+            inArray(activityLogs.id, ids),
+            eq(activityLogs.userId, userId)
+          )
+        );
+      
+      const deletedCount = result.rowCount ?? 0;
+      console.log(`Bulk deleted ${deletedCount} activity logs`);
+      return deletedCount;
+    } catch (error) {
+      console.error('Error in bulkDeleteActivityLogs:', error);
+      throw error;
+    }
+  }
+
+  async clearAllActivityLogs(userId: string, websiteId?: string): Promise<number> {
+    try {
+      let result;
+      
+      if (websiteId) {
+        // Verify website ownership first
+        const website = await this.getUserWebsite(websiteId, userId);
+        if (!website) {
+          console.log(`Website ${websiteId} not found or doesn't belong to user ${userId}`);
+          throw new Error("Website not found or access denied");
+        }
+        
+        // Delete logs for specific website
+        result = await db
+          .delete(activityLogs)
+          .where(
+            and(
+              eq(activityLogs.userId, userId),
+              eq(activityLogs.websiteId, websiteId)
+            )
+          );
+        console.log(`Cleared activity logs for website ${websiteId}`);
+      } else {
+        // Delete all logs for the user
+        result = await db
+          .delete(activityLogs)
+          .where(eq(activityLogs.userId, userId));
+        console.log(`Cleared all activity logs for user ${userId}`);
+      }
+      
+      const deletedCount = result.rowCount ?? 0;
+      console.log(`Total deleted: ${deletedCount}`);
+      return deletedCount;
+    } catch (error) {
+      console.error('Error in clearAllActivityLogs:', error);
+      throw error;
+    }
+  }
+
+
+
+
+
+
+
+
+
+
+
+// Get all client reports for a user across all their websites
+async getUserClientReports(userId: string): Promise<ClientReport[]> {
+  try {
+    const reports = await db
+      .select({
+        report: clientReports
+      })
+      .from(clientReports)
+      .innerJoin(websites, eq(clientReports.websiteId, websites.id))
+      .where(eq(websites.userId, userId))
+      .orderBy(desc(clientReports.generatedAt));
+    
+    return reports.map(r => r.report);
+  } catch (error) {
+    console.error(`Error fetching user client reports:`, error);
+    throw error;
+  }
+}
 
   // Enhanced Security and Management Features
   async createContentApproval(approval: InsertContentApproval & { userId: string }): Promise<ContentApproval> {
@@ -2010,37 +2570,84 @@ async getApiKeyUsageStats(userId: string, provider: string): Promise<{
   }
 }
 
+
+
   // Auto-Schedule Methods for Neon Database
-  async getActiveAutoSchedules(): Promise<AutoSchedule[]> {
-    try {
-      const schedules = await db
-        .select()
-        .from(autoSchedules)
-        .where(
-          and(
-            eq(autoSchedules.isActive, true),
-            isNull(autoSchedules.deletedAt)
-          )
+async getActiveAutoSchedules(): Promise<AutoSchedule[]> {
+  try {
+    const schedules = await db
+      .select()
+      .from(autoSchedules)
+      .where(
+        and(
+          eq(autoSchedules.isActive, true),
+          isNull(autoSchedules.deletedAt)
         )
-        .orderBy(desc(autoSchedules.createdAt));
+      )
+      .orderBy(desc(autoSchedules.createdAt));
+    
+    return schedules.map(schedule => ({
+      ...schedule,
+      // Existing defaults
+      topics: schedule.topics || [],
+      customDays: schedule.customDays || [],
+      publishDelay: schedule.publishDelay || 0,
+      topicRotation: schedule.topicRotation || 'sequential',
+      nextTopicIndex: schedule.nextTopicIndex || 0,
+      maxDailyCost: schedule.maxDailyCost || 10,
+      maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
+      costToday: schedule.costToday || 0,
+      postsThisMonth: schedule.postsThisMonth || 0,
       
-      return schedules.map(schedule => ({
-        ...schedule,
-        topics: schedule.topics || [],
-        customDays: schedule.customDays || [],
-        publishDelay: schedule.publishDelay || 0,
-        topicRotation: schedule.topicRotation || 'sequential',
-        nextTopicIndex: schedule.nextTopicIndex || 0,
-        maxDailyCost: schedule.maxDailyCost || 10,
-        maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
-        costToday: schedule.costToday || 0,
-        postsThisMonth: schedule.postsThisMonth || 0,
-      }));
-    } catch (error) {
-      console.error('Error fetching active auto-schedules:', error);
-      return [];
-    }
+      // NEW: Add timezone fields with fallbacks for backward compatibility
+      // These fields might not exist in the database yet, so provide defaults
+      localTime: schedule.localTime || schedule.timeOfDay,
+      utcTime: schedule.utcTime || null,
+      localTimeDisplay: schedule.localTimeDisplay || `${schedule.timeOfDay} ${schedule.timezone || 'UTC'}`,
+      lastRunUtcTime: schedule.lastRunUtcTime || null,
+      
+      // Ensure timezone always has a value
+      timezone: schedule.timezone || 'UTC',
+    }));
+  } catch (error) {
+    console.error('Error fetching active auto-schedules:', error);
+    return [];
   }
+}
+
+
+  //WAG ALISIN
+  // // Auto-Schedule Methods for Neon Database
+  // async getActiveAutoSchedules(): Promise<AutoSchedule[]> {
+  //   try {
+  //     const schedules = await db
+  //       .select()
+  //       .from(autoSchedules)
+  //       .where(
+  //         and(
+  //           eq(autoSchedules.isActive, true),
+  //           isNull(autoSchedules.deletedAt)
+  //         )
+  //       )
+  //       .orderBy(desc(autoSchedules.createdAt));
+      
+  //     return schedules.map(schedule => ({
+  //       ...schedule,
+  //       topics: schedule.topics || [],
+  //       customDays: schedule.customDays || [],
+  //       publishDelay: schedule.publishDelay || 0,
+  //       topicRotation: schedule.topicRotation || 'sequential',
+  //       nextTopicIndex: schedule.nextTopicIndex || 0,
+  //       maxDailyCost: schedule.maxDailyCost || 10,
+  //       maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
+  //       costToday: schedule.costToday || 0,
+  //       postsThisMonth: schedule.postsThisMonth || 0,
+  //     }));
+  //   } catch (error) {
+  //     console.error('Error fetching active auto-schedules:', error);
+  //     return [];
+  //   }
+  // }
 
 
   async updateAutoSchedule(scheduleId: string, updates: any): Promise<void> {
@@ -2149,18 +2756,78 @@ async getApiKeyUsageStats(userId: string, provider: string): Promise<{
   
   
   // Additional auto-schedule methods
-// Update this method in your storage file (around line 1309)
-
 async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Promise<AutoSchedule> {
   try {
-    // Manually generate the UUID
+    // CRITICAL: Add this conversion function HERE in the method
+    const convertLocalTimeToUTC = (localTime: string, timezone: string): string => {
+      const [hours, minutes] = localTime.split(':').map(Number);
+      
+      const timezoneOffsets: Record<string, number> = {
+        'Asia/Tokyo': 9,
+        'Asia/Manila': 8,
+        'Asia/Singapore': 8,
+        'UTC': 0,
+        // Add more as needed
+      };
+      
+      const offset = timezoneOffsets[timezone] || 0;
+      
+      // Convert to UTC by subtracting offset
+      let utcHours = hours - offset;
+      
+      // Handle day boundary
+      if (utcHours < 0) {
+        utcHours += 24;
+      } else if (utcHours >= 24) {
+        utcHours -= 24;
+      }
+      
+      const result = `${String(Math.floor(utcHours)).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      
+      // CRITICAL LOG TO VERIFY
+      console.log(`🔴 BACKEND UTC CONVERSION: ${localTime} ${timezone} → ${result} UTC`);
+      
+      return result;
+    };
+    
+    const timezone = schedule.timezone || 'UTC';
+    const localTime = schedule.localTime || schedule.timeOfDay;
+    
+    // FORCE CALCULATION - ignore any utcTime from input
+    const calculatedUtcTime = convertLocalTimeToUTC(localTime, timezone);
+    
+    // CRITICAL VERIFICATION
+    console.log('🔴 BACKEND CREATING SCHEDULE:');
+    console.log(`   Name: ${schedule.name}`);
+    console.log(`   Input localTime: ${localTime}`);
+    console.log(`   Input timezone: ${timezone}`);
+    console.log(`   Calculated UTC: ${calculatedUtcTime}`);
+    console.log(`   Should run at: ${calculatedUtcTime} UTC`);
+    
+    if (timezone === 'Asia/Tokyo' && localTime === '01:21') {
+      console.log('🔴 VERIFICATION: 01:21 JST should be 16:21 UTC');
+      console.log(`   Actual calculated: ${calculatedUtcTime}`);
+      if (calculatedUtcTime !== '16:21') {
+        console.error('❌ CONVERSION FAILED!');
+      }
+    }
+    
     const scheduleData = {
-      id: randomUUID(), // Generate UUID here
+      id: randomUUID(),
       userId: schedule.userId,
       websiteId: schedule.websiteId,
       name: schedule.name,
       frequency: schedule.frequency,
-      timeOfDay: schedule.timeOfDay,
+      timeOfDay: calculatedUtcTime,
+      timezone: timezone,
+      
+      // USE CALCULATED UTC TIME
+      localTime: localTime,
+      utcTime: calculatedUtcTime, // THIS MUST BE 16:21 for 01:21 JST
+      localTimeDisplay: `${localTime} ${timezone}`,
+      lastRunUtcTime: null,
+      
+      // Rest of fields
       customDays: schedule.customDays || [],
       topics: schedule.topics || [],
       keywords: schedule.keywords || null,
@@ -2178,9 +2845,9 @@ async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Pro
       publishDelay: schedule.publishDelay || 0,
       topicRotation: schedule.topicRotation || 'random',
       nextTopicIndex: schedule.nextTopicIndex || 0,
-      maxDailyCost: schedule.maxDailyCost || 5.00,
+      maxDailyCost: schedule.maxDailyCost || '5.00',
       maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
-      costToday: schedule.costToday || 0,
+      costToday: schedule.costToday || '0.00',
       postsThisMonth: schedule.postsThisMonth || 0,
       lastRun: schedule.lastRun || null,
       isActive: schedule.isActive !== false,
@@ -2188,18 +2855,276 @@ async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Pro
       updatedAt: new Date()
     };
 
+    // LOG BEFORE INSERT
+    console.log('🔴 INSERTING WITH UTC TIME:', scheduleData.utcTime);
+
     const [newSchedule] = await db
       .insert(autoSchedules)
       .values(scheduleData)
       .returning();
     
-    console.log('Auto-schedule created successfully:', newSchedule.id);
+    // LOG AFTER INSERT
+    console.log('🔴 SAVED SCHEDULE:', {
+      id: newSchedule.id,
+      name: newSchedule.name,
+      localTime: newSchedule.localTime,
+      utcTime: newSchedule.utcTime,
+      timezone: newSchedule.timezone
+    });
+    
     return newSchedule;
   } catch (error) {
     console.error('Error creating auto-schedule:', error);
     throw error;
   }
 }
+
+
+//WAG ALISIN
+// async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Promise<AutoSchedule> {
+//   try {
+//     // Manually generate the UUID
+//     const scheduleData = {
+//       id: randomUUID(), // Generate UUID here
+//       userId: schedule.userId,
+//       websiteId: schedule.websiteId,
+//       name: schedule.name,
+//       frequency: schedule.frequency,
+//       timeOfDay: schedule.timeOfDay,
+//       customDays: schedule.customDays || [],
+//       topics: schedule.topics || [],
+//       keywords: schedule.keywords || null,
+//       tone: schedule.tone || 'professional',
+//       wordCount: schedule.wordCount || 800,
+//       brandVoice: schedule.brandVoice || null,
+//       targetAudience: schedule.targetAudience || null,
+//       eatCompliance: schedule.eatCompliance || false,
+//       aiProvider: schedule.aiProvider || 'openai',
+//       includeImages: schedule.includeImages || false,
+//       imageCount: schedule.imageCount || 1,
+//       imageStyle: schedule.imageStyle || 'natural',
+//       seoOptimized: schedule.seoOptimized !== false,
+//       autoPublish: schedule.autoPublish || false,
+//       publishDelay: schedule.publishDelay || 0,
+//       topicRotation: schedule.topicRotation || 'random',
+//       nextTopicIndex: schedule.nextTopicIndex || 0,
+//       maxDailyCost: schedule.maxDailyCost || 5.00,
+//       maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
+//       costToday: schedule.costToday || 0,
+//       postsThisMonth: schedule.postsThisMonth || 0,
+//       lastRun: schedule.lastRun || null,
+//       isActive: schedule.isActive !== false,
+//       createdAt: new Date(),
+//       updatedAt: new Date()
+//     };
+
+//     const [newSchedule] = await db
+//       .insert(autoSchedules)
+//       .values(scheduleData)
+//       .returning();
+    
+//     console.log('Auto-schedule created successfully:', newSchedule.id);
+//     return newSchedule;
+//   } catch (error) {
+//     console.error('Error creating auto-schedule:', error);
+//     throw error;
+//   }
+// }
+
+
+
+
+
+//added
+async getAllActiveAutoSchedules(): Promise<AutoSchedule[]> {
+  // This is an alias for the existing method
+  return this.getActiveAutoSchedules();
+}
+
+async getAutoSchedulesByWebsite(websiteId: string): Promise<AutoSchedule[]> {
+  try {
+    const schedules = await db
+      .select()
+      .from(autoSchedules)
+      .where(
+        and(
+          eq(autoSchedules.websiteId, websiteId),
+          isNull(autoSchedules.deletedAt)
+        )
+      )
+      .orderBy(desc(autoSchedules.createdAt));
+    
+    return schedules;
+  } catch (error) {
+    console.error('Error fetching auto schedules by website:', error);
+    return [];
+  }
+}
+
+async checkScheduleLimits(scheduleId: string): Promise<{
+  canRun: boolean;
+  reason?: string;
+}> {
+  try {
+    const [schedule] = await db
+      .select()
+      .from(autoSchedules)
+      .where(eq(autoSchedules.id, scheduleId))
+      .limit(1);
+    
+    if (!schedule) {
+      return { canRun: false, reason: 'Schedule not found' };
+    }
+    
+    if (!schedule.isActive) {
+      return { canRun: false, reason: 'Schedule is not active' };
+    }
+    
+    const costToday = typeof schedule.costToday === 'string' 
+      ? parseFloat(schedule.costToday) 
+      : Number(schedule.costToday) || 0;
+    
+    const maxDailyCost = typeof schedule.maxDailyCost === 'string'
+      ? parseFloat(schedule.maxDailyCost)
+      : Number(schedule.maxDailyCost) || 10;
+    
+    if (costToday >= maxDailyCost) {
+      return { canRun: false, reason: 'Daily cost limit reached' };
+    }
+    
+    const postsThisMonth = schedule.postsThisMonth || 0;
+    const maxMonthlyPosts = schedule.maxMonthlyPosts || 30;
+    
+    if (postsThisMonth >= maxMonthlyPosts) {
+      return { canRun: false, reason: 'Monthly post limit reached' };
+    }
+    
+    return { canRun: true };
+  } catch (error) {
+    console.error('Error checking schedule limits:', error);
+    return { canRun: false, reason: 'Error checking limits' };
+  }
+}
+
+async updateScheduleMetrics(
+  scheduleId: string, 
+  data: {
+    lastRun?: Date;
+    postsThisMonth?: number;
+    costToday?: number | string;
+  }
+): Promise<void> {
+  try {
+    const updates: any = {
+      updatedAt: new Date()
+    };
+    
+    if (data.lastRun) {
+      updates.lastRun = data.lastRun;
+    }
+    
+    if (data.postsThisMonth !== undefined) {
+      updates.postsThisMonth = data.postsThisMonth;
+    }
+    
+    if (data.costToday !== undefined) {
+      // Handle cost properly
+      let cost = typeof data.costToday === 'string' 
+        ? parseFloat(data.costToday)
+        : data.costToday;
+      
+      if (!isNaN(cost)) {
+        updates.costToday = cost.toFixed(2);
+      }
+    }
+    
+    await db
+      .update(autoSchedules)
+      .set(updates)
+      .where(eq(autoSchedules.id, scheduleId));
+      
+    console.log(`✅ Updated metrics for schedule ${scheduleId}`);
+  } catch (error) {
+    console.error('Error updating schedule metrics:', error);
+    throw error;
+  }
+}
+
+async resetDailyCostsForTimezone(timezone: string): Promise<void> {
+  try {
+    await db
+      .update(autoSchedules)
+      .set({
+        costToday: '0.00',
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(autoSchedules.timezone, timezone),
+          eq(autoSchedules.isActive, true)
+        )
+      );
+    
+    console.log(`💰 Reset daily costs for timezone: ${timezone}`);
+  } catch (error) {
+    console.error('Error resetting daily costs for timezone:', error);
+  }
+}
+
+async resetMonthlyCountsForTimezone(timezone: string): Promise<void> {
+  try {
+    await db
+      .update(autoSchedules)
+      .set({
+        postsThisMonth: 0,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(autoSchedules.timezone, timezone),
+          eq(autoSchedules.isActive, true)
+        )
+      );
+    
+    console.log(`📊 Reset monthly counts for timezone: ${timezone}`);
+  } catch (error) {
+    console.error('Error resetting monthly counts for timezone:', error);
+  }
+}
+
+async toggleAutoSchedule(scheduleId: string, isActive: boolean): Promise<AutoSchedule | undefined> {
+  try {
+    const [updated] = await db
+      .update(autoSchedules)
+      .set({
+        isActive,
+        updatedAt: new Date()
+      })
+      .where(eq(autoSchedules.id, scheduleId))
+      .returning();
+    
+    console.log(`${isActive ? '▶️ Activated' : '⏸️ Paused'} auto-schedule ${scheduleId}`);
+    return updated;
+  } catch (error) {
+    console.error('Error toggling auto-schedule:', error);
+    return undefined;
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   async getAutoSchedule(scheduleId: string): Promise<AutoSchedule | undefined> {
     try {
       const [schedule] = await db

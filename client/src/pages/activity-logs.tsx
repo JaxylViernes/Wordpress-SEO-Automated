@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
   Activity, 
   Filter, 
@@ -8,7 +8,9 @@ import {
   Calendar, 
   Trash2, 
   CheckSquare,
-  X
+  X,
+  AlertCircle,
+  CheckCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +31,10 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Alert,
+  AlertDescription,
+} from "@/components/ui/alert";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -40,7 +46,52 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { api } from "@/lib/api";
-import { format, formatDistanceToNow } from "date-fns";
+
+// Date formatting utilities
+const format = (date, formatStr) => {
+  const d = new Date(date);
+  if (formatStr === "MMM dd, yyyy 'at' HH:mm") {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const month = months[d.getMonth()];
+    const day = d.getDate();
+    const year = d.getFullYear();
+    const hours = d.getHours().toString().padStart(2, '0');
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    return `${month} ${day}, ${year} at ${hours}:${minutes}`;
+  }
+  if (formatStr === "yyyy-MM-dd HH:mm") {
+    const year = d.getFullYear();
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    const day = d.getDate().toString().padStart(2, '0');
+    const hours = d.getHours().toString().padStart(2, '0');
+    const minutes = d.getMinutes().toString().padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+  }
+  return d.toISOString();
+};
+
+const formatDistanceToNow = (date, options) => {
+  const now = new Date();
+  const d = new Date(date);
+  const diff = now - d;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  let result;
+  if (days > 0) {
+    result = `${days} day${days > 1 ? 's' : ''}`;
+  } else if (hours > 0) {
+    result = `${hours} hour${hours > 1 ? 's' : ''}`;
+  } else if (minutes > 0) {
+    result = `${minutes} minute${minutes > 1 ? 's' : ''}`;
+  } else {
+    result = `${seconds} second${seconds > 1 ? 's' : ''}`;
+  }
+  
+  return options?.addSuffix ? `${result} ago` : result;
+};
 
 const activityTypeColors = {
   content_published: "bg-green-100 text-green-800",
@@ -52,7 +103,7 @@ const activityTypeColors = {
   seo_autofix: "bg-green-100 text-green-800",
 };
 
-const activityTypeLabels: Record<string, string> = {
+const activityTypeLabels = {
   content_published: "Content Published",
   content_generated: "Content Generated",
   content_scheduled: "Content Scheduled",
@@ -62,7 +113,7 @@ const activityTypeLabels: Record<string, string> = {
   seo_autofix: "SEO Auto-Fix",
 };
 
-const getActivityIcon = (type: string) => {
+const getActivityIcon = (type) => {
   const iconClass = "w-3 h-3";
   switch (type) {
     case "content_published":
@@ -80,7 +131,7 @@ const getActivityIcon = (type: string) => {
   }
 };
 
-const formatMetadataKey = (key: string): string =>
+const formatMetadataKey = (key) =>
   key
     .replace(/([A-Z])/g, " $1")
     .replace(/[_-]/g, " ")
@@ -88,7 +139,7 @@ const formatMetadataKey = (key: string): string =>
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(" ");
 
-const formatMetadataValue = (value: any): React.ReactNode => {
+const formatMetadataValue = (value) => {
   if (value === null || value === undefined) {
     return <span className="text-gray-400 italic">None</span>;
   }
@@ -173,7 +224,7 @@ const formatMetadataValue = (value: any): React.ReactNode => {
   return <span>{String(value)}</span>;
 };
 
-const MetadataDisplay = ({ metadata }: { metadata: Record<string, any> }) => {
+const MetadataDisplay = ({ metadata }) => {
   const entries = Object.entries(metadata);
   if (entries.length === 0) {
     return <div className="text-xs text-gray-500 italic">No additional details available</div>;
@@ -197,20 +248,20 @@ const MetadataDisplay = ({ metadata }: { metadata: Record<string, any> }) => {
 };
 
 export default function ActivityLogs() {
-  // Use "all" sentinel (non-empty) to satisfy Select's requirement
-  const [selectedWebsite, setSelectedWebsite] = useState<string>("all");
+  const [selectedWebsite, setSelectedWebsite] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [activityFilter, setActivityFilter] = useState<string>("all");
-  const [selectedLogs, setSelectedLogs] = useState<Set<string>>(new Set());
-  const [isSelectionMode, setIsSelectionMode] = useState<boolean>(false);
-  const [deleteMessage, setDeleteMessage] = useState<string>("");
+  const [activityFilter, setActivityFilter] = useState("all");
+  const [selectedLogs, setSelectedLogs] = useState(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [notification, setNotification] = useState(null);
+  
+  const queryClient = useQueryClient();
 
   const { data: websites } = useQuery({
     queryKey: ["/api/websites"],
     queryFn: api.getWebsites,
   });
 
-  // Convert "all" to undefined ONLY when querying the API
   const websiteParam = selectedWebsite === "all" ? undefined : selectedWebsite;
 
   const { data: activities, isLoading } = useQuery({
@@ -218,7 +269,53 @@ export default function ActivityLogs() {
     queryFn: () => api.getActivityLogs(websiteParam),
   });
 
-  const getWebsiteName = (websiteId: string | null) => {
+  // Delete single log mutation
+  const deleteLogMutation = useMutation({
+    mutationFn: (logId) => api.deleteActivityLog(logId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activity-logs"] });
+      showNotification("Activity log deleted successfully", "success");
+    },
+    onError: (error) => {
+      showNotification("Failed to delete activity log", "error");
+      console.error("Delete error:", error);
+    }
+  });
+
+  // Bulk delete mutation
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (logIds) => api.bulkDeleteActivityLogs(logIds),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activity-logs"] });
+      setSelectedLogs(new Set());
+      setIsSelectionMode(false);
+      showNotification(`${data.deletedCount || logIds.length} activity logs deleted successfully`, "success");
+    },
+    onError: (error) => {
+      showNotification("Failed to delete selected logs", "error");
+      console.error("Bulk delete error:", error);
+    }
+  });
+
+  // Clear all mutation
+  const clearAllMutation = useMutation({
+    mutationFn: () => api.clearAllActivityLogs(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/activity-logs"] });
+      showNotification("All activity logs cleared successfully", "success");
+    },
+    onError: (error) => {
+      showNotification("Failed to clear all logs", "error");
+      console.error("Clear all error:", error);
+    }
+  });
+
+  const showNotification = (message, type = "info") => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 5000);
+  };
+
+  const getWebsiteName = (websiteId) => {
     if (websiteId === "all") return "All websites";
     if (!websiteId) return "System";
     if (!Array.isArray(websites)) return "Unknown Website";
@@ -249,10 +346,7 @@ export default function ActivityLogs() {
     seo: activities?.filter((a) => a.type.includes("seo")).length || 0,
   };
 
-  /* ──────────────────────────────────────────────────────────────────────────
-   * Selection handlers
-   * ──────────────────────────────────────────────────────────────────────────*/
-  const handleSelectLog = (logId: string, checked: boolean) => {
+  const handleSelectLog = (logId, checked) => {
     setSelectedLogs(prev => {
       const newSet = new Set(prev);
       if (checked) {
@@ -277,30 +371,17 @@ export default function ActivityLogs() {
     setSelectedLogs(new Set());
   };
 
-  const handleClearAllLogs = () => {
-    console.log('🗑️ Clear all activity logs');
-    setDeleteMessage(`Clear all logs functionality will be implemented`);
-    setTimeout(() => setDeleteMessage(""), 3000);
-    // TODO: Implement actual clear all API call
-  };
-
-  /* ──────────────────────────────────────────────────────────────────────────
-   * Delete handlers (UI only for now)
-   * ──────────────────────────────────────────────────────────────────────────*/
-  const handleDeleteLog = (logId: string) => {
-    console.log('🗑️ Delete activity log:', logId);
-    setDeleteMessage(`Delete functionality for log ${logId} will be implemented`);
-    setTimeout(() => setDeleteMessage(""), 3000);
-    // TODO: Implement actual delete API call
+  const handleDeleteLog = (logId) => {
+    deleteLogMutation.mutate(logId);
   };
 
   const handleBulkDelete = () => {
-    console.log('🗑️ Bulk delete logs:', Array.from(selectedLogs));
-    setDeleteMessage(`Bulk delete functionality for ${selectedLogs.size} logs will be implemented`);
-    setIsSelectionMode(false);
-    setSelectedLogs(new Set());
-    setTimeout(() => setDeleteMessage(""), 3000);
-    // TODO: Implement actual bulk delete API call
+    const logIds = Array.from(selectedLogs);
+    bulkDeleteMutation.mutate(logIds);
+  };
+
+  const handleClearAllLogs = () => {
+    clearAllMutation.mutate();
   };
 
   const handleExportLogsPDF = async () => {
@@ -310,7 +391,7 @@ export default function ActivityLogs() {
       import("jspdf"),
       import("jspdf-autotable"),
     ]);
-    const autoTable = (autoTableMod as any).default;
+    const autoTable = autoTableMod.default;
     const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
 
     const scopeAll = selectedWebsite === "all";
@@ -329,7 +410,7 @@ export default function ActivityLogs() {
 
     // Table
     const head = [["Time", "Website", "Type", "Description"]];
-    const body = activities.map((a: any) => [
+    const body = activities.map((a) => [
       format(new Date(a.createdAt), "yyyy-MM-dd HH:mm"),
       getWebsiteName(a.websiteId),
       activityTypeLabels[a.type] ?? a.type,
@@ -343,12 +424,12 @@ export default function ActivityLogs() {
       styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
       headStyles: { fillColor: [240, 240, 240] },
       columnStyles: {
-        0: { cellWidth: 110 }, // Time
-        1: { cellWidth: 150 }, // Website
-        2: { cellWidth: 110 }, // Type
-        3: { cellWidth: "auto" }, // Description
+        0: { cellWidth: 110 },
+        1: { cellWidth: 150 },
+        2: { cellWidth: 110 },
+        3: { cellWidth: "auto" },
       },
-      didDrawPage: (data: any) => {
+      didDrawPage: (data) => {
         const pageSize = doc.internal.pageSize;
         const pageWidth = pageSize.getWidth();
         const pageHeight = pageSize.getHeight();
@@ -358,19 +439,19 @@ export default function ActivityLogs() {
       },
     });
 
-    // Summary by type (optional but handy)
-    const byType: Record<string, number> = {};
-    activities.forEach((a: any) => {
+    // Summary by type
+    const byType = {};
+    activities.forEach((a) => {
       byType[a.type] = (byType[a.type] || 0) + 1;
     });
     const summaryRows = Object.keys(byType)
       .sort()
       .map((t) => [activityTypeLabels[t] ?? t, byType[t]]);
 
-    const afterTableY = (doc as any).lastAutoTable?.finalY ?? 100;
+    const afterTableY = doc.lastAutoTable?.finalY ?? 100;
     const room = doc.internal.pageSize.getHeight() - afterTableY;
 
-    const drawSummary = (startY: number) => {
+    const drawSummary = (startY) => {
       doc.setFontSize(12);
       doc.text("Summary by Type", 40, startY);
       autoTable(doc, {
@@ -420,10 +501,10 @@ export default function ActivityLogs() {
                   <AlertDialogTrigger asChild>
                     <Button 
                       variant="destructive" 
-                      disabled={selectedLogs.size === 0}
+                      disabled={selectedLogs.size === 0 || bulkDeleteMutation.isPending}
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
-                      Delete Selected ({selectedLogs.size})
+                      {bulkDeleteMutation.isPending ? "Deleting..." : `Delete Selected (${selectedLogs.size})`}
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
@@ -460,10 +541,10 @@ export default function ActivityLogs() {
                     <Button 
                       variant="outline"
                       className="text-red-600 hover:bg-red-50"
-                      disabled={!activities || activities.length === 0}
+                      disabled={!activities || activities.length === 0 || clearAllMutation.isPending}
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
-                      Clear All
+                      {clearAllMutation.isPending ? "Clearing..." : "Clear All"}
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
@@ -506,11 +587,23 @@ export default function ActivityLogs() {
           </div>
         </div>
 
-        {/* Delete Message */}
-        {deleteMessage && (
-          <div className="mb-4 p-3 rounded-md bg-yellow-50 text-yellow-800 border border-yellow-200">
-            {deleteMessage}
-          </div>
+        {/* Notification */}
+        {notification && (
+          <Alert className={`mb-4 ${
+            notification.type === "success" ? "border-green-200" : 
+            notification.type === "error" ? "border-red-200" : 
+            "border-blue-200"
+          }`}>
+            {notification.type === "success" && <CheckCircle className="h-4 w-4 text-green-600" />}
+            {notification.type === "error" && <AlertCircle className="h-4 w-4 text-red-600" />}
+            <AlertDescription className={
+              notification.type === "success" ? "text-green-800" : 
+              notification.type === "error" ? "text-red-800" : 
+              "text-blue-800"
+            }>
+              {notification.message}
+            </AlertDescription>
+          </Alert>
         )}
 
         {/* Activity Stats */}
@@ -607,7 +700,7 @@ export default function ActivityLogs() {
           </Select>
         </div>
 
-        {/* Activity Timeline - Now with scrollable container */}
+        {/* Activity Timeline */}
         <Card className="h-[600px] flex flex-col">
           <CardHeader className="flex-shrink-0">
             <CardTitle>Activity Timeline</CardTitle>
@@ -643,7 +736,7 @@ export default function ActivityLogs() {
                             <Checkbox
                               checked={isSelected}
                               onCheckedChange={(checked) => 
-                                handleSelectLog(activity.id, checked as boolean)
+                                handleSelectLog(activity.id, checked)
                               }
                               className="mt-1.5"
                             />
@@ -660,13 +753,10 @@ export default function ActivityLogs() {
                                   <p className="text-sm font-medium text-gray-900">{activity.description}</p>
                                   <Badge
                                     className={
-                                      activityTypeColors[
-                                        activity.type as keyof typeof activityTypeColors
-                                      ] || "bg-gray-100 text-gray-800"
+                                      activityTypeColors[activity.type] || "bg-gray-100 text-gray-800"
                                     }
                                   >
-                                    {activityTypeLabels[activity.type as keyof typeof activityTypeLabels] ||
-                                      activity.type}
+                                    {activityTypeLabels[activity.type] || activity.type}
                                   </Badge>
                                 </div>
 
@@ -698,6 +788,7 @@ export default function ActivityLogs() {
                                       size="sm"
                                       variant="ghost"
                                       className="text-red-600 hover:bg-red-50 ml-2"
+                                      disabled={deleteLogMutation.isPending}
                                     >
                                       <Trash2 className="w-3 h-3" />
                                     </Button>

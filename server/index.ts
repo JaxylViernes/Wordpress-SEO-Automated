@@ -1,3 +1,4 @@
+
 //server/index.ts
 import express from "express";
 import { type Request, Response, NextFunction } from "express";
@@ -59,7 +60,9 @@ const app = express();
 // TRUST PROXY - IMPORTANT FOR CLOUDFLARE
 // =============================================================================
 
-// Trust only 1 proxy hop (Cloudflare)
+// Trust only the first proxy (Cloudflare) - prevents header spoofing
+// This tells Express to trust the first proxy in the chain (Cloudflare)
+
 app.set('trust proxy', 1);
 
 // =============================================================================
@@ -75,6 +78,7 @@ const rateLimitHandler = (req: Request, res: Response) => {
 };
 
 // General rate limiter
+// FIXED: Removed custom keyGenerator to use default which handles IPv6 properly
 const generalLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 500, // 500 requests per minute
@@ -83,9 +87,11 @@ const generalLimiter = rateLimit({
   legacyHeaders: false,
   // Skip validation - we know we're behind Cloudflare and configured correctly
   validate: false,
+
 });
 
 // Auth rate limiter
+// FIXED: Removed custom keyGenerator here as well
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 attempts

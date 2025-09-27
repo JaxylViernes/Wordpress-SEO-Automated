@@ -137,4 +137,7 @@
   background-size: 40px 40px;
   animation: stripes 1s linear infinite;
 }
-
+@keyframes slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}

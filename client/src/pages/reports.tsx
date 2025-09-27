@@ -1,4 +1,3 @@
-//revised with delete buttons
 // client/src/pages/reports.tsx
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -214,6 +213,46 @@ export default function Reports() {
     },
   });
 
+  // Single delete mutation
+  const deleteReportMutation = useMutation({
+    mutationFn: (reportId: string | number) => {
+      console.log('🗑️ Deleting report with ID:', reportId);
+      return api.deleteClientReport(reportId);
+    },
+    onSuccess: (_, reportId) => {
+      console.log('✅ Successfully deleted report:', reportId);
+      setMessage('Report deleted successfully');
+      queryClient.invalidateQueries({ queryKey: ["/api/user/reports"] });
+      setTimeout(() => setMessage(""), 5000);
+    },
+    onError: (error: Error) => {
+      console.error('❌ Failed to delete report:', error);
+      setMessage(`Error: Failed to delete report - ${error.message}`);
+      setTimeout(() => setMessage(""), 5000);
+    },
+  });
+
+  // Bulk delete mutation
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (reportIds: string[]) => {
+      console.log('🗑️ Bulk deleting reports:', reportIds);
+      return api.bulkDeleteClientReports(reportIds);
+    },
+    onSuccess: (_, reportIds) => {
+      console.log('✅ Successfully deleted reports:', reportIds);
+      setMessage(`Successfully deleted ${reportIds.length} report(s)`);
+      queryClient.invalidateQueries({ queryKey: ["/api/user/reports"] });
+      setSelectedReports(new Set());
+      setIsSelectionMode(false);
+      setTimeout(() => setMessage(""), 5000);
+    },
+    onError: (error: Error) => {
+      console.error('❌ Failed to delete reports:', error);
+      setMessage(`Error: Failed to delete reports - ${error.message}`);
+      setTimeout(() => setMessage(""), 5000);
+    },
+  });
+
   // Filter reports (after dedupe)
   const filteredReports = useMemo(() => {
     return allReports.filter((report) => {
@@ -262,22 +301,15 @@ export default function Reports() {
   };
 
   /* ──────────────────────────────────────────────────────────────────────────
-   * Delete handlers (UI only for now)
+   * Delete handlers
    * ──────────────────────────────────────────────────────────────────────────*/
   const handleDeleteReport = (reportId: string | number) => {
-    console.log('🗑️ Delete report:', reportId);
-    setMessage(`Delete functionality for report ${reportId} will be implemented`);
-    setTimeout(() => setMessage(""), 3000);
-    // TODO: Implement actual delete API call
+    deleteReportMutation.mutate(reportId);
   };
 
   const handleBulkDelete = () => {
-    console.log('🗑️ Bulk delete reports:', Array.from(selectedReports));
-    setMessage(`Bulk delete functionality for ${selectedReports.size} reports will be implemented`);
-    setIsSelectionMode(false);
-    setSelectedReports(new Set());
-    setTimeout(() => setMessage(""), 3000);
-    // TODO: Implement actual bulk delete API call
+    const idsToDelete = Array.from(selectedReports);
+    bulkDeleteMutation.mutate(idsToDelete);
   };
 
   /* ──────────────────────────────────────────────────────────────────────────
@@ -462,9 +494,18 @@ export default function Reports() {
     }
   };
 
-  // Disable rules
-  const isAnyGenerationInProgress = generateReportMutation.isPending || isBulkGenerating;
-  const isGenerateDisabled = isAnyGenerationInProgress || !websites?.length || reportType === "all" || reportType === "";
+  // Disable rules - using isAnyOperationInProgress for all operations
+  const isAnyOperationInProgress = 
+    generateReportMutation.isPending || 
+    isBulkGenerating || 
+    deleteReportMutation.isPending || 
+    bulkDeleteMutation.isPending;
+    
+  const isGenerateDisabled = 
+    isAnyOperationInProgress || 
+    !websites?.length || 
+    reportType === "all" || 
+    reportType === "";
 
   return (
     <div className="py-6">
@@ -488,7 +529,7 @@ export default function Reports() {
                   <AlertDialogTrigger asChild>
                     <Button 
                       variant="destructive" 
-                      disabled={selectedReports.size === 0}
+                      disabled={selectedReports.size === 0 || bulkDeleteMutation.isPending}
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
                       Delete Selected ({selectedReports.size})
@@ -502,12 +543,20 @@ export default function Reports() {
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogCancel disabled={bulkDeleteMutation.isPending}>Cancel</AlertDialogCancel>
                       <AlertDialogAction 
                         onClick={handleBulkDelete}
                         className="bg-red-600 hover:bg-red-700"
+                        disabled={bulkDeleteMutation.isPending}
                       >
-                        Delete Reports
+                        {bulkDeleteMutation.isPending ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                            Deleting...
+                          </>
+                        ) : (
+                          "Delete Reports"
+                        )}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
@@ -537,12 +586,12 @@ export default function Reports() {
                       : "Generate reports"
                   }
                 >
-                  {isAnyGenerationInProgress ? (
+                  {isAnyOperationInProgress ? (
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
                     <Plus className="w-4 h-4 mr-2" />
                   )}
-                  {isAnyGenerationInProgress
+                  {isAnyOperationInProgress
                     ? "Generating..."
                     : reportType === "all"
                     ? "Select Report Type"
@@ -847,9 +896,9 @@ export default function Reports() {
                               report.id
                             );
                           }}
-                          disabled={isAnyGenerationInProgress}
+                          disabled={isAnyOperationInProgress}
                         >
-                          {isAnyGenerationInProgress ? (
+                          {isAnyOperationInProgress ? (
                             <RefreshCw className="w-3 h-3 animate-spin" />
                           ) : (
                             <>
@@ -875,6 +924,7 @@ export default function Reports() {
                               size="sm"
                               variant="outline"
                               className="text-red-600 hover:bg-red-50"
+                              disabled={isAnyOperationInProgress}
                             >
                               <Trash2 className="w-3 h-3" />
                             </Button>
@@ -887,12 +937,20 @@ export default function Reports() {
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogCancel disabled={deleteReportMutation.isPending}>Cancel</AlertDialogCancel>
                               <AlertDialogAction 
                                 onClick={() => handleDeleteReport(report.id!)}
                                 className="bg-red-600 hover:bg-red-700"
+                                disabled={deleteReportMutation.isPending}
                               >
-                                Delete
+                                {deleteReportMutation.isPending ? (
+                                  <>
+                                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                    Deleting...
+                                  </>
+                                ) : (
+                                  "Delete"
+                                )}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -925,7 +983,7 @@ export default function Reports() {
                   disabled={isGenerateDisabled}
                   className="bg-primary-500 hover:bg-primary-600 disabled:opacity-50"
                 >
-                  {isAnyGenerationInProgress ? (
+                  {isAnyOperationInProgress ? (
                     <>
                       <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                       Generating...
@@ -973,14 +1031,14 @@ export default function Reports() {
                         onClick={() =>
                           handleGenerateReport(website.id, "weekly")
                         }
-                        disabled={isAnyGenerationInProgress}
+                        disabled={isAnyOperationInProgress}
                         title={
-                          isAnyGenerationInProgress
-                            ? "Generation in progress..."
+                          isAnyOperationInProgress
+                            ? "Operation in progress..."
                             : "Generate weekly report"
                         }
                       >
-                        {isAnyGenerationInProgress ? (
+                        {isAnyOperationInProgress ? (
                           <RefreshCw className="w-3 h-3 animate-spin" />
                         ) : (
                           "Weekly"
@@ -992,14 +1050,14 @@ export default function Reports() {
                         onClick={() =>
                           handleGenerateReport(website.id, "monthly")
                         }
-                        disabled={isAnyGenerationInProgress}
+                        disabled={isAnyOperationInProgress}
                         title={
-                          isAnyGenerationInProgress
-                            ? "Generation in progress..."
+                          isAnyOperationInProgress
+                            ? "Operation in progress..."
                             : "Generate monthly report"
                         }
                       >
-                        {isAnyGenerationInProgress ? (
+                        {isAnyOperationInProgress ? (
                           <RefreshCw className="w-3 h-3 animate-spin" />
                         ) : (
                           "Monthly"
