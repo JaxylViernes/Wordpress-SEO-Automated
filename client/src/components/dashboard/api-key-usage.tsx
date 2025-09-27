@@ -1,283 +1,456 @@
+// components/api-key-usage-dashboard.tsx
+
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Key, TrendingUp, DollarSign, Activity } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { 
+  Key, TrendingUp, DollarSign, Activity, User, Server,
+  AlertCircle, ChevronRight, Clock, Zap, Info
+} from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Link } from "wouter";
 
-interface ApiKeyUsageData {
+interface UsageData {
+  operations: number;
+  tokens: number;
+  costCents: number;
+  lastUsed: string | null;
+  breakdown?: Record<string, number>;
+}
+
+interface ProviderData {
+  user: UsageData;
+  system: UsageData;
+  configured: boolean;
+  userKeyName: string | null;
+  userKeyStatus: string | null;
+}
+
+interface UsageSummary {
   providers: {
-    openai?: {
-      configured: boolean;
-      keyName: string | null;
-      status: string;
-      usage?: {
-        totalUsageCount: number;
-        totalTokens: number;
-        totalCostCents: number;
-        lastUsed: string | null;
-      };
-    };
-    anthropic?: {
-      configured: boolean;
-      keyName: string | null;
-      status: string;
-      usage?: {
-        totalUsageCount: number;
-        totalTokens: number;
-        totalCostCents: number;
-        lastUsed: string | null;
-      };
-    };
-    google_pagespeed?: {
-      configured: boolean;
-      keyName: string | null;
-      status: string;
-      usage?: {
-        totalUsageCount: number;
-        totalCostCents: number;
-        lastUsed: string | null;
-      };
-    };
+    openai: ProviderData;
+    anthropic: ProviderData;
+    gemini: ProviderData;
+  };
+  totals: {
+    user: { operations: number; tokens: number; costCents: number };
+    system: { operations: number; tokens: number; costCents: number };
+    combined: { operations: number; tokens: number; costCents: number };
   };
 }
 
 export default function ApiKeyUsage() {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["api-key-usage"],
-    queryFn: async () => {
-      const status = await api.getApiKeyStatus();
-      const keys = await api.getUserApiKeys();
-      
-      // Fetch usage for each configured key
-      const usageData: ApiKeyUsageData = { providers: status.providers };
-      
-      for (const key of keys) {
-        if (key.isActive && key.validationStatus === 'valid') {
-          const usage = await api.getApiKeyUsage(key.id);
-          if (usageData.providers[key.provider as keyof typeof usageData.providers]) {
-            usageData.providers[key.provider as keyof typeof usageData.providers]!.usage = usage;
-          }
-        }
-      }
-      
-      return usageData;
-    },
-    staleTime: 30000,
+  const { data, isLoading, error } = useQuery<UsageSummary>({
+    queryKey: ["api-key-usage-summary"],
+    queryFn: () => api.getApiKeyUsageSummary(),
     refetchInterval: 60000, // Refresh every minute
   });
 
   if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Key className="h-5 w-5" />
-            API Key Usage
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-        </CardContent>
-      </Card>
-    );
+    return <LoadingSkeleton />;
   }
 
   if (error) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Key className="h-5 w-5" />
-            API Key Usage
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-gray-500">Failed to load usage data</p>
-        </CardContent>
-      </Card>
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Error</AlertTitle>
+        <AlertDescription>Failed to load API usage data</AlertDescription>
+      </Alert>
     );
   }
 
-  const formatCost = (cents: number) => {
-    return `$${(cents / 100).toFixed(4)}`;
+  if (!data) return null;
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <SummaryCard
+          title="Total Usage"
+          icon={Activity}
+          value={`$${(data.totals.combined.costCents / 100).toFixed(2)}`}
+          subtitle={`${data.totals.combined.operations} operations`}
+          trend={data.totals.combined.operations > 0}
+        />
+        <SummaryCard
+          title="Your Keys"
+          icon={User}
+          value={`$${(data.totals.user.costCents / 100).toFixed(2)}`}
+          subtitle={`${data.totals.user.operations} operations`}
+          color="green"
+        />
+        <SummaryCard
+          title="System Keys"
+          icon={Server}
+          value={`$${(data.totals.system.costCents / 100).toFixed(2)}`}
+          subtitle={`${data.totals.system.operations} operations`}
+          color="blue"
+        />
+      </div>
+
+      {/* System Key Warning */}
+      {data.totals.system.operations > 0 && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>You're using system API keys</AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p>
+              System keys are being used for {data.totals.system.operations} operations 
+              (${(data.totals.system.costCents / 100).toFixed(2)} in costs).
+            </p>
+            <p className="text-sm">
+              Add your own API keys to reduce costs and have better control.
+            </p>
+            <Link href="/settings">
+              <Button size="sm" className="mt-2">
+                Configure API Keys <ChevronRight className="ml-1 h-4 w-4" />
+              </Button>
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Provider Tabs */}
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="openai">OpenAI</TabsTrigger>
+          <TabsTrigger value="anthropic">Anthropic</TabsTrigger>
+          <TabsTrigger value="gemini">Gemini</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview">
+          <OverviewTab data={data} />
+        </TabsContent>
+
+        <TabsContent value="openai">
+          <ProviderTab provider="openai" data={data.providers.openai} />
+        </TabsContent>
+
+        <TabsContent value="anthropic">
+          <ProviderTab provider="anthropic" data={data.providers.anthropic} />
+        </TabsContent>
+
+        <TabsContent value="gemini">
+          <ProviderTab provider="gemini" data={data.providers.gemini} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function SummaryCard({ 
+  title, 
+  icon: Icon, 
+  value, 
+  subtitle, 
+  color = "default",
+  trend 
+}: {
+  title: string;
+  icon: any;
+  value: string;
+  subtitle: string;
+  color?: "default" | "green" | "blue";
+  trend?: boolean;
+}) {
+  const colorClasses = {
+    default: "text-gray-600 bg-gray-100",
+    green: "text-green-600 bg-green-100",
+    blue: "text-blue-600 bg-blue-100",
   };
 
-  const formatTokens = (tokens: number) => {
-    if (tokens > 1000000) {
-      return `${(tokens / 1000000).toFixed(2)}M`;
-    } else if (tokens > 1000) {
-      return `${(tokens / 1000).toFixed(1)}K`;
-    }
-    return tokens.toString();
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <div className={`p-2 rounded-lg ${colorClasses[color]}`}>
+          <Icon className="h-4 w-4" />
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{value}</div>
+        <div className="flex items-center text-xs text-muted-foreground">
+          {subtitle}
+          {trend && <TrendingUp className="ml-1 h-3 w-3 text-green-500" />}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OverviewTab({ data }: { data: UsageSummary }) {
+  const userPercentage = data.totals.combined.costCents > 0
+    ? (data.totals.user.costCents / data.totals.combined.costCents) * 100
+    : 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Usage Overview</CardTitle>
+        <CardDescription>Distribution between your keys and system keys</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Usage Distribution Bar */}
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span>Key Usage Distribution</span>
+            <span>{userPercentage.toFixed(1)}% User Keys</span>
+          </div>
+          <div className="flex h-8 overflow-hidden rounded-lg bg-gray-100">
+            {userPercentage > 0 && (
+              <div 
+                className="bg-green-500 flex items-center justify-center text-xs text-white"
+                style={{ width: `${userPercentage}%` }}
+              >
+                {userPercentage > 10 && "User"}
+              </div>
+            )}
+            {userPercentage < 100 && (
+              <div 
+                className="bg-blue-500 flex items-center justify-center text-xs text-white"
+                style={{ width: `${100 - userPercentage}%` }}
+              >
+                {(100 - userPercentage) > 10 && "System"}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Provider Breakdown */}
+        <div className="space-y-4">
+          <h4 className="text-sm font-medium">Provider Breakdown</h4>
+          {Object.entries(data.providers).map(([provider, providerData]) => (
+            <ProviderSummaryRow 
+              key={provider}
+              provider={provider}
+              data={providerData}
+            />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProviderSummaryRow({ 
+  provider, 
+  data 
+}: { 
+  provider: string;
+  data: ProviderData;
+}) {
+  const totalOps = data.user.operations + data.system.operations;
+  const totalCost = data.user.costCents + data.system.costCents;
+  
+  if (totalOps === 0) return null;
+
+  return (
+    <div className="flex items-center justify-between p-3 border rounded-lg">
+      <div className="flex items-center gap-3">
+        <div className="font-medium capitalize">{provider}</div>
+        {data.userKeyName && (
+          <Badge variant="outline" className="text-xs">
+            {data.userKeyName}
+          </Badge>
+        )}
+      </div>
+      <div className="flex items-center gap-4 text-sm">
+        <div className="flex items-center gap-1">
+          <User className="h-3 w-3 text-green-500" />
+          <span>${(data.user.costCents / 100).toFixed(2)}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Server className="h-3 w-3 text-blue-500" />
+          <span>${(data.system.costCents / 100).toFixed(2)}</span>
+        </div>
+        <Badge variant="secondary">
+          {totalOps} ops
+        </Badge>
+      </div>
+    </div>
+  );
+}
+
+function ProviderTab({ 
+  provider, 
+  data 
+}: { 
+  provider: string;
+  data: ProviderData;
+}) {
+  const hasUserKey = !!data.userKeyName;
+  const totalOps = data.user.operations + data.system.operations;
+
+  return (
+    <div className="space-y-4">
+      {/* Configuration Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="capitalize">{provider} Configuration</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <div className="text-sm font-medium">User API Key</div>
+              <div className="text-xs text-muted-foreground">
+                {hasUserKey ? data.userKeyName : "Not configured"}
+              </div>
+            </div>
+            <Badge variant={hasUserKey ? "default" : "secondary"}>
+              {hasUserKey ? data.userKeyStatus : "Not Set"}
+            </Badge>
+          </div>
+          
+          {!hasUserKey && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                You're using system keys for {provider}. 
+                <Link href="/settings" className="underline ml-1">
+                  Add your own key
+                </Link>
+              </AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Usage Stats */}
+      {totalOps > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <UsageCard
+            title="Your Key Usage"
+            icon={User}
+            usage={data.user}
+            color="green"
+          />
+          <UsageCard
+            title="System Key Usage"
+            icon={Server}
+            usage={data.system}
+            color="blue"
+          />
+        </div>
+      )}
+
+      {totalOps === 0 && (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-8">
+            <Activity className="h-8 w-8 text-gray-400 mb-2" />
+            <p className="text-sm text-muted-foreground">No usage recorded yet</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function UsageCard({ 
+  title, 
+  icon: Icon, 
+  usage, 
+  color 
+}: {
+  title: string;
+  icon: any;
+  usage: UsageData;
+  color: "green" | "blue";
+}) {
+  const colorClasses = {
+    green: "text-green-600 bg-green-100",
+    blue: "text-blue-600 bg-blue-100",
   };
 
-  const formatLastUsed = (date: string | null) => {
+  const formatDate = (date: string | null) => {
     if (!date) return "Never";
     const diff = Date.now() - new Date(date).getTime();
     const hours = Math.floor(diff / (1000 * 60 * 60));
     if (hours < 1) return "Just now";
     if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    if (days === 1) return "Yesterday";
-    return `${days} days ago`;
+    return `${Math.floor(hours / 24)}d ago`;
   };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Key className="h-5 w-5" />
-          API Key Usage
+        <CardTitle className="text-sm flex items-center gap-2">
+          <div className={`p-1 rounded ${colorClasses[color]}`}>
+            <Icon className="h-3 w-3" />
+          </div>
+          {title}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* OpenAI */}
-        {data?.providers.openai?.configured && (
-          <div className="border rounded-lg p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="font-medium text-sm">OpenAI</div>
-              <span className={`text-xs px-2 py-1 rounded-full ${
-                data.providers.openai.status === 'active' 
-                  ? 'bg-green-100 text-green-800' 
-                  : data.providers.openai.status === 'system'
-                  ? 'bg-blue-100 text-blue-800'
-                  : 'bg-gray-100 text-gray-800'
-              }`}>
-                {data.providers.openai.status}
-              </span>
-            </div>
-            
-            {data.providers.openai.usage && (
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="flex items-center gap-1">
-                  <Activity className="h-3 w-3 text-gray-400" />
-                  <span className="text-gray-600">Uses:</span>
-                  <span className="font-medium">{data.providers.openai.usage.totalUsageCount}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <DollarSign className="h-3 w-3 text-gray-400" />
-                  <span className="text-gray-600">Cost:</span>
-                  <span className="font-medium">{formatCost(data.providers.openai.usage.totalCostCents)}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <TrendingUp className="h-3 w-3 text-gray-400" />
-                  <span className="text-gray-600">Tokens:</span>
-                  <span className="font-medium">{formatTokens(data.providers.openai.usage.totalTokens)}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-gray-600">Last:</span>
-                  <span className="font-medium">{formatLastUsed(data.providers.openai.usage.lastUsed)}</span>
-                </div>
-              </div>
-            )}
-            
-            <div className="text-xs text-gray-500">
-              {data.providers.openai.keyName}
-            </div>
-          </div>
-        )}
-
-        {/* Anthropic */}
-        {data?.providers.anthropic?.configured && (
-          <div className="border rounded-lg p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="font-medium text-sm">Anthropic</div>
-              <span className={`text-xs px-2 py-1 rounded-full ${
-                data.providers.anthropic.status === 'active' 
-                  ? 'bg-green-100 text-green-800' 
-                  : data.providers.anthropic.status === 'system'
-                  ? 'bg-blue-100 text-blue-800'
-                  : 'bg-gray-100 text-gray-800'
-              }`}>
-                {data.providers.anthropic.status}
-              </span>
-            </div>
-            
-            {data.providers.anthropic.usage && (
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="flex items-center gap-1">
-                  <Activity className="h-3 w-3 text-gray-400" />
-                  <span className="text-gray-600">Uses:</span>
-                  <span className="font-medium">{data.providers.anthropic.usage.totalUsageCount}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <DollarSign className="h-3 w-3 text-gray-400" />
-                  <span className="text-gray-600">Cost:</span>
-                  <span className="font-medium">{formatCost(data.providers.anthropic.usage.totalCostCents)}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <TrendingUp className="h-3 w-3 text-gray-400" />
-                  <span className="text-gray-600">Tokens:</span>
-                  <span className="font-medium">{formatTokens(data.providers.anthropic.usage.totalTokens)}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-gray-600">Last:</span>
-                  <span className="font-medium">{formatLastUsed(data.providers.anthropic.usage.lastUsed)}</span>
-                </div>
-              </div>
-            )}
-            
-            <div className="text-xs text-gray-500">
-              {data.providers.anthropic.keyName}
-            </div>
-          </div>
-        )}
-
-        {/* Google PageSpeed */}
-        {data?.providers.google_pagespeed?.configured && (
-          <div className="border rounded-lg p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="font-medium text-sm">Google PageSpeed</div>
-              <span className={`text-xs px-2 py-1 rounded-full ${
-                data.providers.google_pagespeed.status === 'active' 
-                  ? 'bg-green-100 text-green-800' 
-                  : data.providers.google_pagespeed.status === 'system'
-                  ? 'bg-blue-100 text-blue-800'
-                  : 'bg-gray-100 text-gray-800'
-              }`}>
-                {data.providers.google_pagespeed.status}
-              </span>
-            </div>
-            
-            {data.providers.google_pagespeed.usage && (
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="flex items-center gap-1">
-                  <Activity className="h-3 w-3 text-gray-400" />
-                  <span className="text-gray-600">Uses:</span>
-                  <span className="font-medium">{data.providers.google_pagespeed.usage.totalUsageCount}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <DollarSign className="h-3 w-3 text-gray-400" />
-                  <span className="text-gray-600">Cost:</span>
-                  <span className="font-medium">{formatCost(data.providers.google_pagespeed.usage.totalCostCents)}</span>
-                </div>
-                <div className="col-span-2 flex items-center gap-1">
-                  <span className="text-gray-600">Last used:</span>
-                  <span className="font-medium">{formatLastUsed(data.providers.google_pagespeed.usage.lastUsed)}</span>
-                </div>
-              </div>
-            )}
-            
-            <div className="text-xs text-gray-500">
-              {data.providers.google_pagespeed.keyName}
-            </div>
-          </div>
-        )}
-
-        {/* No API keys configured */}
-        {!data?.providers.openai?.configured && 
-         !data?.providers.anthropic?.configured && 
-         !data?.providers.google_pagespeed?.configured && (
-          <div className="text-center py-4">
-            <p className="text-sm text-gray-500">No API keys configured</p>
-            <p className="text-xs text-gray-400 mt-1">
-              Add API keys in Settings to track usage
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-2xl font-bold">
+              ${(usage.costCents / 100).toFixed(3)}
             </p>
+            <p className="text-xs text-muted-foreground">Total Cost</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold">
+              {usage.operations}
+            </p>
+            <p className="text-xs text-muted-foreground">Operations</p>
+          </div>
+        </div>
+        
+        {usage.tokens > 0 && (
+          <div className="pt-2 border-t">
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Tokens</span>
+              <span className="font-medium">
+                {usage.tokens > 1000000 
+                  ? `${(usage.tokens / 1000000).toFixed(2)}M`
+                  : usage.tokens > 1000
+                  ? `${(usage.tokens / 1000).toFixed(1)}K`
+                  : usage.tokens}
+              </span>
+            </div>
           </div>
         )}
+        
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          Last used: {formatDate(usage.lastUsed)}
+        </div>
       </CardContent>
     </Card>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
+          <Card key={i}>
+            <CardHeader>
+              <Skeleton className="h-4 w-24" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-8 w-32 mb-2" />
+              <Skeleton className="h-3 w-20" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-32" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-64 w-full" />
+        </CardContent>
+      </Card>
+    </div>
   );
 }

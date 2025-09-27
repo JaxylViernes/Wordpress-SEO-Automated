@@ -1105,7 +1105,7 @@ Return JSON but write the content field like you're having a conversation. Inclu
           userId: request.userId,
           model: AI_MODELS[request.aiProvider].model,
           tokensUsed: contentTokens,
-          costUsd: Math.max(1, Math.round(textCostUsd * 100)),
+          costUsd: Math.max(1, Math.round(textCostUsd * 1000)) ,
           operation: "content_generation",
           keyType: keyTypeUsed
         });

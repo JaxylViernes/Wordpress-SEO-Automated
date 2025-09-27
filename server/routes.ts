@@ -2750,72 +2750,64 @@ app.get("/api/admin/users/:userId/api-usage", requireAdmin, async (req: Request,
   });
 
   app.get("/api/user/api-keys/status", requireAuth, async (req: Request, res: Response): Promise<void> => {
-    try {
-      const userId = req.user!.id;
-      console.log(`📊 Fetching API key status for user: ${userId}`);
-      
-      const userKeys = await storage.getUserApiKeys(userId);
-      
-      const providers = {
-        openai: {
-          configured: false,
-          keyName: null as string | null,
-          lastValidated: null as string | null,
-          status: "not_configured" as string
-        },
-        anthropic: {
-          configured: false,
-          keyName: null as string | null,
-          lastValidated: null as string | null,
-          status: "not_configured" as string
-        },
-        google_pagespeed: {
-          configured: false,
-          keyName: null as string | null,
-          lastValidated: null as string | null,
-          status: "not_configured" as string
-        }
-      };
-      
-      for (const key of userKeys) {
-        if (key.isActive && providers[key.provider as keyof typeof providers]) {
-          const providerStatus = providers[key.provider as keyof typeof providers];
-          providerStatus.configured = true;
-          providerStatus.keyName = key.keyName;
-          providerStatus.lastValidated = key.lastValidated?.toISOString() || null;
-          providerStatus.status = key.validationStatus === 'valid' ? 'active' : 
-                                   key.validationStatus === 'invalid' ? 'invalid' : 'pending';
-        }
+  try {
+    const userId = req.user!.id;
+    const userKeys = await storage.getUserApiKeys(userId);
+    
+    const providers: any = {
+      openai: { configured: false, keyName: null, status: "not_configured", usage: null },
+      anthropic: { configured: false, keyName: null, status: "not_configured", usage: null },
+      google_pagespeed: { configured: false, keyName: null, status: "not_configured", usage: null }
+    };
+    
+    // Check user keys
+    for (const key of userKeys) {
+      if (key.isActive && providers[key.provider as keyof typeof providers]) {
+        const providerStatus = providers[key.provider as keyof typeof providers];
+        const usageStats = await storage.getApiKeyUsageStats(userId, key.provider);
+        
+        providerStatus.configured = true;
+        providerStatus.keyName = key.keyName;
+        providerStatus.status = key.validationStatus === 'valid' ? 'active' : 'invalid';
+        providerStatus.keyId = key.id;
+        providerStatus.usage = {
+          totalUsageCount: key.usageCount || 0,
+          totalTokens: usageStats.userKeyUsage.tokens,
+          totalCostCents: usageStats.userKeyUsage.costCents,
+          lastUsed: key.lastUsed,
+        };
       }
-      
-      if (!providers.openai.configured && (process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR)) {
-        providers.openai.configured = true;
-        providers.openai.keyName = "System OpenAI Key";
-        providers.openai.status = "system";
-      }
-      
-      if (!providers.anthropic.configured && process.env.ANTHROPIC_API_KEY) {
-        providers.anthropic.configured = true;
-        providers.anthropic.keyName = "System Anthropic Key";
-        providers.anthropic.status = "system";
-      }
-      
-      if (!providers.google_pagespeed.configured && process.env.GOOGLE_PAGESPEED_API_KEY) {
-        providers.google_pagespeed.configured = true;
-        providers.google_pagespeed.keyName = "System PageSpeed Key";
-        providers.google_pagespeed.status = "system";
-      }
-      
-      console.log(`✅ API key status fetched for user ${userId}`);
-      res.json({ providers });
-    } catch (error) {
-      console.error("Failed to fetch API key status:", error);
-      res.status(500).json({ 
-        message: "Failed to fetch API key status",
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
     }
-  });
+    
+    // Check system keys and add their usage
+    for (const [provider, envVar] of Object.entries({
+      openai: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR,
+      anthropic: process.env.ANTHROPIC_API_KEY,
+      google_pagespeed: process.env.GOOGLE_PAGESPEED_API_KEY
+    })) {
+      if (envVar && !providers[provider].configured) {
+        const usageStats = await storage.getApiKeyUsageStats(userId, provider);
+        providers[provider] = {
+          configured: true,
+          keyName: `System ${provider.replace('_', ' ')} Key`,
+          status: "system",
+          keyId: `system-${provider}`,
+          usage: {
+            totalUsageCount: usageStats.systemKeyUsage.operations,
+            totalTokens: usageStats.systemKeyUsage.tokens,
+            totalCostCents: usageStats.systemKeyUsage.costCents,
+            lastUsed: null,
+          }
+        };
+      }
+    }
+    
+    res.json({ providers });
+  } catch (error) {
+    console.error("Failed to fetch API key status:", error);
+    res.status(500).json({ message: "Failed to fetch API key status" });
+  }
+});
 
   app.put("/api/user/api-keys/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
     try {
@@ -2860,40 +2852,228 @@ app.get("/api/admin/users/:userId/api-usage", requireAdmin, async (req: Request,
   });
 
 
-  app.get("/api/user/api-keys/:id/usage", requireAuth, async (req: Request, res: Response): Promise<void> => {
+ app.get("/api/user/api-keys/:id/usage", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
     const keyId = req.params.id;
     
+    // Handle system keys differently
+    if (keyId === 'system-openai' || keyId === 'system-anthropic' || keyId === 'system-google') {
+      const provider = keyId.replace('system-', '').replace('-', '_');
+      const usageStats = await storage.getApiKeyUsageStats(userId, provider);
+      
+      res.json({
+        keyId: keyId,
+        provider: provider,
+        keyName: `System ${provider} Key`,
+        totalUsageCount: usageStats.systemKeyUsage.operations,
+        totalTokens: usageStats.systemKeyUsage.tokens,
+        totalCostCents: usageStats.systemKeyUsage.costCents,
+        keyType: 'system',
+        lastUsed: null, // You might want to track this separately
+      });
+      return;
+    }
+    
+    // Handle user keys
     const apiKey = await storage.getUserApiKey(userId, keyId);
     if (!apiKey) {
       res.status(404).json({ message: "API key not found" });
       return;
     }
     
-    // Get usage stats from aiUsageTracking table
     const usageStats = await storage.getApiKeyUsageStats(userId, apiKey.provider);
-    
-    console.log(`API Key Usage for ${apiKey.provider}:`, {
-      keyUsageCount: apiKey.usageCount,
-      dbStats: usageStats
-    });
     
     res.json({
       keyId: apiKey.id,
       provider: apiKey.provider,
       keyName: apiKey.keyName,
       totalUsageCount: apiKey.usageCount || 0,
+      totalTokens: usageStats.userKeyUsage.tokens,
+      totalCostCents: usageStats.userKeyUsage.costCents,
+      keyType: 'user',
       lastUsed: apiKey.lastUsed,
-      totalTokens: usageStats.totalTokens,
-      totalCostCents: usageStats.totalCostCents,
-      operationsCount: usageStats.operationsCount
     });
   } catch (error) {
     console.error("Failed to fetch API key usage:", error);
     res.status(500).json({ message: "Failed to fetch usage statistics" });
   }
 });
+
+
+app.get("/api/user/api-keys/usage-summary", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    
+    // Get user's configured keys
+    const userKeys = await storage.getUserApiKeys(userId);
+    
+    // Get all usage data for the user (simpler query)
+    const allUsageData = await db
+      .select({
+        model: aiUsageTracking.model,
+        keyType: aiUsageTracking.keyType,
+        tokensUsed: aiUsageTracking.tokensUsed,
+        costUsd: aiUsageTracking.costUsd,
+        operation: aiUsageTracking.operation,
+        createdAt: aiUsageTracking.createdAt,
+      })
+      .from(aiUsageTracking)
+      .where(eq(aiUsageTracking.userId, userId));
+
+    // Process the data in JavaScript instead of complex SQL
+    const aggregated: Record<string, Record<string, any>> = {};
+    
+    for (const row of allUsageData) {
+      // Determine provider from model
+      let provider = 'other';
+      if (row.model.includes('gpt') || row.model === 'dall-e-3') {
+        provider = 'openai';
+      } else if (row.model.includes('claude')) {
+        provider = 'anthropic';
+      } else if (row.model.includes('gemini')) {
+        provider = 'gemini';
+      }
+      
+      // Create key for aggregation
+      const key = `${provider}-${row.keyType}`;
+      
+      if (!aggregated[key]) {
+        aggregated[key] = {
+          provider,
+          keyType: row.keyType,
+          operations: 0,
+          tokens: 0,
+          costCents: 0,
+          lastUsed: null,
+          operationBreakdown: {}
+        };
+      }
+      
+      // Aggregate data
+      aggregated[key].operations += 1;
+      aggregated[key].tokens += row.tokensUsed || 0;
+      aggregated[key].costCents += row.costUsd || 0;
+      
+      // Track latest usage
+      if (!aggregated[key].lastUsed || new Date(row.createdAt) > new Date(aggregated[key].lastUsed)) {
+        aggregated[key].lastUsed = row.createdAt;
+      }
+      
+      // Track operation breakdown
+      if (!aggregated[key].operationBreakdown[row.operation]) {
+        aggregated[key].operationBreakdown[row.operation] = 0;
+      }
+      aggregated[key].operationBreakdown[row.operation] += 1;
+    }
+
+    // Structure the response
+    const summary = {
+      providers: {
+        openai: {
+          user: { operations: 0, tokens: 0, costCents: 0, lastUsed: null, breakdown: {} },
+          system: { operations: 0, tokens: 0, costCents: 0, lastUsed: null, breakdown: {} },
+          configured: false,
+          userKeyName: null as string | null,
+          userKeyStatus: null as string | null,
+        },
+        anthropic: {
+          user: { operations: 0, tokens: 0, costCents: 0, lastUsed: null, breakdown: {} },
+          system: { operations: 0, tokens: 0, costCents: 0, lastUsed: null, breakdown: {} },
+          configured: false,
+          userKeyName: null as string | null,
+          userKeyStatus: null as string | null,
+        },
+        gemini: {
+          user: { operations: 0, tokens: 0, costCents: 0, lastUsed: null, breakdown: {} },
+          system: { operations: 0, tokens: 0, costCents: 0, lastUsed: null, breakdown: {} },
+          configured: false,
+          userKeyName: null as string | null,
+          userKeyStatus: null as string | null,
+        }
+      },
+      totals: {
+        user: { operations: 0, tokens: 0, costCents: 0 },
+        system: { operations: 0, tokens: 0, costCents: 0 },
+        combined: { operations: 0, tokens: 0, costCents: 0 }
+      }
+    };
+
+    // Fill in aggregated data
+    for (const data of Object.values(aggregated)) {
+      const provider = data.provider as keyof typeof summary.providers;
+      const keyType = data.keyType as 'user' | 'system';
+      
+      if (summary.providers[provider]) {
+        summary.providers[provider][keyType] = {
+          operations: data.operations,
+          tokens: data.tokens,
+          costCents: data.costCents,
+          lastUsed: data.lastUsed,
+          breakdown: data.operationBreakdown
+        };
+        
+        // Update totals
+        summary.totals[keyType].operations += data.operations;
+        summary.totals[keyType].tokens += data.tokens;
+        summary.totals[keyType].costCents += data.costCents;
+      }
+    }
+
+    // Calculate combined totals
+    summary.totals.combined = {
+      operations: summary.totals.user.operations + summary.totals.system.operations,
+      tokens: summary.totals.user.tokens + summary.totals.system.tokens,
+      costCents: summary.totals.user.costCents + summary.totals.system.costCents,
+    };
+
+    // Add configuration status for user keys
+    for (const key of userKeys) {
+      const providerMap: Record<string, keyof typeof summary.providers> = {
+        'openai': 'openai',
+        'anthropic': 'anthropic',
+        'gemini': 'gemini',
+        'google_gemini': 'gemini',
+        'google_pagespeed': 'gemini' // If PageSpeed uses Gemini models
+      };
+      
+      const mappedProvider = providerMap[key.provider];
+      if (key.isActive && mappedProvider && summary.providers[mappedProvider]) {
+        const provider = summary.providers[mappedProvider];
+        provider.configured = true;
+        provider.userKeyName = key.keyName;
+        provider.userKeyStatus = key.validationStatus;
+      }
+    }
+
+    // Check for system keys (only mark as configured if no user key exists)
+    if (!summary.providers.openai.userKeyName && (process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR)) {
+      summary.providers.openai.configured = true;
+    }
+    if (!summary.providers.anthropic.userKeyName && process.env.ANTHROPIC_API_KEY) {
+      summary.providers.anthropic.configured = true;
+    }
+    if (!summary.providers.gemini.userKeyName && process.env.GOOGLE_GEMINI_API_KEY) {
+      summary.providers.gemini.configured = true;
+    }
+
+    console.log(`✅ Usage summary fetched for user ${userId}:`, {
+      totalOps: summary.totals.combined.operations,
+      userOps: summary.totals.user.operations,
+      systemOps: summary.totals.system.operations,
+      rows: allUsageData.length
+    });
+
+    res.json(summary);
+  } catch (error) {
+    console.error("Failed to fetch usage summary:", error);
+    res.status(500).json({ 
+      message: "Failed to fetch usage summary",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 
   // ===========================================================================
   // WEBSITE MANAGEMENT ROUTES

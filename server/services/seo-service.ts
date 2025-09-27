@@ -3,6 +3,7 @@ import * as cheerio from "cheerio";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { storage } from "../storage";
+import { apiKeyEncryptionService } from "./api-key-encryption";
 
 
 // #region Constants
@@ -234,55 +235,158 @@ export class EnhancedSEOService {
   }
 
   //API Key Management
-  private async getAPIKey(
-    userId: string | undefined,
-    provider: string,
-    envVarNames: string[]
-  ): Promise<string | null> {
-    if (userId) {
-      try {
-        const userKey = await storage.getDecryptedApiKey(userId, provider);
-        if (userKey) return userKey;
-        
-        console.log(
-          `No user-specific ${provider} key for user ${userId}, checking system keys`
+private async getAPIKey(
+  userId: string | undefined,
+  provider: string,
+  envVarNames: string[]
+): Promise<string | null> {
+  if (userId) {
+    try {
+      // Use the same approach as ai-service.ts
+      const userApiKeys = await storage.getUserApiKeys(userId);
+      
+      if (userApiKeys && userApiKeys.length > 0) {
+        // Find valid key for this provider
+        const validKey = userApiKeys.find(
+          (key: any) => 
+            key.provider === provider && 
+            key.isActive && 
+            key.validationStatus === 'valid'
         );
-      } catch (error: any) {
-        console.warn(
-          `Failed to get user ${provider} key for ${userId}: ${error.message}`
-        );
-      }
-    }
-    for (const envVar of envVarNames) {
-      if (process.env[envVar]) {
-        if (userId) {
-          console.log(`Using system ${provider} API key for user ${userId}`);
+
+        if (validKey && validKey.encryptedApiKey) {
+          try {
+            const decryptedKey = apiKeyEncryptionService.decrypt(validKey.encryptedApiKey);
+            console.log(
+              `Using user's ${provider} API key (${validKey.keyName}) for user ${userId}`
+            );
+            return decryptedKey;
+          } catch (decryptError: any) {
+            console.warn(
+              `Failed to decrypt user's ${provider} key: ${decryptError.message}`
+            );
+          }
         }
-        return process.env[envVar]!;
+      }
+      
+      console.log(
+        `No user-specific ${provider} key for user ${userId}, checking system keys`
+      );
+    } catch (error: any) {
+      console.warn(
+        `Failed to fetch user ${provider} key for ${userId}: ${error.message}`
+      );
+    }
+  }
+
+  // Fallback to environment variables
+  for (const envVar of envVarNames) {
+    if (process.env[envVar]) {
+      if (userId) {
+        console.log(`Using system ${provider} API key for user ${userId}`);
+      }
+      return process.env[envVar]!;
+    }
+  }
+
+  return null;
+}
+
+ private async getUserOpenAI(userId: string | undefined): Promise<{ 
+  client: OpenAI; 
+  keyType: 'user' | 'system' 
+} | null> {
+  if (!userId) return null;
+  
+  // First try to get user's key
+  try {
+    const userApiKeys = await storage.getUserApiKeys(userId);
+    
+    if (userApiKeys && userApiKeys.length > 0) {
+      const validKey = userApiKeys.find(
+        (key: any) => 
+          key.provider === 'openai' && 
+          key.isActive && 
+          key.validationStatus === 'valid'
+      );
+
+      if (validKey && validKey.encryptedApiKey) {
+        try {
+          const decryptedKey = apiKeyEncryptionService.decrypt(validKey.encryptedApiKey);
+          console.log(`Using user's openai API key (${validKey.keyName}) for user ${userId}`);
+          return {
+            client: new OpenAI({ apiKey: decryptedKey }),
+            keyType: 'user'
+          };
+        } catch (decryptError: any) {
+          console.warn(`Failed to decrypt user's openai key: ${decryptError.message}`);
+        }
       }
     }
-
-    return null;
+  } catch (error: any) {
+    console.warn(`Failed to fetch user's API keys: ${error.message}`);
   }
 
-  private async getUserOpenAI(userId: string | undefined): Promise<OpenAI | null> {
-    if (!userId) return null;
-    
-    const apiKey = await this.getAPIKey(
-      userId,
-      "openai",
-      ["OPENAI_API_KEY", "OPENAI_API_KEY_ENV_VAR"]
-    );
-    
-    return apiKey ? new OpenAI({ apiKey }) : null;
+  // Fallback to system key
+  const systemKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR;
+  if (systemKey) {
+    console.log(`Using system openai API key for user ${userId}`);
+    return {
+      client: new OpenAI({ apiKey: systemKey }),
+      keyType: 'system'
+    };
   }
 
-  private async getUserAnthropic(userId: string | undefined): Promise<Anthropic | null> {
-    if (!userId) return null;
+  return null;
+}
+
+private async getUserAnthropic(userId: string | undefined): Promise<{ 
+  client: Anthropic; 
+  keyType: 'user' | 'system' 
+} | null> {
+  if (!userId) return null;
+  
+  // First try to get user's key
+  try {
+    const userApiKeys = await storage.getUserApiKeys(userId);
     
-    const apiKey = await this.getAPIKey(userId, "anthropic", ["ANTHROPIC_API_KEY"]);
-    return apiKey ? new Anthropic({ apiKey }) : null;
+    if (userApiKeys && userApiKeys.length > 0) {
+      const validKey = userApiKeys.find(
+        (key: any) => 
+          key.provider === 'anthropic' && 
+          key.isActive && 
+          key.validationStatus === 'valid'
+      );
+
+      if (validKey && validKey.encryptedApiKey) {
+        try {
+          const decryptedKey = apiKeyEncryptionService.decrypt(validKey.encryptedApiKey);
+          console.log(`Using user's anthropic API key (${validKey.keyName}) for user ${userId}`);
+          return {
+            client: new Anthropic({ apiKey: decryptedKey }),
+            keyType: 'user'
+          };
+        } catch (decryptError: any) {
+          console.warn(`Failed to decrypt user's anthropic key: ${decryptError.message}`);
+        }
+      }
+    }
+  } catch (error: any) {
+    console.warn(`Failed to fetch user's API keys: ${error.message}`);
   }
+
+  // Fallback to system key
+  const systemKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+  if (systemKey) {
+    console.log(`Using system anthropic API key for user ${userId}`);
+    return {
+      client: new Anthropic({ apiKey: systemKey }),
+      keyType: 'system'
+    };
+  }
+
+  return null;
+}
 
   private async getUserGooglePageSpeedApiKey(userId: string | undefined): Promise<string | null> {
     return this.getAPIKey(userId, "google_pagespeed", ["GOOGLE_PAGESPEED_API_KEY"]);
@@ -968,78 +1072,65 @@ Return ONLY valid JSON with the exact structure specified.`;
   }
 
   private async getAIAnalysisResponse(
-    prompt: string,
-    userId?: string
-  ): Promise<{ result: string; tokensUsed: number; provider: string; keyType: 'user' | 'system' } | null> {
-    const openai = await this.getUserOpenAI(userId);
-    const anthropic = await this.getUserAnthropic(userId);
+  prompt: string,
+  userId?: string
+): Promise<{ result: string; tokensUsed: number; provider: string; keyType: 'user' | 'system' } | null> {
+  const openaiResult = await this.getUserOpenAI(userId);
+  const anthropicResult = await this.getUserAnthropic(userId);
 
-    let keyType: 'user' | 'system' = 'system';
+  if (openaiResult) {
+    try {
+      const response = await openaiResult.client.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: "You are an SEO expert. Return ONLY valid JSON without any markdown formatting."
+          },
+          { role: "user", content: prompt }
+        ],
+        max_tokens: 2000,
+        temperature: 0.3,
+        response_format: { type: "json_object" }
+      });
 
-    if (openai) {
-      try {
-
-        if (userId) {
-        const userKey = await storage.getDecryptedApiKey(userId, "openai");
-        keyType = userKey ? 'user' : 'system';
-      }
-
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            {
-              role: "system",
-              content: "You are an SEO expert. Return ONLY valid JSON without any markdown formatting."
-            },
-            { role: "user", content: prompt }
-          ],
-          max_tokens: 2000,
-          temperature: 0.3,
-          response_format: { type: "json_object" }
-        });
-
-        return {
-          result: response.choices[0].message.content || "",
-          tokensUsed: response.usage?.total_tokens || 0,
-          provider: "openai",
-          keyType
-        };
-      } catch (error) {
-        console.error("OpenAI API error:", error);
-      }
+      return {
+        result: response.choices[0].message.content || "",
+        tokensUsed: response.usage?.total_tokens || 0,
+        provider: "openai",
+        keyType: openaiResult.keyType  // Use the actual key type from the client creation
+      };
+    } catch (error) {
+      console.error("OpenAI API error:", error);
     }
-
-    if (anthropic) {
-      try {
-      if (userId) {
-        const userKey = await storage.getDecryptedApiKey(userId, "anthropic");
-        keyType = userKey ? 'user' : 'system';
-      }
-
-        const response = await anthropic.messages.create({
-          model: "claude-3-5-sonnet-latest",
-          max_tokens: 2000,
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.3,
-        });
-
-        const text = response.content[0].type === "text" 
-          ? response.content[0].text 
-          : "";
-
-        return {
-          result: text,
-          tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
-          provider: "anthropic",
-          keyType
-        };
-      } catch (error) {
-        console.error("Anthropic API error:", error);
-      }
-    }
-
-    return null;
   }
+
+  if (anthropicResult) {
+    try {
+      const response = await anthropicResult.client.messages.create({
+        model: "claude-3-5-sonnet-latest",
+        max_tokens: 2000,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3,
+      });
+
+      const text = response.content[0].type === "text" 
+        ? response.content[0].text 
+        : "";
+
+      return {
+        result: text,
+        tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
+        provider: "anthropic",
+        keyType: anthropicResult.keyType  // Use the actual key type from the client creation
+      };
+    } catch (error) {
+      console.error("Anthropic API error:", error);
+    }
+  }
+
+  return null;
+}
 
   private parseAIResponse(response: string): any {
     try {

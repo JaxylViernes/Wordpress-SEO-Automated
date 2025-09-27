@@ -247,7 +247,7 @@ export class ImageService {
     try {
       await storage.trackAiUsage({
         userId,
-        websiteId,  // Now we have a valid websiteId
+        websiteId: websiteId || 'default',  // Now we have a valid websiteId
         model: 'dall-e-3',
         operation: 'image_generation',
         tokensUsed: 0,

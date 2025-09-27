@@ -848,6 +848,12 @@ async clearAllActivityLogs(websiteId?: string): Promise<any> {
   },
 
     //API USAGE
+    getApiKeyUsageSummary: () =>
+    fetchWithCredentials('/api/user/api-keys/usage-summary').then(res => {
+      if (!res.ok) throw new Error('Failed to fetch usage summary');
+      return res.json();
+    }),
+    
   getApiKeyStatus: () => 
   fetchWithCredentials('/api/user/api-keys/status').then(res => {
     if (!res.ok) throw new Error('Failed to fetch API key status');

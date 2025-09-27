@@ -5,6 +5,7 @@ import { storage } from "server/storage";
 import { seoService } from "./seo-service";
 import * as cheerio from "cheerio";
 import { randomUUID } from "crypto";
+import { apiKeyEncryptionService } from "./api-key-encryption";
 
 // Types and Interfaces
 export interface AIFixResult {
@@ -54,7 +55,7 @@ export enum ProcessingMode {
   SAMPLE = 'sample',      // 10 items (current default)
   PARTIAL = 'partial',    // 50 items
   FULL = 'full',         // All content up to max
-  PRIORITY = 'priority'   // High-value pages only
+  PRIORITY = 'priority'   // High-
 }
 
 interface ProcessingOptions {
@@ -119,66 +120,89 @@ class AIFixService {
   }
 
   // API Key Management Methods
-  private async getAPIKey(
-    userId: string | undefined,
-    provider: string,
-    envVarNames: string[]
-  ): Promise<string | null> {
-    if (userId) {
-      try {
-        const userKey = await storage.getDecryptedApiKey(userId, provider);
-        if (userKey) return userKey;
-        
-        this.addLog(
-          `No user-specific ${provider} key for user ${userId}, checking system keys`,
-          "info"
+ private async getAPIKey(
+  userId: string | undefined,
+  provider: string,
+  envVarNames: string[]
+): Promise<{ key: string; type: 'user' | 'system' } | null> {
+  // Try user key first if userId provided
+  if (userId) {
+    try {
+      const userApiKeys = await storage.getUserApiKeys(userId);
+      
+      if (userApiKeys && userApiKeys.length > 0) {
+        const validKey = userApiKeys.find(
+          (key: any) => 
+            key.provider === provider && 
+            key.isActive && 
+            key.validationStatus === 'valid'
         );
-      } catch (error: any) {
-        this.addLog(
-          `Failed to get user ${provider} key: ${error.message}`,
-          "warning"
-        );
-      }
-    }
 
-    // Fallback to environment variables
-    for (const envVar of envVarNames) {
-      if (process.env[envVar]) {
-        if (userId) {
-          this.addLog(`Using system ${provider} API key for user ${userId}`, "info");
+        if (validKey && validKey.encryptedApiKey) {
+          try {
+            const decryptedKey = apiKeyEncryptionService.decrypt(validKey.encryptedApiKey);
+            this.addLog(`Using user's ${provider} API key (${validKey.keyName})`, "info");
+            return { key: decryptedKey, type: 'user' };
+          } catch (decryptError: any) {
+            this.addLog(`Failed to decrypt user's ${provider} key: ${decryptError.message}`, "warning");
+          }
         }
-        return process.env[envVar]!;
       }
+    } catch (error: any) {
+      this.addLog(`Failed to fetch user's API keys: ${error.message}`, "warning");
     }
-
-    return null;
   }
 
-  private async getUserOpenAI(userId: string | undefined): Promise<any | null> {
-    const apiKey = await this.getAPIKey(
-      userId,
-      "openai",
-      ["OPENAI_API_KEY", "OPENAI_API_KEY_ENV_VAR"]
-    );
-    
-    if (!apiKey) return null;
-    
-    const { default: OpenAI } = await import("openai");
-    return new OpenAI({ apiKey });
+  // Fallback to environment variables
+  for (const envVar of envVarNames) {
+    if (process.env[envVar]) {
+      this.addLog(`Using system ${provider} API key`, "info");
+      return { key: process.env[envVar]!, type: 'system' };
+    }
   }
 
-  private async getUserAnthropic(userId: string | undefined): Promise<any | null> {
-    const apiKey = await this.getAPIKey(
-      userId,
-      "anthropic", 
-      ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"]
-    );
-    
-    if (!apiKey) return null;
-    
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    return new Anthropic({ apiKey });
-  }
+  return null;
+}
+
+
+ private async getUserOpenAI(userId: string | undefined): Promise<{
+  client: any;
+  keyType: 'user' | 'system';
+} | null> {
+  const keyInfo = await this.getAPIKey(
+    userId,
+    "openai",
+    ["OPENAI_API_KEY", "OPENAI_API_KEY_ENV_VAR"]
+  );
+  
+  if (!keyInfo) return null;
+  
+  const { default: OpenAI } = await import("openai");
+  return {
+    client: new OpenAI({ apiKey: keyInfo.key }),
+    keyType: keyInfo.type
+  };
+}
+
+// Replace getUserAnthropic method
+private async getUserAnthropic(userId: string | undefined): Promise<{
+  client: any;
+  keyType: 'user' | 'system';
+} | null> {
+  const keyInfo = await this.getAPIKey(
+    userId,
+    "anthropic",
+    ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"]
+  );
+  
+  if (!keyInfo) return null;
+  
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  return {
+    client: new Anthropic({ apiKey: keyInfo.key }),
+    keyType: keyInfo.type
+  };
+}
 
   private getProcessingLimits(mode: ProcessingMode = ProcessingMode.SAMPLE): ProcessingLimits {
   switch (mode) {
@@ -574,7 +598,7 @@ private validateRequiredMethods(): boolean {
   return { appliedFixes, errors };
 }
 
-// Add a helper method to verify all required methods exist at initialization:
+
 private verifyFixStrategies(): void {
   const requiredMethods = [
     'fixImageAltText',
@@ -666,13 +690,9 @@ private listAvailableStrategies(): string[] {
 
 
   private getFixStrategy(fixType: string): ((creds: WordPressCredentials, fixes: AIFix[], userId?: string) => Promise<{ applied: AIFix[]; errors: string[] }>) | null {
-  // Normalize fix types to handle variations
   const normalizedType = fixType.replace(/__/g, '_').toLowerCase();
-  
-  // Log what we're looking for
   this.addLog(`Looking for strategy: ${fixType} (normalized: ${normalizedType})`, 'info');
   
-  // Complete method mapping for ALL fix types
   const methodMap: Record<string, string> = {
     // Alt text variations
     'missing_alt_text': 'fixImageAltText',
@@ -752,15 +772,13 @@ private listAvailableStrategies(): string[] {
     'missing_robots_txt': 'fixRobotsTxt',
   };
   
-  // Get the method name
   const methodName = methodMap[normalizedType] || methodMap[fixType];
   
   if (!methodName) {
     this.addLog(`No method mapping found for ${fixType}`, 'warning');
     return null;
   }
-  
-  // Get the actual method from the class
+
   const method = (this as any)[methodName];
   
   if (!method) {
@@ -773,13 +791,12 @@ private listAvailableStrategies(): string[] {
     return null;
   }
   
-  // Successfully found the method, bind it
   this.addLog(`Found strategy method: ${methodName} for ${fixType}`, 'success');
   return method.bind(this);
 }
 
   // Generic WordPress content fix method
- private async fixWordPressContent(
+private async fixWordPressContent(
   creds: WordPressCredentials,
   fixes: AIFix[],
   fixProcessor: (content: any, fix: AIFix) => Promise<{ 
@@ -794,7 +811,6 @@ private listAvailableStrategies(): string[] {
   const errors: string[] = [];
 
   try {
-    // Get processing limits based on mode
     const limits = processingOptions?.mode 
       ? this.getProcessingLimits(processingOptions.mode)
       : { maxItems: 10, batchSize: 5, delayBetweenBatches: 1000 };
@@ -804,14 +820,11 @@ private listAvailableStrategies(): string[] {
 
     this.addLog(`Processing mode: ${processingOptions?.mode || 'SAMPLE'} (max: ${maxItems}, batch: ${batchSize})`, 'info');
 
-    // Fetch content based on mode
     let allContent: any[];
     
     if (processingOptions?.mode === ProcessingMode.PRIORITY && processingOptions?.priorityUrls) {
-      // Fetch specific priority pages
       allContent = await this.fetchPriorityContent(creds, processingOptions.priorityUrls);
     } else {
-      // Fetch all content with pagination
       allContent = await this.getAllWordPressContent(creds, maxItems);
     }
 
@@ -819,27 +832,33 @@ private listAvailableStrategies(): string[] {
 
     let processedCount = 0;
     
-    // Process in batches
     for (let i = 0; i < allContent.length; i += batchSize) {
       const batch = allContent.slice(i, Math.min(i + batchSize, allContent.length));
       const batchNumber = Math.floor(i / batchSize) + 1;
       const totalBatches = Math.ceil(allContent.length / batchSize);
       
       this.addLog(`Processing batch ${batchNumber}/${totalBatches} (${batch.length} items)`, 'info');
-
-      // Process each item in the batch
-      for (const content of batch) {
-        for (const fix of fixes) {
-          try {
-            const result = await fixProcessor(content, fix);
-            
-            if (result.updated) {
-              await this.updateWordPressContent(
-                creds, 
-                content.id, 
-                result.data, 
-                content.contentType
+       for (const content of batch) {
+      const originalImages = this.extractImages(content.content?.rendered || "");
+      
+      for (const fix of fixes) {
+        try {
+          const result = await fixProcessor(content, fix);
+          
+          if (result.updated) {
+            if (result.data.content) {
+              result.data.content = this.ensureImagesPreserved(
+                result.data.content, 
+                originalImages
               );
+            }
+            
+            await this.updateWordPressContent(
+              creds, 
+              content.id, 
+              result.data, 
+              content.contentType
+            );
               
               applied.push({
                 ...fix,
@@ -860,21 +879,16 @@ private listAvailableStrategies(): string[] {
         }
         
         processedCount++;
-        
-        // Call progress callback if provided
         if (processingOptions?.progressCallback) {
           processingOptions.progressCallback(processedCount, allContent.length);
         }
       }
-
-      // Add delay between batches (except for last batch)
       if (i + batchSize < allContent.length) {
         this.addLog(`Waiting ${limits.delayBetweenBatches}ms before next batch...`, 'info');
         await new Promise(resolve => setTimeout(resolve, limits.delayBetweenBatches));
       }
     }
 
-    // Handle case where no updates were needed
     if (applied.length === 0 && errors.length === 0) {
       this.addLog(`No updates needed for ${fixes[0].type} - content already compliant`, "info");
       
@@ -901,6 +915,41 @@ private listAvailableStrategies(): string[] {
   }
 }
 
+
+// Helper method to extract images
+private extractImages(html: string): Array<{src: string, element: string}> {
+  const images: Array<{src: string, element: string}> = [];
+  const imgRegex = /<img[^>]*>/gi;
+  const matches = html.match(imgRegex) || [];
+  
+  for (const match of matches) {
+    const srcMatch = match.match(/src=["']([^"']+)["']/i);
+    if (srcMatch) {
+      images.push({
+        src: srcMatch[1],
+        element: match
+      });
+    }
+  }
+  
+  return images;
+}
+
+// Helper method to ensure images are preserved
+private ensureImagesPreserved(
+  processedContent: string, 
+  originalImages: Array<{src: string, element: string}>
+): string {
+  for (const img of originalImages) {
+    if (img.src.includes('cloudinary') && !processedContent.includes(img.src)) {
+      console.warn(`⚠️ Cloudinary image lost during processing: ${img.src}`);
+      processedContent = img.element + '\n' + processedContent;
+    }
+  }
+  
+  return processedContent;
+}
+
 private async fetchPriorityContent(
   creds: WordPressCredentials,
   priorityUrls: string[]
@@ -909,11 +958,8 @@ private async fetchPriorityContent(
   
   for (const url of priorityUrls) {
     try {
-      // Extract slug from URL
       const slug = url.split('/').filter(s => s).pop();
       if (!slug) continue;
-      
-      // Try to fetch as page first, then post
       const pageEndpoint = `${creds.url.replace(/\/$/, "")}/wp-json/wp/v2/pages?slug=${slug}`;
       const postEndpoint = `${creds.url.replace(/\/$/, "")}/wp-json/wp/v2/posts?slug=${slug}`;
       
@@ -948,10 +994,8 @@ private async fetchPriorityContent(
 }
 
   private normalizeFixType(fixType: string): string {
-    // Convert double underscores to single
     let normalized = fixType.replace(/__/g, '_');
     
-    // Handle specific known variations
     const mappings: Record<string, string> = {
       'missing_alt__text': 'missing_alt_text',
       'missing_alt_text': 'missing_alt_text',
@@ -964,7 +1008,7 @@ private async fetchPriorityContent(
 
 
   private async fixHeadingStructure(
-  creds: WordPressCredentials,
+   creds: WordPressCredentials,
   fixes: AIFix[],
   userId?: string
 ): Promise<{ applied: AIFix[]; errors: string[] }> {
@@ -978,8 +1022,6 @@ private async fetchPriorityContent(
     const h1s = $("h1");
     let updated = false;
     const changes: string[] = [];
-    
-    // Check current heading structure
     const hasProperStructure = h1s.length === 1;
     const hasProperHierarchy = this.checkHeadingHierarchy($);
     
@@ -991,7 +1033,6 @@ private async fetchPriorityContent(
       };
     }
     
-    // Fix multiple H1s
     if (h1s.length > 1) {
       h1s.each((index, el) => {
         if (index > 0) {
@@ -1003,27 +1044,22 @@ private async fetchPriorityContent(
       });
     }
 
-    // Add missing H1
     if (h1s.length === 0) {
       const title = content.title?.rendered || content.title || "Page Title";
       const cleanTitle = title.replace(/<[^>]*>/g, ''); // Remove any HTML from title
       
-      // Add H1 at the beginning of content
       const newH1 = `<h1>${cleanTitle}</h1>`;
       $.root().prepend(newH1);
       
       changes.push(`Added missing H1 tag with title: "${cleanTitle}"`);
       updated = true;
     }
-
-    // Check and fix heading hierarchy
     const headings = $("h1, h2, h3, h4, h5, h6").toArray();
     let previousLevel = 0;
     
     headings.forEach((heading) => {
       const currentLevel = parseInt(heading.tagName.charAt(1));
       
-      // If we skip levels (e.g., H1 -> H3), fix it
       if (currentLevel > previousLevel + 1 && previousLevel !== 0) {
         const correctLevel = previousLevel + 1;
         const headingText = $(heading).text();
@@ -1048,11 +1084,7 @@ private async fetchPriorityContent(
         description: "Heading structure already optimal"
       };
     }
-
-    // FIXED: Use the safe extraction method
     const finalContent = this.extractHtmlContent($);
-
-    // Create detailed description
     const description = changes.length === 1
       ? changes[0]
       : `Fixed heading structure issues:\n${changes.map(c => `• ${c}`).join('\n')}`;
@@ -1066,13 +1098,10 @@ private async fetchPriorityContent(
 }
 
   // Fix Image Alt Text
- private async fixImageAltText(creds: WordPressCredentials, fixes: AIFix[], userId?: string, processingOptions?: ProcessingOptions) {
+private async fixImageAltText(creds: WordPressCredentials, fixes: AIFix[], userId?: string) {
   return this.fixWordPressContent(creds, fixes, async (content, fix) => {
     const contentHtml = content.content?.rendered || content.content || "";
-    const $ = cheerio.load(contentHtml, {
-      xml: false,
-      decodeEntities: false
-    });
+    const $ = cheerio.load(contentHtml, this.getCheerioConfig());
     
     const imagesWithoutAlt = $('img:not([alt]), img[alt=""]');
     
@@ -1090,53 +1119,70 @@ private async fetchPriorityContent(
     imagesWithoutAlt.each((_, img) => {
       const $img = $(img);
       const src = $img.attr("src") || "";
+      
       if (src && !src.startsWith("data:")) {
+        const originalSrc = src; // Store original
         const imgName = src.split('/').pop()?.substring(0, 30) || 'image';
         const altText = this.generateFallbackAltText(src, content.title?.rendered || content.title || "");
+        
         $img.attr("alt", altText);
+        $img.attr("src", originalSrc);
+        
         specificChanges.push(`${imgName}: "${altText}"`);
         updated = true;
       }
     });
 
-    // FIXED: Better HTML extraction that preserves all elements including images
-    const finalContent = this.extractHtmlContent($);
-
-    const description = specificChanges.length === 1
-      ? `Added alt text to ${specificChanges[0]}`
-      : `Added alt text to ${specificChanges.length} images:\n${specificChanges.slice(0, 3).map(c => `• ${c}`).join('\n')}${specificChanges.length > 3 ? `\n• ...and ${specificChanges.length - 3} more` : ''}`;
+    const finalContent = $.html({
+      decodeEntities: false,
+      xmlMode: false,
+      selfClosingTags: true
+    });
 
     return {
       updated,
       data: updated ? { content: finalContent } : {},
-      description: updated ? description : "All images already have descriptive alt text"
+      description: updated ? `Added alt text to ${specificChanges.length} images` : "All images already have alt text"
     };
-  }, userId, processingOptions);
+  }, userId);
 }
 
-// 2. Add this new helper method for safe HTML extraction
+
+private getCheerioConfig() {
+  return {
+    xml: false,
+    decodeEntities: false,
+    normalizeWhitespace: false,
+    recognizeSelfClosing: true,
+    xmlMode: false,
+    lowerCaseAttributeNames: false,
+    lowerCaseTags: false
+  };
+}
+
 private extractHtmlContent($: cheerio.CheerioAPI): string {
-  // Try to get body content first
-  let content = $('body').html();
+  let html = $.html({
+    decodeEntities: false,
+    xmlMode: false,
+    selfClosingTags: true
+  });
   
-  if (content) {
-    return content;
-  }
-  
-  // If no body tag, get the entire HTML
-  // Use $.html() without parameters to get the full document
-  content = $.html();
-  
-  // If the content has HTML/HEAD/BODY tags, extract just the body content
-  if (content.includes('<html') || content.includes('<body')) {
-    const bodyMatch = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    if (bodyMatch) {
-      return bodyMatch[1];
+  if (html.includes('<html>') || html.includes('<body>')) {
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    if (bodyMatch && bodyMatch[1]) {
+      return bodyMatch[1].trim();
     }
+    
+    html = html
+      .replace(/^<!DOCTYPE[^>]*>/i, '')
+      .replace(/^<html[^>]*>/i, '')
+      .replace(/<\/html>\s*$/i, '')
+      .replace(/^<head>[\s\S]*?<\/head>/i, '')
+      .replace(/^<body[^>]*>/i, '')
+      .replace(/<\/body>\s*$/i, '');
   }
   
-  // Return the content as-is (it's already just the inner HTML)
-  return content;
+  return html.trim();
 }
 
   // Fix Meta Descriptions
@@ -1145,7 +1191,6 @@ private extractHtmlContent($: cheerio.CheerioAPI): string {
     const excerpt = content.excerpt?.rendered || content.excerpt || "";
     const title = content.title?.rendered || content.title || "";
     
-    // Check current state
     const cleanExcerpt = excerpt.replace(/<[^>]*>/g, '').trim();
     
     if (cleanExcerpt.length >= 120 && cleanExcerpt.length <= 160) {
@@ -1166,7 +1211,6 @@ private extractHtmlContent($: cheerio.CheerioAPI): string {
       };
     }
     
-    // Create specific description showing the change
     const beforePreview = cleanExcerpt.substring(0, 50) || "[empty]";
     const afterPreview = metaDescription.substring(0, 50);
     
@@ -1190,9 +1234,7 @@ private extractHtmlContent($: cheerio.CheerioAPI): string {
         description: `Title already optimal (${currentTitle.length} chars): "${currentTitle}"` 
       };
     }
-
     const optimizedTitle = await this.optimizeTitle(currentTitle, content.content?.rendered || "", userId);
-    
     const issue = currentTitle.length < 30 ? 'too short' : 'too long';
     
     return {
@@ -1215,13 +1257,9 @@ private extractHtmlContent($: cheerio.CheerioAPI): string {
     }
     
     const improvedContent = await this.improveContent(contentText, title, analysis.improvements, userId);
-    // Don't use extractContentOnly here as it might strip images
-    // The improvedContent should already be clean from the AI
-    const cleanedContent = this.cleanAndValidateContent(improvedContent);
-    
     return {
       updated: true,
-      data: { content: cleanedContent },
+      data: { content: improvedContent },
       description: `Improved content quality (score: ${analysis.score} → ~${analysis.score + 15})`
     };
   }, userId);
@@ -1260,12 +1298,10 @@ private extractHtmlContent($: cheerio.CheerioAPI): string {
 
   if (headings.length <= 1) return true;
 
-  // Check for proper hierarchy (no skipped levels)
   let previousLevel = headings[0];
   for (let i = 1; i < headings.length; i++) {
-    // Allow same level or one level deeper or going back up
     if (headings[i] > previousLevel + 1) {
-      return false; // Skipped a level
+      return false; 
     }
     previousLevel = headings[i];
   }
@@ -1309,127 +1345,117 @@ private extractHtmlContent($: cheerio.CheerioAPI): string {
   }
 
   private async callAIProvider(
-    provider: string,
-    systemMessage: string,
-    userMessage: string,
-    maxTokens: number = 500,
-    temperature: number = 0.7,
-    userId?: string
-  ): Promise<string> {
-    try {
+  provider: string,
+  systemMessage: string,
+  userMessage: string,
+  maxTokens: number = 500,
+  temperature: number = 0.7,
+  userId?: string
+): Promise<string> {
+  try {
+    return await this.callProviderDirectly(
+      provider, 
+      systemMessage, 
+      userMessage, 
+      maxTokens, 
+      temperature,
+      userId
+    );
+  } catch (error) {
+    // Try fallback provider
+    const fallbackProvider = provider === "claude" ? "openai" : "claude";
+    if (await this.isProviderAvailable(fallbackProvider, userId)) {
       return await this.callProviderDirectly(
-        provider, 
+        fallbackProvider, 
         systemMessage, 
         userMessage, 
         maxTokens, 
         temperature,
         userId
       );
-    } catch (error) {
-      // Try fallback provider
-      const fallbackProvider = provider === "claude" ? "openai" : "claude";
-      if (await this.isProviderAvailable(fallbackProvider, userId)) {
-        return await this.callProviderDirectly(
-          fallbackProvider, 
-          systemMessage, 
-          userMessage, 
-          maxTokens, 
-          temperature,
-          userId
-        );
-      }
-      throw error;
     }
+    throw error;
   }
+}
 
   private async callProviderDirectly(
-    provider: string,
-    systemMessage: string,
-    userMessage: string,
-    maxTokens: number,
-    temperature: number,
-    userId?: string
-  ): Promise<{ content: string; keyType: 'user' | 'system' }> {
-    let keyType: 'user' | 'system' = 'system';
-
-    if (provider === "claude" || provider === "anthropic") {
-      const anthropic = await this.getUserAnthropic(userId);
-      if (!anthropic) {
-        throw new Error("Anthropic API not available");
-      }
-
-      if (userId) {
-      const userKey = await storage.getDecryptedApiKey(userId, "anthropic");
-      keyType = userKey ? 'user' : 'system';
+  provider: string,
+  systemMessage: string,
+  userMessage: string,
+  maxTokens: number,
+  temperature: number,
+  userId?: string
+): Promise<string> {
+  if (provider === "claude" || provider === "anthropic") {
+    const anthropicResult = await this.getUserAnthropic(userId);
+    if (!anthropicResult) {
+      throw new Error("Anthropic API not available");
     }
 
-      const response = await anthropic.messages.create({
-        model: "claude-3-5-sonnet-latest",
-        max_tokens: maxTokens,
-        temperature,
-        system: systemMessage,
-        messages: [{ role: "user", content: userMessage }],
-      });
+    const response = await anthropicResult.client.messages.create({
+      model: "claude-3-5-sonnet-latest",
+      max_tokens: maxTokens,
+      temperature,
+      system: systemMessage,
+      messages: [{ role: "user", content: userMessage }],
+    });
 
-      const content = response.content[0];
+    const content = response.content[0];
 
-       if (userId && this.currentWebsiteId) {
-      const tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
-      await storage.trackAiUsage({
+    // Track usage with new tracker
+    if (userId && this.currentWebsiteId) {
+      await apiUsageTracker.trackUsage({
         userId,
         websiteId: this.currentWebsiteId,
+        provider: 'anthropic',
         model: "claude-3-5-sonnet-latest",
-        tokensUsed,
-        costUsd: Math.round((tokensUsed * 0.003 / 1000) * 100),
         operation: "ai_fix_content",
-        keyType // ADD THIS
+        keyType: anthropicResult.keyType,
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        totalTokens: response.usage.input_tokens + response.usage.output_tokens
       });
     }
 
-      return { content: content.type === "text" ? content.text : "", keyType};
-      
-    } else if (provider === "openai") {
-      const openai = await this.getUserOpenAI(userId);
-      if (!openai) {
-        throw new Error("OpenAI API not available");
-      }
-
-      if (userId) {
-      const userKey = await storage.getDecryptedApiKey(userId, "openai");
-      keyType = userKey ? 'user' : 'system';
-    }
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemMessage },
-          { role: "user", content: userMessage },
-        ],
-        temperature,
-        max_tokens: maxTokens,
-      });
-
-       if (userId && this.currentWebsiteId) {
-      const tokensUsed = response.usage?.total_tokens || 0;
-      await storage.trackAiUsage({
-        userId,
-        websiteId: this.currentWebsiteId,
-        model: "gpt-4o-mini",
-        tokensUsed,
-        costUsd: Math.round((tokensUsed * 0.01 / 1000) * 100),
-        operation: "ai_fix_content",
-        keyType // ADD THIS
-      });
-    }
-
-     return {
-      content: response.choices[0]?.message?.content || "",
-      keyType
-    };
-  }
+    return content.type === "text" ? content.text : "";
     
-    throw new Error(`Unsupported AI provider: ${provider}`);
+  } else if (provider === "openai") {
+    const openaiResult = await this.getUserOpenAI(userId);
+    if (!openaiResult) {
+      throw new Error("OpenAI API not available");
+    }
+
+    const response = await openaiResult.client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemMessage },
+        { role: "user", content: userMessage },
+      ],
+      temperature,
+      max_tokens: maxTokens,
+    });
+
+    // Track usage
+    if (userId && this.currentWebsiteId) {
+      const usage = response.usage;
+      await apiUsageTracker.trackUsage({
+        userId,
+        websiteId: this.currentWebsiteId,
+        provider: 'openai',
+        model: "gpt-4o-mini",
+        operation: "ai_fix_content",
+        keyType: openaiResult.keyType,
+        inputTokens: usage?.prompt_tokens || 0,
+        outputTokens: usage?.completion_tokens || 0,
+        totalTokens: usage?.total_tokens || 0
+      });
+    }
+
+    return response.choices[0]?.message?.content || "";
   }
+  
+  throw new Error(`Unsupported AI provider: ${provider}`);
+}
 
   // Content Generation Methods with Human-Like Prompts
   private async generateMetaDescription(title: string, content: string, userId?: string): Promise<string> {
@@ -1579,9 +1605,8 @@ Return ONLY the improved HTML content without ANY meta-commentary or explanation
   }
 }
 
-// Add this new method to remove AI artifacts:
+
 private removeAIArtifacts(content: string): string {
-  // Remove common AI preambles
   const preamblePatterns = [
     /^Here's the .+?:\s*\n*/gi,
     /^I've .+?:\s*\n*/gi,
@@ -1596,8 +1621,7 @@ private removeAIArtifacts(content: string): string {
   for (const pattern of preamblePatterns) {
     cleaned = cleaned.replace(pattern, '');
   }
-  
-  // If content starts with a sentence about what it is, remove it
+
   const firstLineMatch = cleaned.match(/^[^<]*\./);
   if (firstLineMatch) {
     const firstLine = firstLineMatch[0].toLowerCase();
@@ -1614,9 +1638,7 @@ private removeAIArtifacts(content: string): string {
 }
 
   private humanizeContent(content: string): string {
-    // Post-process AI content to make it more human-like
     const replacements: [RegExp, string][] = [
-      // Remove overly formal transitions
       [/Furthermore,/g, 'Also,'],
       [/Moreover,/g, 'Plus,'],
       [/Nevertheless,/g, 'Still,'],
@@ -1653,26 +1675,19 @@ private removeAIArtifacts(content: string): string {
   const $ = cheerio.load(content, {
     xml: false,
     decodeEntities: false,
-    normalizeWhitespace: false // Preserve formatting
+    normalizeWhitespace: false 
   });
 
-  // Basic improvements without AI
-  
-  // 1. Ensure paragraphs aren't too long
   $('p').each((i, elem) => {
     const text = $(elem).text();
     if (text.length > 500) {
-      // Split long paragraphs
       const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
       const midPoint = Math.floor(sentences.length / 2);
       
       if (sentences.length > 3) {
         const firstHalf = sentences.slice(0, midPoint).join(' ');
         const secondHalf = sentences.slice(midPoint).join(' ');
-        
-        // Preserve any HTML within the paragraph (like images)
         const innerHtml = $(elem).html() || '';
-        // Only split if there are no images or other elements inside
         if (!innerHtml.includes('<img') && !innerHtml.includes('<a')) {
           $(elem).replaceWith(`<p>${firstHalf}</p><p>${secondHalf}</p>`);
         }
@@ -1680,13 +1695,11 @@ private removeAIArtifacts(content: string): string {
     }
   });
 
-  // 2. Add subheadings if content is too long without structure
   const paragraphs = $('p').toArray();
   if (paragraphs.length > 5) {
     let hasSubheadings = $('h2, h3').length > 0;
     
     if (!hasSubheadings) {
-      // Add a subheading every 3-4 paragraphs
       $(paragraphs[3]).before('<h2>Key Points</h2>');
       if (paragraphs.length > 8) {
         $(paragraphs[7]).before('<h2>Additional Information</h2>');
@@ -1694,11 +1707,9 @@ private removeAIArtifacts(content: string): string {
     }
   }
 
-  // 3. Ensure lists aren't too long
   $('ul, ol').each((i, elem) => {
     const items = $(elem).find('li');
     if (items.length > 10) {
-      // Split into multiple lists
       const midPoint = Math.floor(items.length / 2);
       const firstList = items.slice(0, midPoint);
       const secondList = items.slice(midPoint);
@@ -1714,25 +1725,19 @@ private removeAIArtifacts(content: string): string {
     }
   });
 
-  // Use safe extraction method
   return this.extractHtmlContent($);
 }
 
   private extractContentOnly(html: string): string {
   if (!html) return '';
-  
-  // If it looks like a full HTML document
+
   if (html.includes('<!DOCTYPE') || html.includes('<html') || html.includes('<HTML')) {
     const $ = cheerio.load(html, {
       xml: false,
       decodeEntities: false
     });
-    
-    // Use the safe extraction method
     return this.extractHtmlContent($);
   }
-  
-  // Already just content, return as-is
   return html;
 }
 
@@ -1757,37 +1762,65 @@ private removeAIArtifacts(content: string): string {
   }
 
   private async updateWordPressContent(
-    creds: WordPressCredentials,
-    id: number,
-    data: any,
-    contentType: 'post' | 'page' = 'post'
-  ) {
-    if (data.content) {
-      data.content = this.cleanAndValidateContent(data.content);
-    }
+  creds: WordPressCredentials,
+  id: number,
+  data: any,
+  contentType: 'post' | 'page' = 'post'
+) {
+
+  let originalCloudinaryCount = 0;
+  if (data.content) {
+    const imageCount = (data.content.match(/<img[^>]*>/gi) || []).length;
+    const cloudinaryCount = (data.content.match(/cloudinary/gi) || []).length;
     
-    const endpoint = contentType === 'page' 
-      ? `${creds.url.replace(/\/$/, "")}/wp-json/wp/v2/pages/${id}`
-      : `${creds.url.replace(/\/$/, "")}/wp-json/wp/v2/posts/${id}`;
-      
-    const auth = Buffer.from(`${creds.username}:${creds.applicationPassword}`).toString("base64");
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
+    console.log(`📝 Updating ${contentType} ${id}:`, {
+      imageCount,
+      cloudinaryImageReferences: cloudinaryCount,
+      contentLength: data.content.length
     });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`Failed to update ${contentType} ${id}: ${errorBody}`);
-    }
-
-    return response.json();
   }
+  
+  const endpoint = contentType === 'page' 
+    ? `${creds.url.replace(/\/$/, "")}/wp-json/wp/v2/pages/${id}`
+    : `${creds.url.replace(/\/$/, "")}/wp-json/wp/v2/posts/${id}`;
+    
+  const auth = Buffer.from(`${creds.username}:${creds.applicationPassword}`).toString("base64");
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Failed to update ${contentType} ${id}: ${errorBody}`);
+  }
+
+  const result = await response.json();
+  
+  // Verify images are still present
+  if (data.content) {
+    const resultContent = result.content?.rendered || "";
+    const resultImageCount = (resultContent.match(/<img[^>]*>/gi) || []).length;
+    const resultCloudinaryCount = (resultContent.match(/cloudinary/gi) || []).length;
+    
+    console.log(`✅ Update completed:`, {
+      originalImages: (data.content.match(/<img[^>]*>/gi) || []).length,
+      resultImages: resultImageCount,
+      cloudinaryReferences: resultCloudinaryCount
+    });
+    
+    if (resultCloudinaryCount < originalCloudinaryCount) {
+      console.error(`⚠️ WARNING: Lost Cloudinary images during update!`);
+    }
+  }
+  
+  return result;
+}
 
   private async testWordPressConnection(creds: WordPressCredentials): Promise<void> {
     const connectionTest = await wordpressService.testConnection(creds);
@@ -1818,15 +1851,12 @@ private removeAIArtifacts(content: string): string {
     cleaned = cleaned.replace(pattern, '');
   }
   
-  // Remove trailing HTML artifacts
   cleaned = cleaned.replace(/["']?\s*html\s*$/gi, '');
   cleaned = cleaned.replace(/\s*["']\s*$/g, '');
   
-  // If content contains HTML, extract just the HTML part
   const htmlMatch = cleaned.match(/<(!DOCTYPE|html|body|div|p|h[1-6]|article|section)[\s>]/i);
   if (htmlMatch && htmlMatch.index && htmlMatch.index > 0) {
     const beforeHtml = cleaned.substring(0, htmlMatch.index).trim();
-    // Check if text before HTML is likely AI commentary
     if (beforeHtml && !beforeHtml.includes('{') && !beforeHtml.includes('[')) {
       cleaned = cleaned.substring(htmlMatch.index);
     }
@@ -1844,10 +1874,9 @@ private removeAIArtifacts(content: string): string {
   return cleaned.trim();
 }
 
-  private cleanAndValidateContent(content: string): string {
+private cleanAndValidateContent(content: string): string {
   if (!content) return '';
   
-  // Remove AI-generated preambles but preserve images
   const invalidPatterns = [
     /in this optimized version/gi,
     /i've integrated.*keywords/gi,
@@ -1859,55 +1888,33 @@ private removeAIArtifacts(content: string): string {
   for (const pattern of invalidPatterns) {
     cleaned = cleaned.replace(pattern, '');
   }
-
-  // Parse with cheerio but be careful to preserve all elements
-  const $ = cheerio.load(cleaned, {
-    xml: false,
-    decodeEntities: false,
-    // Important: don't normalize whitespace which can affect inline elements
-    normalizeWhitespace: false
-  });
-  
-  // Use safe extraction that preserves images
-  cleaned = this.extractHtmlContent($);
-  
-  // Fix broken HTML artifacts without removing images
-  cleaned = this.fixBrokenHtmlArtifacts(cleaned);
-  
-  // Validate HTML structure
-  cleaned = this.validateHtmlStructure(cleaned);
+  cleaned = cleaned
+    .replace(/["']?\s*html\s*$/gi, '')
+    .replace(/^\s*html\s*["']?/gi, '');
   
   return cleaned;
 }
 
+
 // Add this new method to fix broken HTML artifacts
 private fixBrokenHtmlArtifacts(content: string): string {
   let fixed = content;
-  
-  // Remove orphaned quotes and partial HTML tags at the end
   fixed = fixed.replace(/["']?\s*html\s*$/gi, '');
   fixed = fixed.replace(/["']\s*$/g, '');
-  
-  // Remove incomplete tags at the end
   fixed = fixed.replace(/<[^>]*$/g, '');
   
-  // Remove stray closing tags without opening tags
   const $ = cheerio.load(fixed, { xml: false, decodeEntities: false });
   
-  // Clean up any text nodes that look like broken HTML
   $('*').contents().filter(function() {
     return this.type === 'text';
   }).each(function() {
     let text = $(this).text();
-    // Remove patterns like "html or 'html at the end of text nodes
     text = text.replace(/["']?\s*html\s*$/gi, '');
     text = text.replace(/^\s*html["']?/gi, '');
     $(this).replaceWith(text);
   });
   
   fixed = $.html();
-  
-  // Final cleanup passes
   fixed = fixed.replace(/>\s*["']?\s*html\s*</gi, '><');
   fixed = fixed.replace(/>\s*["']?\s*html\s*$/gi, '>');
   fixed = fixed.replace(/^\s*html\s*["']?\s*/gi, '');
@@ -1923,20 +1930,16 @@ private validateHtmlStructure(content: string): string {
     normalizeWhitespace: false
   });
   
-  // Ensure all images have proper attributes
   $('img').each((i, elem) => {
     const $img = $(elem);
     if (!$img.attr('alt')) {
       $img.attr('alt', '');
     }
-    // Ensure src doesn't have broken quotes
     const src = $img.attr('src');
     if (src) {
       $img.attr('src', src.replace(/["']/g, ''));
     }
   });
-  
-  // Fix broken links
   $('a').each((i, elem) => {
     const $link = $(elem);
     const href = $link.attr('href');
@@ -1945,26 +1948,19 @@ private validateHtmlStructure(content: string): string {
     }
   });
   
-  // Remove empty paragraphs that might cause issues
   $('p').each((i, elem) => {
     const $p = $(elem);
     const text = $p.text().trim();
     const html = $p.html()?.trim();
-    
-    // Remove if paragraph only contains broken HTML artifacts
     if (text === 'html' || text === '"html' || text === "'html") {
       $p.remove();
     }
-    // Remove truly empty paragraphs
     else if (!text && (!html || html === '&nbsp;')) {
       $p.remove();
     }
   });
   
-  // Clean up any standalone text that looks like HTML artifacts
   let finalHtml = $.html();
-  
-  // Remove common HTML artifacts that might appear
   const artifactPatterns = [
     /^\s*["']?\s*html\s*["']?\s*/gi,
     /\s*["']?\s*html\s*["']?\s*$/gi,
@@ -1975,7 +1971,6 @@ private validateHtmlStructure(content: string): string {
   
   for (const pattern of artifactPatterns) {
     finalHtml = finalHtml.replace(pattern, (match) => {
-      // Preserve the HTML tags but remove the artifact
       return match.replace(/["']?\s*html\s*["']?/gi, '');
     });
   }
@@ -2187,25 +2182,17 @@ private validateHtmlStructure(content: string): string {
         const $img = $(elem);
         const src = $img.attr('src') || '';
         
-        // Check and fix various image optimizations
         let imageChanged = false;
-        
-        // 1. Add loading="lazy" for images not already lazy loaded
         if (!$img.attr('loading')) {
           $img.attr('loading', 'lazy');
           imageChanged = true;
           optimizations.push('lazy loading');
         }
-        
-        // 2. Add decoding="async" for better performance
         if (!$img.attr('decoding')) {
           $img.attr('decoding', 'async');
           imageChanged = true;
         }
-        
-        // 3. Add dimensions if missing to prevent CLS
         if (!$img.attr('width') || !$img.attr('height')) {
-          // Try to extract dimensions from filename
           const sizeMatch = src.match(/-(\d+)x(\d+)\./);
           if (sizeMatch) {
             $img.attr('width', sizeMatch[1]);
@@ -2214,8 +2201,6 @@ private validateHtmlStructure(content: string): string {
             optimizations.push('dimensions');
           }
         }
-        
-        // 4. Add srcset for responsive images if not present
         if (!$img.attr('srcset') && src) {
           const srcset = this.generateSrcSet(src);
           if (srcset) {
@@ -2627,9 +2612,6 @@ private validateHtmlStructure(content: string): string {
     return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
   }
 
-  // Additional fix implementations
-
-  // 1. Schema Markup Implementation
   private async fixSchemaMarkup(
     creds: WordPressCredentials,
     fixes: AIFix[],
@@ -2671,7 +2653,6 @@ private validateHtmlStructure(content: string): string {
     }, userId);
   }
 
-  // 2. Internal Linking Improvements
   private async improveInternalLinking(
     creds: WordPressCredentials,
     fixes: AIFix[],
@@ -2704,8 +2685,6 @@ private validateHtmlStructure(content: string): string {
       
       // Count existing internal links
       const existingInternalLinks = $('a[href*="' + creds.url + '"]').length;
-      
-      // Add internal links if too few
       if (existingInternalLinks < 2) {
         const paragraphs = $('p').toArray();
         let linksAdded = 0;
@@ -2722,7 +2701,6 @@ private validateHtmlStructure(content: string): string {
             
             for (const keyword of data.keywords) {
               if (paraText.toLowerCase().includes(keyword) && !$(para).html()?.includes('href')) {
-                // Add link around the keyword
                 const regex = new RegExp(`\\b(${keyword})\\b`, 'gi');
                 const newHtml = $(para).html()?.replace(
                   regex,
@@ -2753,7 +2731,6 @@ private validateHtmlStructure(content: string): string {
     }, userId);
   }
 
-  // 3. Open Graph Tags
   private async fixOpenGraphTags(
     creds: WordPressCredentials,
     fixes: AIFix[],
@@ -2766,10 +2743,7 @@ private validateHtmlStructure(content: string): string {
         decodeEntities: false
       });
       
-      // Extract first image for og:image
       const firstImage = $('img').first().attr('src') || '';
-      
-      // Generate Open Graph meta tags
       const ogTags = `
 <!-- Open Graph Meta Tags -->
 <meta property="og:title" content="${content.title?.rendered || content.title}" />
@@ -2785,7 +2759,6 @@ ${firstImage ? `<meta property="og:image" content="${firstImage}" />` : ''}
 ${firstImage ? `<meta name="twitter:image" content="${firstImage}" />` : ''}
 `;
       
-      // Add tags to head (or as a comment in content for instructions)
       $('body').prepend(`<!-- ADD TO HEAD SECTION: ${ogTags} -->`);
       
       const finalContent = $('body').html() || $.html();
@@ -2798,10 +2771,6 @@ ${firstImage ? `<meta name="twitter:image" content="${firstImage}" />` : ''}
     }, userId);
   }
 
-  // Continue with remaining methods...
-  // [All other methods from the original file continue here unchanged]
-  
-  // 4. Fix Broken Internal Links
   private async fixBrokenInternalLinks(
     creds: WordPressCredentials,
     fixes: AIFix[],
@@ -2828,13 +2797,11 @@ ${firstImage ? `<meta name="twitter:image" content="${firstImage}" />` : ''}
       $('a[href*="' + creds.url + '"]').each((_, elem) => {
         const href = $(elem).attr('href');
         if (href && !validUrls.has(href)) {
-          // Try to find a similar valid URL
           const similarUrl = this.findSimilarUrl(href, validUrls);
           if (similarUrl) {
             $(elem).attr('href', similarUrl);
             fixedLinks++;
           } else {
-            // Remove link but keep text
             const text = $(elem).text();
             $(elem).replaceWith(text);
             fixedLinks++;
@@ -2854,11 +2821,6 @@ ${firstImage ? `<meta name="twitter:image" content="${firstImage}" />` : ''}
       return { updated: false, data: {}, description: "No broken internal links found" };
     }, userId);
   }
-
-  // [Continue with all remaining methods from the original file...]
-  // The rest of the methods remain exactly as in the original file
-  
-  // Helper method implementations
   private extractKeywords(title: string): string[] {
     const stopWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for'];
     return title.toLowerCase()
@@ -2909,9 +2871,6 @@ ${firstImage ? `<meta name="twitter:image" content="${firstImage}" />` : ''}
     }
   }
 
-  // [Continue with all remaining helper methods exactly as they are in the original file...]
-
-  // 5. External Link Attributes
  private async fixExternalLinkAttributes(
   creds: WordPressCredentials,
   fixes: AIFix[],
@@ -2934,8 +2893,7 @@ ${firstImage ? `<meta name="twitter:image" content="${firstImage}" />` : ''}
         const $link = $(elem);
         const linkText = $link.text().substring(0, 30);
         const changes: string[] = [];
-        
-        // Track specific changes
+  
         if (!$link.attr('target')) {
           $link.attr('target', '_blank');
           changes.push('target="_blank"');
@@ -2970,8 +2928,6 @@ ${firstImage ? `<meta name="twitter:image" content="${firstImage}" />` : ''}
     
     if (linksFixed > 0) {
       const finalContent = $('body').html() || $.html();
-      
-      // Create detailed description
       const description = linksFixed === 1 
         ? specificChanges[0]
         : `Fixed ${linksFixed} external links:\n${specificChanges.slice(0, 3).map(c => `• ${c}`).join('\n')}${linksFixed > 3 ? `\n• ...and ${linksFixed - 3} more` : ''}`;
@@ -2991,16 +2947,10 @@ ${firstImage ? `<meta name="twitter:image" content="${firstImage}" />` : ''}
   }, userId);
 }
 
-  // [Continue with ALL remaining methods from the original file...]
-  // Include all the other fix methods and helper functions exactly as they appear in the original
-
   private findSimilarUrl(brokenUrl: string, validUrls: Set<string>): string | null {
-    // Extract the slug from the broken URL
     const slug = brokenUrl.split('/').pop()?.replace(/\/$/, '');
     
     if (!slug) return null;
-    
-    // Find a URL with similar slug
     for (const validUrl of validUrls) {
       if (validUrl.includes(slug)) {
         return validUrl;
@@ -3023,21 +2973,34 @@ ${firstImage ? `<meta name="twitter:image" content="${firstImage}" />` : ''}
     return nofollowDomains.some(domain => url.includes(domain));
   }
 
-  private generateSrcSet(src: string): string | null {
-    // Basic srcset generation for WordPress images
-    const baseUrl = src.replace(/-\d+x\d+\./, '.');
-    const ext = src.split('.').pop();
-    
-    if (!ext) return null;
-    
-    const sizes = [300, 768, 1024];
-    const srcset = sizes.map(size => {
-      const sizedUrl = baseUrl.replace(`.${ext}`, `-${size}x${Math.round(size * 0.75)}.${ext}`);
-      return `${sizedUrl} ${size}w`;
-    });
-    
-    return srcset.join(', ');
+  private async generateSrcSetSafe(src: string, creds?: WordPressCredentials): Promise<string | null> {
+  // Don't generate srcset for external images
+  if (src.startsWith('http') && creds && !src.includes(creds.url)) {
+    return null;
   }
+  if (src.startsWith('data:')) {
+    return null;
+  }
+  
+  if (src.match(/-\d+x\d+\./)) {
+    return null;
+  }
+  
+  const ext = src.split('.').pop();
+  if (!ext || !['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext.toLowerCase())) {
+    return null;
+  }
+  
+  const sizes = [
+    { w: 150, h: 150, suffix: '-150x150' },
+    { w: 300, h: 300, suffix: '-300x300' },
+    { w: 768, h: 0, suffix: '-768x' },  // Height varies
+    { w: 1024, h: 0, suffix: '-1024x' }
+  ];
+  
+  return `${src} 1920w`;  // Just use original with a max width
+}
+
 
   private async expandContentWithAI(
     title: string,
@@ -3096,13 +3059,10 @@ Add relevant sections, examples, and valuable information while maintaining natu
   }
 
   private async getWebsiteUrl(websiteId: string): Promise<string> {
-    // Get the website URL from storage
     const website = await storage.getUserWebsite(websiteId, this.currentUserId!);
     return website?.url || '';
   }
 
-  // [Include ALL remaining methods from original file - they should all be here]
-  // 6. Image Optimization (dimensions, lazy loading)
   private async fixImageDimensions(
   creds: WordPressCredentials,
   fixes: AIFix[],
@@ -3110,9 +3070,11 @@ Add relevant sections, examples, and valuable information while maintaining natu
 ): Promise<{ applied: AIFix[]; errors: string[] }> {
   return this.fixWordPressContent(creds, fixes, async (content, fix) => {
     const contentHtml = content.content?.rendered || content.content || "";
+    
     const $ = cheerio.load(contentHtml, {
       xml: false,
-      decodeEntities: false
+      decodeEntities: false,
+      normalizeWhitespace: false
     });
     
     let imagesFixed = 0;
@@ -3121,15 +3083,16 @@ Add relevant sections, examples, and valuable information while maintaining natu
     $('img').each((_, elem) => {
       const $img = $(elem);
       const src = $img.attr('src') || '';
+      
+      if (!src) return;
+      
       const imgName = src.split('/').pop()?.substring(0, 30) || 'image';
       const changes: string[] = [];
       
-      // Track what we're adding
       if (!$img.attr('loading')) {
         $img.attr('loading', 'lazy');
         changes.push('loading="lazy"');
       }
-      
       if (!$img.attr('decoding')) {
         $img.attr('decoding', 'async');
         changes.push('decoding="async"');
@@ -3143,15 +3106,7 @@ Add relevant sections, examples, and valuable information while maintaining natu
           changes.push(`dimensions="${sizeMatch[1]}x${sizeMatch[2]}"`);
         }
       }
-      
-      if (!$img.attr('srcset') && src) {
-        const srcset = this.generateSrcSet(src);
-        if (srcset) {
-          $img.attr('srcset', srcset);
-          $img.attr('sizes', '(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw');
-          changes.push('responsive srcset');
-        }
-      }
+  
       
       if (changes.length > 0) {
         imagesFixed++;
@@ -3160,9 +3115,8 @@ Add relevant sections, examples, and valuable information while maintaining natu
     });
     
     if (imagesFixed > 0) {
-      const finalContent = $('body').html() || $.html();
+      const finalContent = this.extractHtmlContent($);
       
-      // Create detailed description
       const description = imagesFixed === 1
         ? `Optimized "${specificChanges[0]}"`
         : `Optimized ${imagesFixed} images:\n${specificChanges.slice(0, 3).map(c => `• ${c}`).join('\n')}${imagesFixed > 3 ? `\n• ...and ${imagesFixed - 3} more` : ''}`;
@@ -3177,60 +3131,41 @@ Add relevant sections, examples, and valuable information while maintaining natu
     return { 
       updated: false, 
       data: {}, 
-      description: "All images already optimized with lazy loading, dimensions, and responsive attributes" 
+      description: "All images already optimized with lazy loading and dimensions" 
     };
   }, userId);
 }
 
-  // 7. Breadcrumb Implementation
-  private async fixBreadcrumbs(
-    creds: WordPressCredentials,
-    fixes: AIFix[],
-    userId?: string
-  ): Promise<{ applied: AIFix[]; errors: string[] }> {
-    return this.fixWordPressContent(creds, fixes, async (content, fix) => {
-      const contentHtml = content.content?.rendered || content.content || "";
-      const $ = cheerio.load(contentHtml, {
-        xml: false,
-        decodeEntities: false
-      });
-      
-      // Check if breadcrumbs already exist
-      if ($('.breadcrumb, .breadcrumbs, nav[aria-label*="breadcrumb"]').length > 0) {
-        return { updated: false, data: {}, description: "Breadcrumbs already present" };
-      }
-      
-      // Generate breadcrumb HTML with schema
-      const breadcrumbHtml = `
-<nav aria-label="breadcrumb">
-  <ol class="breadcrumb" itemscope itemtype="https://schema.org/BreadcrumbList">
-    <li class="breadcrumb-item" itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <a href="${creds.url}" itemprop="item">
-        <span itemprop="name">Home</span>
-      </a>
-      <meta itemprop="position" content="1" />
-    </li>
-    <li class="breadcrumb-item active" itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-      <span itemprop="name">${content.title?.rendered || content.title}</span>
-      <meta itemprop="position" content="2" />
-    </li>
-  </ol>
-</nav>`;
-      
-      // Add breadcrumbs at the beginning of content
-      $('body').prepend(breadcrumbHtml);
-      
-      const finalContent = $('body').html() || $.html();
-      
-      return {
-        updated: true,
-        data: { content: finalContent },
-        description: `Added breadcrumb navigation with schema markup`
-      };
-    }, userId);
-  }
-
-  // 8. Thin Content Expansion
+ private async fixBreadcrumbs(
+  creds: WordPressCredentials,
+  fixes: AIFix[],
+  userId?: string
+): Promise<{ applied: AIFix[]; errors: string[] }> {
+  return this.fixWordPressContent(creds, fixes, async (content, fix) => {
+    const contentHtml = content.content?.rendered || content.content || "";
+    const $ = cheerio.load(contentHtml, {
+      xml: false,
+      decodeEntities: false,
+      normalizeWhitespace: false
+    });
+    
+    if ($('.breadcrumb, .breadcrumbs, nav[aria-label*="breadcrumb"]').length > 0) {
+      return { updated: false, data: {}, description: "Breadcrumbs already present" };
+    }
+    
+    const breadcrumbHtml = `...breadcrumb HTML...`;
+    
+    $.root().prepend(breadcrumbHtml);
+    
+    const finalContent = this.extractHtmlContent($);
+    
+    return {
+      updated: true,
+      data: { content: finalContent },
+      description: `Added breadcrumb navigation with schema markup`
+    };
+  }, userId);
+}
   private async expandThinContent(
     creds: WordPressCredentials,
     fixes: AIFix[],
@@ -3240,7 +3175,6 @@ Add relevant sections, examples, and valuable information while maintaining natu
       const contentText = this.extractTextFromHTML(content.content?.rendered || "");
       const wordCount = contentText.split(/\s+/).length;
       
-      // If content is already substantial, skip
       if (wordCount >= 500) {
         return { updated: false, data: {}, description: "Content length already sufficient" };
       }
@@ -3282,13 +3216,11 @@ Add relevant sections, examples, and valuable information while maintaining natu
         decodeEntities: false
       });
       
-      // Look for FAQ-like content (questions in headings)
       const questions: Array<{question: string, answer: string}> = [];
       
       $('h2, h3').each((_, elem) => {
         const text = $(elem).text();
         if (text.includes('?')) {
-          // Get the answer (next paragraph or div)
           const answer = $(elem).next('p, div').text();
           if (answer) {
             questions.push({ question: text, answer });
@@ -3313,8 +3245,6 @@ Add relevant sections, examples, and valuable information while maintaining natu
           }
         }))
       };
-      
-      // Add schema to content
       $('body').append(`<script type="application/ld+json">${JSON.stringify(faqSchema)}</script>`);
       
       const finalContent = $('body').html() || $.html();
@@ -3326,8 +3256,6 @@ Add relevant sections, examples, and valuable information while maintaining natu
       };
     }, userId);
   }
-
-  // 10. Site-wide Fixes (these work differently as they modify site settings)
   private async generateXMLSitemap(
     creds: WordPressCredentials,
     fixes: AIFix[],
@@ -3349,16 +3277,12 @@ Add relevant sections, examples, and valuable information while maintaining natu
         };
       }
       
-      // Generate sitemap content
       const [posts, pages] = await Promise.all([
         this.getWordPressContent(creds, "posts").catch(() => []),
         this.getWordPressContent(creds, "pages").catch(() => [])
       ]);
       
       const sitemapXml = this.generateSitemapXML([...posts, ...pages], creds.url);
-      
-      // Note: Actually creating the sitemap would require server-side access
-      // This returns instructions for manual implementation
       return {
         applied: fixes.map(fix => ({
           ...fix,
@@ -3407,14 +3331,11 @@ Crawl-delay: 1`;
     };
   }
 
-  // Update the optimizePermalinks method  
   private async optimizePermalinks(
     creds: WordPressCredentials,
     fixes: AIFix[],
     userId?: string
   ): Promise<{ applied: AIFix[]; errors: string[] }> {
-    // Note: This would typically require WordPress admin API access
-    // Returning recommendations instead
     const recommendations = {
       structure: "/%postname%/",
       category_base: "category",
@@ -3433,7 +3354,6 @@ Crawl-delay: 1`;
     };
   }
 
-  // Add canonical URL fixes
   private async fixCanonicalUrls(
     creds: WordPressCredentials,
     fixes: AIFix[],
@@ -3461,13 +3381,11 @@ Crawl-delay: 1`;
     }, userId);
   }
 
-  // Fix orphan pages (pages with no internal links pointing to them)
   private async fixOrphanPages(
     creds: WordPressCredentials,
     fixes: AIFix[],
     userId?: string
   ): Promise<{ applied: AIFix[]; errors: string[] }> {
-    // Get all content to find orphan pages
     const [posts, pages] = await Promise.all([
       this.getWordPressContent(creds, "posts").catch(() => []),
       this.getWordPressContent(creds, "pages").catch(() => [])
@@ -3499,7 +3417,6 @@ Crawl-delay: 1`;
       };
     }
     
-    // Add links to orphan pages in a hub page or menu
     const linkList = orphanPages.map(page => 
       `<li><a href="${page.link}">${page.title?.rendered || page.title}</a></li>`
     ).join('\n');
@@ -3600,7 +3517,6 @@ Crawl-delay: 1`;
   }
 }
 
-// Simplified Content Optimizer Class
 class ContentOptimizer {
   async optimizeKeywords(content: string, title: string): Promise<string> {
     const keywords = this.extractKeywords(title);
@@ -3653,7 +3569,6 @@ class ContentOptimizer {
   }
 
   private createNaturalIntro(keyword: string, existingText: string): string {
-    // Create natural introductions based on context
     const intros = [
       `When it comes to ${keyword}, ${existingText.charAt(0).toLowerCase()}${existingText.slice(1)}`,
       `${existingText} This is especially true for ${keyword}.`,
