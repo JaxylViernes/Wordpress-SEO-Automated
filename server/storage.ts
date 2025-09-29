@@ -1613,8 +1613,9 @@ async getUserClientReports(userId: string): Promise<ClientReport[]> {
 
   async trackAiUsage(usage: InsertAiUsageTracking & { 
   userId: string; 
-  keyType?: 'user' | 'system' 
+  keyType: 'user' | 'system' 
 }): Promise<AiUsageTracking> {
+  console.log(`📊 Tracking AI usage: ${usage.operation} with ${usage.keyType} key for user ${usage.userId}`);
   const [usageRecord] = await db
     .insert(aiUsageTracking)
     .values({
@@ -1624,7 +1625,7 @@ async getUserClientReports(userId: string): Promise<ClientReport[]> {
       operation: usage.operation,
       tokensUsed: usage.tokensUsed,
       costUsd: usage.costUsd,
-      keyType: usage.keyType || 'system'  // Use the keyType field directly
+      keyType: usage.keyType // Use the keyType field directly
     })
     .returning();
   return usageRecord;

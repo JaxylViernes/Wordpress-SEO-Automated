@@ -2221,21 +2221,595 @@ app.delete("/api/admin/users/:userId", requireAdmin, async (req: Request, res: R
   }
 });
 
-// Get system API key usage (admin only)
+// // Get system API key usage (admin only)
+// app.get("/api/admin/system-api-usage", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     // Get all AI usage tracking grouped by provider
+//     const systemUsage = await db
+//       .select({
+//         model: aiUsageTracking.model,
+//         operation: aiUsageTracking.operation,
+//         totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+//         totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+//         usageCount: sql<number>`COUNT(*)::integer`,
+//         lastUsed: sql<Date>`MAX(${aiUsageTracking.createdAt})`,
+//       })
+//       .from(aiUsageTracking)
+//       .groupBy(aiUsageTracking.model, aiUsageTracking.operation)
+//       .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+//     // Get usage by time period (last 30 days)
+//     const thirtyDaysAgo = new Date();
+//     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+//     const dailyUsage = await db
+//       .select({
+//         date: sql<string>`DATE(${aiUsageTracking.createdAt})`,
+//         totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+//         totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+//         requests: sql<number>`COUNT(*)::integer`,
+//       })
+//       .from(aiUsageTracking)
+//       .where(gte(aiUsageTracking.createdAt, thirtyDaysAgo))
+//       .groupBy(sql`DATE(${aiUsageTracking.createdAt})`)
+//       .orderBy(desc(sql`DATE(${aiUsageTracking.createdAt})`));
+
+//     // Get current month usage
+//     const startOfMonth = new Date();
+//     startOfMonth.setDate(1);
+//     startOfMonth.setHours(0, 0, 0, 0);
+
+//     const [monthlyStats] = await db
+//       .select({
+//         totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+//         totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+//         totalRequests: sql<number>`COUNT(*)::integer`,
+//       })
+//       .from(aiUsageTracking)
+//       .where(gte(aiUsageTracking.createdAt, startOfMonth));
+
+//     // Check which system keys are configured
+//     const systemKeysStatus = {
+//       openai: !!process.env.OPENAI_API_KEY,
+//       anthropic: !!process.env.ANTHROPIC_API_KEY,
+//       google: !!process.env.GOOGLE_AI_API_KEY,
+//       googlePageSpeed: !!process.env.GOOGLE_PAGESPEED_API_KEY,
+//       cloudinary: !!process.env.CLOUDINARY_API_KEY,
+//     };
+
+//     // Calculate estimated costs per provider
+//     const providerCosts = systemUsage.reduce((acc: any, usage: any) => {
+//       const provider = usage.model.includes('gpt') ? 'openai' : 
+//                       usage.model.includes('claude') ? 'anthropic' : 
+//                       usage.model.includes('gemini') ? 'google' : 'other';
+      
+//       if (!acc[provider]) {
+//         acc[provider] = { tokens: 0, costCents: 0, requests: 0 };
+//       }
+      
+//       acc[provider].tokens += usage.totalTokens;
+//       acc[provider].costCents += usage.totalCostCents;
+//       acc[provider].requests += usage.usageCount;
+      
+//       return acc;
+//     }, {});
+
+//     res.json({
+//       systemKeysStatus,
+//       usageByModel: systemUsage,
+//       dailyUsage,
+//       monthlyStats: monthlyStats || { totalTokens: 0, totalCostCents: 0, totalRequests: 0 },
+//       providerCosts,
+//       currentDate: new Date().toISOString(),
+//       billingPeriod: {
+//         start: startOfMonth.toISOString(),
+//         end: new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0).toISOString()
+//       }
+//     });
+//   } catch (error) {
+//     console.error("Failed to fetch system API usage:", error);
+//     res.status(500).json({ message: "Failed to fetch system API usage" });
+//   }
+// });
+
+// // Get per-user API usage (admin only)
+// app.get("/api/admin/users-api-usage", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     // Get usage grouped by user
+//     const userUsage = await db
+//       .select({
+//         userId: aiUsageTracking.userId,
+//         username: users.username,
+//         email: users.email,
+//         totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+//         totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+//         requestCount: sql<number>`COUNT(*)::integer`,
+//         lastUsed: sql<Date>`MAX(${aiUsageTracking.createdAt})`,
+//       })
+//       .from(aiUsageTracking)
+//       .innerJoin(users, eq(aiUsageTracking.userId, users.id))
+//       .groupBy(aiUsageTracking.userId, users.username, users.email)
+//       .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+//     // Get detailed breakdown for each user
+//     const userBreakdowns = await Promise.all(
+//       userUsage.map(async (user) => {
+//         const breakdown = await db
+//           .select({
+//             model: aiUsageTracking.model,
+//             operation: aiUsageTracking.operation,
+//             tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+//             costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+//             requests: sql<number>`COUNT(*)::integer`,
+//           })
+//           .from(aiUsageTracking)
+//           .where(eq(aiUsageTracking.userId, user.userId))
+//           .groupBy(aiUsageTracking.model, aiUsageTracking.operation);
+
+//         return {
+//           ...user,
+//           breakdown
+//         };
+//       })
+//     );
+
+//     // Get current month usage per user
+//     const startOfMonth = new Date();
+//     startOfMonth.setDate(1);
+//     startOfMonth.setHours(0, 0, 0, 0);
+
+//     const monthlyUserUsage = await db
+//       .select({
+//         userId: aiUsageTracking.userId,
+//         username: users.username,
+//         monthlyTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+//         monthlyCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+//         monthlyRequests: sql<number>`COUNT(*)::integer`,
+//       })
+//       .from(aiUsageTracking)
+//       .innerJoin(users, eq(aiUsageTracking.userId, users.id))
+//       .where(gte(aiUsageTracking.createdAt, startOfMonth))
+//       .groupBy(aiUsageTracking.userId, users.username)
+//       .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+//     res.json({
+//       userUsage: userBreakdowns,
+//       monthlyUserUsage,
+//       totalUsers: userUsage.length,
+//       billingPeriod: {
+//         start: startOfMonth.toISOString(),
+//         end: new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0).toISOString()
+//       }
+//     });
+//   } catch (error) {
+//     console.error("Failed to fetch per-user API usage:", error);
+//     res.status(500).json({ message: "Failed to fetch per-user API usage" });
+//   }
+// });
+
+// // Get specific user's API usage details (admin only)
+// app.get("/api/admin/users/:userId/api-usage", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const { userId } = req.params;
+    
+//     // Get user info
+//     const user = await storage.getUser(userId);
+//     if (!user) {
+//       res.status(404).json({ message: "User not found" });
+//       return;
+//     }
+
+//     // Get usage summary
+//     const [summary] = await db
+//       .select({
+//         totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+//         totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+//         totalRequests: sql<number>`COUNT(*)::integer`,
+//         firstUsed: sql<Date>`MIN(${aiUsageTracking.createdAt})`,
+//         lastUsed: sql<Date>`MAX(${aiUsageTracking.createdAt})`,
+//       })
+//       .from(aiUsageTracking)
+//       .where(eq(aiUsageTracking.userId, userId));
+
+//     // Get usage by model
+//     const modelUsage = await db
+//       .select({
+//         model: aiUsageTracking.model,
+//         tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+//         costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+//         requests: sql<number>`COUNT(*)::integer`,
+//       })
+//       .from(aiUsageTracking)
+//       .where(eq(aiUsageTracking.userId, userId))
+//       .groupBy(aiUsageTracking.model)
+//       .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+//     // Get usage by operation
+//     const operationUsage = await db
+//       .select({
+//         operation: aiUsageTracking.operation,
+//         tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+//         costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+//         requests: sql<number>`COUNT(*)::integer`,
+//       })
+//       .from(aiUsageTracking)
+//       .where(eq(aiUsageTracking.userId, userId))
+//       .groupBy(aiUsageTracking.operation)
+//       .orderBy(desc(sql`COUNT(*)`));
+
+//     // Get daily usage for last 30 days
+//     const thirtyDaysAgo = new Date();
+//     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+//     const dailyUsage = await db
+//       .select({
+//         date: sql<string>`DATE(${aiUsageTracking.createdAt})`,
+//         tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+//         costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+//         requests: sql<number>`COUNT(*)::integer`,
+//       })
+//       .from(aiUsageTracking)
+//       .where(
+//         and(
+//           eq(aiUsageTracking.userId, userId),
+//           gte(aiUsageTracking.createdAt, thirtyDaysAgo)
+//         )
+//       )
+//       .groupBy(sql`DATE(${aiUsageTracking.createdAt})`)
+//       .orderBy(desc(sql`DATE(${aiUsageTracking.createdAt})`));
+
+//     res.json({
+//       user: {
+//         id: user.id,
+//         username: user.username,
+//         email: user.email,
+//       },
+//       summary,
+//       modelUsage,
+//       operationUsage,
+//       dailyUsage,
+//     });
+//   } catch (error) {
+//     console.error("Failed to fetch user API usage:", error);
+//     res.status(500).json({ message: "Failed to fetch user API usage" });
+//   }
+// });
+
+
+
+// Add this endpoint to your Express server after the existing /api/admin/users-api-usage endpoint
+
+// Get specific user's API usage details (admin only)
+app.get("/api/admin/users/:userId/api-usage", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    
+    // Get user info
+    const [userInfo] = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!userInfo) {
+      res.status(404).json({ message: "User not found" });
+      return;
+    }
+
+    // Get overall usage summary for this user
+    const [summary] = await db
+      .select({
+        totalRequests: sql<number>`COUNT(*)::integer`,
+        totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        userKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN 1 END)::integer`,
+        systemKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN 1 END)::integer`,
+        userKeyTokens: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN ${aiUsageTracking.tokensUsed} ELSE 0 END), 0)::integer`,
+        systemKeyTokens: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN ${aiUsageTracking.tokensUsed} ELSE 0 END), 0)::integer`,
+        userKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+        systemKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+      })
+      .from(aiUsageTracking)
+      .where(eq(aiUsageTracking.userId, userId));
+
+    // Get usage by model and key type
+    const modelUsage = await db
+      .select({
+        model: aiUsageTracking.model,
+        keySource: aiUsageTracking.keyType,
+        requests: sql<number>`COUNT(*)::integer`,
+        tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+      })
+      .from(aiUsageTracking)
+      .where(eq(aiUsageTracking.userId, userId))
+      .groupBy(aiUsageTracking.model, aiUsageTracking.keyType)
+      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+    // Get usage by operation and key type
+    const operationUsage = await db
+      .select({
+        operation: aiUsageTracking.operation,
+        keySource: aiUsageTracking.keyType,
+        requests: sql<number>`COUNT(*)::integer`,
+        tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+      })
+      .from(aiUsageTracking)
+      .where(eq(aiUsageTracking.userId, userId))
+      .groupBy(aiUsageTracking.operation, aiUsageTracking.keyType)
+      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+    // Get daily usage for the last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const dailyUsage = await db
+      .select({
+        date: sql<string>`DATE(${aiUsageTracking.createdAt})`,
+        requests: sql<number>`COUNT(*)::integer`,
+        tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        userKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN 1 END)::integer`,
+        systemKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN 1 END)::integer`,
+      })
+      .from(aiUsageTracking)
+      .where(
+        and(
+          eq(aiUsageTracking.userId, userId),
+          gte(aiUsageTracking.createdAt, thirtyDaysAgo)
+        )
+      )
+      .groupBy(sql`DATE(${aiUsageTracking.createdAt})`)
+      .orderBy(desc(sql`DATE(${aiUsageTracking.createdAt})`));
+
+    // Get monthly usage
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const [monthlyUsage] = await db
+      .select({
+        monthlyRequests: sql<number>`COUNT(*)::integer`,
+        monthlyTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        monthlyCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        monthlyUserKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN 1 END)::integer`,
+        monthlySystemKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN 1 END)::integer`,
+        monthlyUserKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+        monthlySystemKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+      })
+      .from(aiUsageTracking)
+      .where(
+        and(
+          eq(aiUsageTracking.userId, userId),
+          gte(aiUsageTracking.createdAt, startOfMonth)
+        )
+      );
+
+    // Format the response to match what the frontend expects
+    const response = {
+      user: userInfo,
+      summary: summary || {
+        totalRequests: 0,
+        totalTokens: 0,
+        totalCostCents: 0,
+        userKeyRequests: 0,
+        systemKeyRequests: 0,
+        userKeyTokens: 0,
+        systemKeyTokens: 0,
+        userKeyCostCents: 0,
+        systemKeyCostCents: 0,
+      },
+      modelUsage: modelUsage.map(item => ({
+        model: item.model,
+        keySource: item.keySource, // 'user' or 'system'
+        requests: item.requests,
+        tokens: item.tokens,
+        costCents: item.costCents,
+      })),
+      operationUsage: operationUsage.map(item => ({
+        operation: item.operation,
+        keySource: item.keySource, // 'user' or 'system'
+        requests: item.requests,
+        tokens: item.tokens,
+        costCents: item.costCents,
+      })),
+      dailyUsage,
+      monthlyUsage: monthlyUsage || {
+        monthlyRequests: 0,
+        monthlyTokens: 0,
+        monthlyCostCents: 0,
+        monthlyUserKeyRequests: 0,
+        monthlySystemKeyRequests: 0,
+        monthlyUserKeyCostCents: 0,
+        monthlySystemKeyCostCents: 0,
+      },
+      billingPeriod: {
+        start: startOfMonth.toISOString(),
+        end: new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0).toISOString()
+      }
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error("Failed to fetch user API usage details:", error);
+    res.status(500).json({ message: "Failed to fetch user API usage details" });
+  }
+});
+
+// Get per-user API usage (admin only)
+app.get("/api/admin/users-api-usage", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get usage grouped by user with key type breakdown
+    const userUsage = await db
+      .select({
+        userId: aiUsageTracking.userId,
+        username: users.username,
+        email: users.email,
+        totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        requestCount: sql<number>`COUNT(*)::integer`,
+        lastUsed: sql<Date>`MAX(${aiUsageTracking.createdAt})`,
+        // Add key type breakdowns
+        userKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN 1 END)::integer`,
+        systemKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN 1 END)::integer`,
+        userKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+        systemKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+        userKeyTokens: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN ${aiUsageTracking.tokensUsed} ELSE 0 END), 0)::integer`,
+        systemKeyTokens: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN ${aiUsageTracking.tokensUsed} ELSE 0 END), 0)::integer`,
+      })
+      .from(aiUsageTracking)
+      .innerJoin(users, eq(aiUsageTracking.userId, users.id))
+      .groupBy(aiUsageTracking.userId, users.username, users.email)
+      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+    // Get current month usage per user with key type breakdown
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const monthlyUserUsage = await db
+      .select({
+        userId: aiUsageTracking.userId,
+        username: users.username,
+        monthlyTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        monthlyCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        monthlyRequests: sql<number>`COUNT(*)::integer`,
+        // Add monthly key type breakdowns
+        monthlyUserKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN 1 END)::integer`,
+        monthlySystemKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN 1 END)::integer`,
+        monthlyUserKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+        monthlySystemKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+      })
+      .from(aiUsageTracking)
+      .innerJoin(users, eq(aiUsageTracking.userId, users.id))
+      .where(gte(aiUsageTracking.createdAt, startOfMonth))
+      .groupBy(aiUsageTracking.userId, users.username)
+      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+    // Calculate totals for system vs user keys
+    const systemKeyTotalRequests = userUsage.reduce((sum, user) => sum + (user.systemKeyRequests || 0), 0);
+    const userKeyTotalRequests = userUsage.reduce((sum, user) => sum + (user.userKeyRequests || 0), 0);
+    const systemKeyTotalCost = userUsage.reduce((sum, user) => sum + (user.systemKeyCostCents || 0), 0);
+    const userKeyTotalCost = userUsage.reduce((sum, user) => sum + (user.userKeyCostCents || 0), 0);
+
+    res.json({
+      userUsage,
+      monthlyUserUsage,
+      totalUsers: userUsage.length,
+      // Add summary totals
+      systemKeyTotalRequests,
+      userKeyTotalRequests,
+      systemKeyTotalCost,
+      userKeyTotalCost,
+      billingPeriod: {
+        start: startOfMonth.toISOString(),
+        end: new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0).toISOString()
+      }
+    });
+  } catch (error) {
+    console.error("Failed to fetch per-user API usage:", error);
+    res.status(500).json({ message: "Failed to fetch per-user API usage" });
+  }
+});
+
+// Get specific user's API usage details (admin only)
+// Get per-user API usage (admin only)
+app.get("/api/admin/users-api-usage", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get usage grouped by user with key type breakdown
+    const userUsage = await db
+      .select({
+        userId: aiUsageTracking.userId,
+        username: users.username,
+        email: users.email,
+        totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        requestCount: sql<number>`COUNT(*)::integer`,
+        lastUsed: sql<Date>`MAX(${aiUsageTracking.createdAt})`,
+        // Add key type breakdowns
+        userKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN 1 END)::integer`,
+        systemKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN 1 END)::integer`,
+        userKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+        systemKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+        userKeyTokens: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN ${aiUsageTracking.tokensUsed} ELSE 0 END), 0)::integer`,
+        systemKeyTokens: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN ${aiUsageTracking.tokensUsed} ELSE 0 END), 0)::integer`,
+      })
+      .from(aiUsageTracking)
+      .innerJoin(users, eq(aiUsageTracking.userId, users.id))
+      .groupBy(aiUsageTracking.userId, users.username, users.email)
+      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+    // Get current month usage per user with key type breakdown
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const monthlyUserUsage = await db
+      .select({
+        userId: aiUsageTracking.userId,
+        username: users.username,
+        monthlyTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
+        monthlyCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
+        monthlyRequests: sql<number>`COUNT(*)::integer`,
+        // Add monthly key type breakdowns
+        monthlyUserKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN 1 END)::integer`,
+        monthlySystemKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN 1 END)::integer`,
+        monthlyUserKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+        monthlySystemKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+      })
+      .from(aiUsageTracking)
+      .innerJoin(users, eq(aiUsageTracking.userId, users.id))
+      .where(gte(aiUsageTracking.createdAt, startOfMonth))
+      .groupBy(aiUsageTracking.userId, users.username)
+      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
+
+    // Calculate totals for system vs user keys
+    const systemKeyTotalRequests = userUsage.reduce((sum, user) => sum + (user.systemKeyRequests || 0), 0);
+    const userKeyTotalRequests = userUsage.reduce((sum, user) => sum + (user.userKeyRequests || 0), 0);
+    const systemKeyTotalCost = userUsage.reduce((sum, user) => sum + (user.systemKeyCostCents || 0), 0);
+    const userKeyTotalCost = userUsage.reduce((sum, user) => sum + (user.userKeyCostCents || 0), 0);
+
+    res.json({
+      userUsage,
+      monthlyUserUsage,
+      totalUsers: userUsage.length,
+      // Add summary totals
+      systemKeyTotalRequests,
+      userKeyTotalRequests,
+      systemKeyTotalCost,
+      userKeyTotalCost,
+      billingPeriod: {
+        start: startOfMonth.toISOString(),
+        end: new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0).toISOString()
+      }
+    });
+  } catch (error) {
+    console.error("Failed to fetch per-user API usage:", error);
+    res.status(500).json({ message: "Failed to fetch per-user API usage" });
+  }
+});
+
+// Update system API usage endpoint to also differentiate by key type
 app.get("/api/admin/system-api-usage", requireAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
-    // Get all AI usage tracking grouped by provider
+    // Get all AI usage tracking grouped by provider and key type
     const systemUsage = await db
       .select({
         model: aiUsageTracking.model,
         operation: aiUsageTracking.operation,
+        keyType: aiUsageTracking.keyType,
         totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
         totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
         usageCount: sql<number>`COUNT(*)::integer`,
         lastUsed: sql<Date>`MAX(${aiUsageTracking.createdAt})`,
       })
       .from(aiUsageTracking)
-      .groupBy(aiUsageTracking.model, aiUsageTracking.operation)
+      .groupBy(aiUsageTracking.model, aiUsageTracking.operation, aiUsageTracking.keyType)
       .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
 
     // Get usage by time period (last 30 days)
@@ -2248,13 +2822,15 @@ app.get("/api/admin/system-api-usage", requireAdmin, async (req: Request, res: R
         totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
         totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
         requests: sql<number>`COUNT(*)::integer`,
+        systemRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN 1 END)::integer`,
+        userRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN 1 END)::integer`,
       })
       .from(aiUsageTracking)
       .where(gte(aiUsageTracking.createdAt, thirtyDaysAgo))
       .groupBy(sql`DATE(${aiUsageTracking.createdAt})`)
       .orderBy(desc(sql`DATE(${aiUsageTracking.createdAt})`));
 
-    // Get current month usage
+    // Get current month usage with key type breakdown
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
@@ -2264,6 +2840,10 @@ app.get("/api/admin/system-api-usage", requireAdmin, async (req: Request, res: R
         totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
         totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
         totalRequests: sql<number>`COUNT(*)::integer`,
+        systemKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN 1 END)::integer`,
+        userKeyRequests: sql<number>`COUNT(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN 1 END)::integer`,
+        systemKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'system' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
+        userKeyCostCents: sql<number>`COALESCE(SUM(CASE WHEN ${aiUsageTracking.keyType} = 'user' THEN ${aiUsageTracking.costUsd} ELSE 0 END), 0)::integer`,
       })
       .from(aiUsageTracking)
       .where(gte(aiUsageTracking.createdAt, startOfMonth));
@@ -2277,19 +2857,39 @@ app.get("/api/admin/system-api-usage", requireAdmin, async (req: Request, res: R
       cloudinary: !!process.env.CLOUDINARY_API_KEY,
     };
 
-    // Calculate estimated costs per provider
+    // Calculate estimated costs per provider with key type
     const providerCosts = systemUsage.reduce((acc: any, usage: any) => {
       const provider = usage.model.includes('gpt') ? 'openai' : 
                       usage.model.includes('claude') ? 'anthropic' : 
                       usage.model.includes('gemini') ? 'google' : 'other';
       
       if (!acc[provider]) {
-        acc[provider] = { tokens: 0, costCents: 0, requests: 0 };
+        acc[provider] = { 
+          tokens: 0, 
+          costCents: 0, 
+          requests: 0,
+          systemKeyTokens: 0,
+          userKeyTokens: 0,
+          systemKeyCostCents: 0,
+          userKeyCostCents: 0,
+          systemKeyRequests: 0,
+          userKeyRequests: 0
+        };
       }
       
       acc[provider].tokens += usage.totalTokens;
       acc[provider].costCents += usage.totalCostCents;
       acc[provider].requests += usage.usageCount;
+      
+      if (usage.keyType === 'system') {
+        acc[provider].systemKeyTokens += usage.totalTokens;
+        acc[provider].systemKeyCostCents += usage.totalCostCents;
+        acc[provider].systemKeyRequests += usage.usageCount;
+      } else {
+        acc[provider].userKeyTokens += usage.totalTokens;
+        acc[provider].userKeyCostCents += usage.totalCostCents;
+        acc[provider].userKeyRequests += usage.usageCount;
+      }
       
       return acc;
     }, {});
@@ -2298,7 +2898,15 @@ app.get("/api/admin/system-api-usage", requireAdmin, async (req: Request, res: R
       systemKeysStatus,
       usageByModel: systemUsage,
       dailyUsage,
-      monthlyStats: monthlyStats || { totalTokens: 0, totalCostCents: 0, totalRequests: 0 },
+      monthlyStats: monthlyStats || { 
+        totalTokens: 0, 
+        totalCostCents: 0, 
+        totalRequests: 0,
+        systemKeyRequests: 0,
+        userKeyRequests: 0,
+        systemKeyCostCents: 0,
+        userKeyCostCents: 0
+      },
       providerCosts,
       currentDate: new Date().toISOString(),
       billingPeriod: {
@@ -2311,170 +2919,6 @@ app.get("/api/admin/system-api-usage", requireAdmin, async (req: Request, res: R
     res.status(500).json({ message: "Failed to fetch system API usage" });
   }
 });
-
-// Get per-user API usage (admin only)
-app.get("/api/admin/users-api-usage", requireAdmin, async (req: Request, res: Response): Promise<void> => {
-  try {
-    // Get usage grouped by user
-    const userUsage = await db
-      .select({
-        userId: aiUsageTracking.userId,
-        username: users.username,
-        email: users.email,
-        totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
-        totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
-        requestCount: sql<number>`COUNT(*)::integer`,
-        lastUsed: sql<Date>`MAX(${aiUsageTracking.createdAt})`,
-      })
-      .from(aiUsageTracking)
-      .innerJoin(users, eq(aiUsageTracking.userId, users.id))
-      .groupBy(aiUsageTracking.userId, users.username, users.email)
-      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
-
-    // Get detailed breakdown for each user
-    const userBreakdowns = await Promise.all(
-      userUsage.map(async (user) => {
-        const breakdown = await db
-          .select({
-            model: aiUsageTracking.model,
-            operation: aiUsageTracking.operation,
-            tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
-            costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
-            requests: sql<number>`COUNT(*)::integer`,
-          })
-          .from(aiUsageTracking)
-          .where(eq(aiUsageTracking.userId, user.userId))
-          .groupBy(aiUsageTracking.model, aiUsageTracking.operation);
-
-        return {
-          ...user,
-          breakdown
-        };
-      })
-    );
-
-    // Get current month usage per user
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-
-    const monthlyUserUsage = await db
-      .select({
-        userId: aiUsageTracking.userId,
-        username: users.username,
-        monthlyTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
-        monthlyCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
-        monthlyRequests: sql<number>`COUNT(*)::integer`,
-      })
-      .from(aiUsageTracking)
-      .innerJoin(users, eq(aiUsageTracking.userId, users.id))
-      .where(gte(aiUsageTracking.createdAt, startOfMonth))
-      .groupBy(aiUsageTracking.userId, users.username)
-      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
-
-    res.json({
-      userUsage: userBreakdowns,
-      monthlyUserUsage,
-      totalUsers: userUsage.length,
-      billingPeriod: {
-        start: startOfMonth.toISOString(),
-        end: new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0).toISOString()
-      }
-    });
-  } catch (error) {
-    console.error("Failed to fetch per-user API usage:", error);
-    res.status(500).json({ message: "Failed to fetch per-user API usage" });
-  }
-});
-
-// Get specific user's API usage details (admin only)
-app.get("/api/admin/users/:userId/api-usage", requireAdmin, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { userId } = req.params;
-    
-    // Get user info
-    const user = await storage.getUser(userId);
-    if (!user) {
-      res.status(404).json({ message: "User not found" });
-      return;
-    }
-
-    // Get usage summary
-    const [summary] = await db
-      .select({
-        totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
-        totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
-        totalRequests: sql<number>`COUNT(*)::integer`,
-        firstUsed: sql<Date>`MIN(${aiUsageTracking.createdAt})`,
-        lastUsed: sql<Date>`MAX(${aiUsageTracking.createdAt})`,
-      })
-      .from(aiUsageTracking)
-      .where(eq(aiUsageTracking.userId, userId));
-
-    // Get usage by model
-    const modelUsage = await db
-      .select({
-        model: aiUsageTracking.model,
-        tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
-        costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
-        requests: sql<number>`COUNT(*)::integer`,
-      })
-      .from(aiUsageTracking)
-      .where(eq(aiUsageTracking.userId, userId))
-      .groupBy(aiUsageTracking.model)
-      .orderBy(desc(sql`SUM(${aiUsageTracking.costUsd})`));
-
-    // Get usage by operation
-    const operationUsage = await db
-      .select({
-        operation: aiUsageTracking.operation,
-        tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
-        costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
-        requests: sql<number>`COUNT(*)::integer`,
-      })
-      .from(aiUsageTracking)
-      .where(eq(aiUsageTracking.userId, userId))
-      .groupBy(aiUsageTracking.operation)
-      .orderBy(desc(sql`COUNT(*)`));
-
-    // Get daily usage for last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const dailyUsage = await db
-      .select({
-        date: sql<string>`DATE(${aiUsageTracking.createdAt})`,
-        tokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)::integer`,
-        costCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)::integer`,
-        requests: sql<number>`COUNT(*)::integer`,
-      })
-      .from(aiUsageTracking)
-      .where(
-        and(
-          eq(aiUsageTracking.userId, userId),
-          gte(aiUsageTracking.createdAt, thirtyDaysAgo)
-        )
-      )
-      .groupBy(sql`DATE(${aiUsageTracking.createdAt})`)
-      .orderBy(desc(sql`DATE(${aiUsageTracking.createdAt})`));
-
-    res.json({
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-      },
-      summary,
-      modelUsage,
-      operationUsage,
-      dailyUsage,
-    });
-  } catch (error) {
-    console.error("Failed to fetch user API usage:", error);
-    res.status(500).json({ message: "Failed to fetch user API usage" });
-  }
-});
-
 
   // ===========================================================================
   // API KEY MANAGEMENT ROUTES
@@ -2749,7 +3193,70 @@ app.get("/api/admin/users/:userId/api-usage", requireAdmin, async (req: Request,
     }
   });
 
-  app.get("/api/user/api-keys/status", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   app.get("/api/user/api-keys/status", requireAuth, async (req: Request, res: Response): Promise<void> => {
+//   try {
+//     const userId = req.user!.id;
+//     const userKeys = await storage.getUserApiKeys(userId);
+    
+//     const providers: any = {
+//       openai: { configured: false, keyName: null, status: "not_configured", usage: null },
+//       anthropic: { configured: false, keyName: null, status: "not_configured", usage: null },
+//       google_pagespeed: { configured: false, keyName: null, status: "not_configured", usage: null }
+//     };
+    
+//     // Check user keys
+//     for (const key of userKeys) {
+//       if (key.isActive && providers[key.provider as keyof typeof providers]) {
+//         const providerStatus = providers[key.provider as keyof typeof providers];
+//         const usageStats = await storage.getApiKeyUsageStats(userId, key.provider);
+        
+//         providerStatus.configured = true;
+//         providerStatus.keyName = key.keyName;
+//         providerStatus.status = key.validationStatus === 'valid' ? 'active' : 'invalid';
+//         providerStatus.keyId = key.id;
+//         providerStatus.usage = {
+//           totalUsageCount: key.usageCount || 0,
+//           totalTokens: usageStats.userKeyUsage.tokens,
+//           totalCostCents: usageStats.userKeyUsage.costCents,
+//           lastUsed: key.lastUsed,
+//         };
+//       }
+//     }
+    
+//     // Check system keys and add their usage
+//     for (const [provider, envVar] of Object.entries({
+//       openai: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR,
+//       anthropic: process.env.ANTHROPIC_API_KEY,
+//       google_pagespeed: process.env.GOOGLE_PAGESPEED_API_KEY
+//     })) {
+//       if (envVar && !providers[provider].configured) {
+//         const usageStats = await storage.getApiKeyUsageStats(userId, provider);
+//         providers[provider] = {
+//           configured: true,
+//           keyName: `System ${provider.replace('_', ' ')} Key`,
+//           status: "system",
+//           keyId: `system-${provider}`,
+//           usage: {
+//             totalUsageCount: usageStats.systemKeyUsage.operations,
+//             totalTokens: usageStats.systemKeyUsage.tokens,
+//             totalCostCents: usageStats.systemKeyUsage.costCents,
+//             lastUsed: null,
+//           }
+//         };
+//       }
+//     }
+    
+//     res.json({ providers });
+//   } catch (error) {
+//     console.error("Failed to fetch API key status:", error);
+//     res.status(500).json({ message: "Failed to fetch API key status" });
+//   }
+// });
+
+// Fixed API Key Status Endpoint
+// This replaces the existing /api/user/api-keys/status endpoint in your routes file
+
+app.get("/api/user/api-keys/status", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
     const userKeys = await storage.getUserApiKeys(userId);
@@ -2764,18 +3271,40 @@ app.get("/api/admin/users/:userId/api-usage", requireAdmin, async (req: Request,
     for (const key of userKeys) {
       if (key.isActive && providers[key.provider as keyof typeof providers]) {
         const providerStatus = providers[key.provider as keyof typeof providers];
-        const usageStats = await storage.getApiKeyUsageStats(userId, key.provider);
         
-        providerStatus.configured = true;
-        providerStatus.keyName = key.keyName;
-        providerStatus.status = key.validationStatus === 'valid' ? 'active' : 'invalid';
-        providerStatus.keyId = key.id;
-        providerStatus.usage = {
-          totalUsageCount: key.usageCount || 0,
-          totalTokens: usageStats.userKeyUsage.tokens,
-          totalCostCents: usageStats.userKeyUsage.costCents,
-          lastUsed: key.lastUsed,
-        };
+        try {
+          const usageStats = await storage.getApiKeyUsageStats(userId, key.provider);
+          
+          providerStatus.configured = true;
+          providerStatus.keyName = key.keyName;
+          providerStatus.status = key.validationStatus === 'valid' ? 'active' : 'invalid';
+          providerStatus.keyId = key.id;
+          providerStatus.usage = {
+            totalUsageCount: key.usageCount || 0,
+            totalTokens: usageStats?.userKeyUsage?.tokens || 0,
+            totalCostCents: usageStats?.userKeyUsage?.costCents || 0,
+            lastUsed: key.lastUsed,
+          };
+          
+          console.log(`Usage stats for ${key.provider}:`, {
+            totalTokens: providerStatus.usage.totalTokens,
+            totalCostCents: providerStatus.usage.totalCostCents,
+            operationsCount: providerStatus.usage.totalUsageCount
+          });
+        } catch (statsError) {
+          console.error(`Failed to get usage stats for ${key.provider}:`, statsError);
+          // Still set the provider as configured, just with zero usage
+          providerStatus.configured = true;
+          providerStatus.keyName = key.keyName;
+          providerStatus.status = key.validationStatus === 'valid' ? 'active' : 'invalid';
+          providerStatus.keyId = key.id;
+          providerStatus.usage = {
+            totalUsageCount: key.usageCount || 0,
+            totalTokens: 0,
+            totalCostCents: 0,
+            lastUsed: key.lastUsed,
+          };
+        }
       }
     }
     
@@ -2786,19 +3315,43 @@ app.get("/api/admin/users/:userId/api-usage", requireAdmin, async (req: Request,
       google_pagespeed: process.env.GOOGLE_PAGESPEED_API_KEY
     })) {
       if (envVar && !providers[provider].configured) {
-        const usageStats = await storage.getApiKeyUsageStats(userId, provider);
-        providers[provider] = {
-          configured: true,
-          keyName: `System ${provider.replace('_', ' ')} Key`,
-          status: "system",
-          keyId: `system-${provider}`,
-          usage: {
-            totalUsageCount: usageStats.systemKeyUsage.operations,
-            totalTokens: usageStats.systemKeyUsage.tokens,
-            totalCostCents: usageStats.systemKeyUsage.costCents,
-            lastUsed: null,
-          }
-        };
+        try {
+          const usageStats = await storage.getApiKeyUsageStats(userId, provider);
+          
+          providers[provider] = {
+            configured: true,
+            keyName: `System ${provider.replace('_', ' ')} Key`,
+            status: "system",
+            keyId: `system-${provider}`,
+            usage: {
+              totalUsageCount: usageStats?.systemKeyUsage?.operations || 0,
+              totalTokens: usageStats?.systemKeyUsage?.tokens || 0,
+              totalCostCents: usageStats?.systemKeyUsage?.costCents || 0,
+              lastUsed: null,
+            }
+          };
+          
+          console.log(`Usage stats for ${provider}:`, {
+            totalTokens: providers[provider].usage.totalTokens,
+            totalCostCents: providers[provider].usage.totalCostCents,
+            operationsCount: providers[provider].usage.totalUsageCount
+          });
+        } catch (statsError) {
+          console.error(`Failed to get usage stats for system ${provider}:`, statsError);
+          // Still mark as configured but with zero usage
+          providers[provider] = {
+            configured: true,
+            keyName: `System ${provider.replace('_', ' ')} Key`,
+            status: "system",
+            keyId: `system-${provider}`,
+            usage: {
+              totalUsageCount: 0,
+              totalTokens: 0,
+              totalCostCents: 0,
+              lastUsed: null,
+            }
+          };
+        }
       }
     }
     
@@ -2808,6 +3361,23 @@ app.get("/api/admin/users/:userId/api-usage", requireAdmin, async (req: Request,
     res.status(500).json({ message: "Failed to fetch API key status" });
   }
 });
+
+// Additional helper function to check if storage.getApiKeyUsageStats is returning the expected structure
+// You might want to add this to your storage module if the issue persists
+function ensureUsageStatsStructure(stats: any) {
+  return {
+    userKeyUsage: {
+      tokens: stats?.userKeyUsage?.tokens || 0,
+      costCents: stats?.userKeyUsage?.costCents || 0,
+      operations: stats?.userKeyUsage?.operations || 0
+    },
+    systemKeyUsage: {
+      tokens: stats?.systemKeyUsage?.tokens || 0,
+      costCents: stats?.systemKeyUsage?.costCents || 0,
+      operations: stats?.systemKeyUsage?.operations || 0
+    }
+  };
+}
 
   app.put("/api/user/api-keys/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
     try {
