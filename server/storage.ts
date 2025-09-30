@@ -973,15 +973,6 @@ async updateContentImage(imageId: string, updates: Partial<{
   return updated || null;
 }
 
-// Get images by user (for dashboard/analytics)
-// async getUserContentImages(userId: string, limit: number = 50): Promise<ContentImage[]> {
-//   return db
-//     .select()
-//     .from(contentImages)
-//     .where(eq(contentImages.userId, userId))
-//     .orderBy(desc(contentImages.createdAt))
-//     .limit(limit);
-// }
 
 // Delete content images (cascade when content is deleted)
 async deleteContentImages(contentId: string): Promise<void> {
@@ -2667,41 +2658,6 @@ async getActiveAutoSchedules(): Promise<AutoSchedule[]> {
   }
 }
 
-
-  //WAG ALISIN
-  // // Auto-Schedule Methods for Neon Database
-  // async getActiveAutoSchedules(): Promise<AutoSchedule[]> {
-  //   try {
-  //     const schedules = await db
-  //       .select()
-  //       .from(autoSchedules)
-  //       .where(
-  //         and(
-  //           eq(autoSchedules.isActive, true),
-  //           isNull(autoSchedules.deletedAt)
-  //         )
-  //       )
-  //       .orderBy(desc(autoSchedules.createdAt));
-      
-  //     return schedules.map(schedule => ({
-  //       ...schedule,
-  //       topics: schedule.topics || [],
-  //       customDays: schedule.customDays || [],
-  //       publishDelay: schedule.publishDelay || 0,
-  //       topicRotation: schedule.topicRotation || 'sequential',
-  //       nextTopicIndex: schedule.nextTopicIndex || 0,
-  //       maxDailyCost: schedule.maxDailyCost || 10,
-  //       maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
-  //       costToday: schedule.costToday || 0,
-  //       postsThisMonth: schedule.postsThisMonth || 0,
-  //     }));
-  //   } catch (error) {
-  //     console.error('Error fetching active auto-schedules:', error);
-  //     return [];
-  //   }
-  // }
-
-
   async updateAutoSchedule(scheduleId: string, updates: any): Promise<void> {
     try {
       const updateData: any = {
@@ -2930,62 +2886,6 @@ async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Pro
     throw error;
   }
 }
-
-
-//WAG ALISIN
-// async createAutoSchedule(schedule: InsertAutoSchedule & { userId: string }): Promise<AutoSchedule> {
-//   try {
-//     // Manually generate the UUID
-//     const scheduleData = {
-//       id: randomUUID(), // Generate UUID here
-//       userId: schedule.userId,
-//       websiteId: schedule.websiteId,
-//       name: schedule.name,
-//       frequency: schedule.frequency,
-//       timeOfDay: schedule.timeOfDay,
-//       customDays: schedule.customDays || [],
-//       topics: schedule.topics || [],
-//       keywords: schedule.keywords || null,
-//       tone: schedule.tone || 'professional',
-//       wordCount: schedule.wordCount || 800,
-//       brandVoice: schedule.brandVoice || null,
-//       targetAudience: schedule.targetAudience || null,
-//       eatCompliance: schedule.eatCompliance || false,
-//       aiProvider: schedule.aiProvider || 'openai',
-//       includeImages: schedule.includeImages || false,
-//       imageCount: schedule.imageCount || 1,
-//       imageStyle: schedule.imageStyle || 'natural',
-//       seoOptimized: schedule.seoOptimized !== false,
-//       autoPublish: schedule.autoPublish || false,
-//       publishDelay: schedule.publishDelay || 0,
-//       topicRotation: schedule.topicRotation || 'random',
-//       nextTopicIndex: schedule.nextTopicIndex || 0,
-//       maxDailyCost: schedule.maxDailyCost || 5.00,
-//       maxMonthlyPosts: schedule.maxMonthlyPosts || 30,
-//       costToday: schedule.costToday || 0,
-//       postsThisMonth: schedule.postsThisMonth || 0,
-//       lastRun: schedule.lastRun || null,
-//       isActive: schedule.isActive !== false,
-//       createdAt: new Date(),
-//       updatedAt: new Date()
-//     };
-
-//     const [newSchedule] = await db
-//       .insert(autoSchedules)
-//       .values(scheduleData)
-//       .returning();
-    
-//     console.log('Auto-schedule created successfully:', newSchedule.id);
-//     return newSchedule;
-//   } catch (error) {
-//     console.error('Error creating auto-schedule:', error);
-//     throw error;
-//   }
-// }
-
-
-
-
 
 //added
 async getAllActiveAutoSchedules(): Promise<AutoSchedule[]> {
