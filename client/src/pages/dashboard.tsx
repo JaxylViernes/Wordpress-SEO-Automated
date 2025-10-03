@@ -1,6 +1,13 @@
 // client/src/pages/dashboard.tsx
 import { useQuery } from "@tanstack/react-query";
-import { Globe, Bot, Search, Calendar, TrendingUp, ChevronDown } from "lucide-react";
+import {
+  Globe,
+  Bot,
+  Search,
+  Calendar,
+  TrendingUp,
+  ChevronDown,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/pages/authentication";
 import StatsCard from "@/components/dashboard/stats-card";
@@ -25,7 +32,12 @@ const calculatePercentageChange = (
   previous: number
 ): { percentage: string; type: "positive" | "negative" | "neutral" } => {
   // Handle edge cases
-  if (previous === undefined || previous === null || previous === 0 || isNaN(previous)) {
+  if (
+    previous === undefined ||
+    previous === null ||
+    previous === 0 ||
+    isNaN(previous)
+  ) {
     if (current > 0) {
       return { percentage: "First Report", type: "neutral" };
     }
@@ -37,7 +49,7 @@ const calculatePercentageChange = (
   }
 
   const change = ((current - previous) / previous) * 100;
-  
+
   if (isNaN(change)) {
     return { percentage: "N/A", type: "neutral" };
   }
@@ -81,7 +93,11 @@ export default function Dashboard() {
   }, [websites, selectedWebsite]);
 
   // Fetch stats based on selected website
-  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    error: statsError,
+  } = useQuery({
     queryKey: ["dashboard-stats", selectedWebsite],
     queryFn: async () => {
       if (selectedWebsite === "all" || !selectedWebsite) {
@@ -113,10 +129,10 @@ export default function Dashboard() {
   // Debug logging for change calculation
   useEffect(() => {
     if (stats) {
-      console.log('Stats for change calculation:', {
+      console.log("Stats for change calculation:", {
         current: stats.avgSeoScore,
         previous: stats.previousAvgSeoScore,
-        change: seoScoreChange
+        change: seoScoreChange,
       });
     }
   }, [stats, seoScoreChange]);
@@ -124,16 +140,18 @@ export default function Dashboard() {
   // Add debug logging
   useEffect(() => {
     if (statsError) {
-      console.error('Stats query error:', statsError);
+      console.error("Stats query error:", statsError);
     }
   }, [statsError]);
 
   if (isLoading) return <div>Loading...</div>;
   if (!isAuthenticated) return <div>Please log in</div>;
 
-  const selectedWebsiteName = selectedWebsite === "all" 
-    ? "All Websites" 
-    : websites?.find(w => w.id === selectedWebsite)?.name || "Select Website";
+  const selectedWebsiteName =
+    selectedWebsite === "all"
+      ? "All Websites"
+      : websites?.find((w) => w.id === selectedWebsite)?.name ||
+        "Select Website";
 
   return (
     <div className="py-4 sm:py-6">
@@ -187,46 +205,65 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-6 sm:mb-8">
           <StatsCard
-            title={selectedWebsite === "all" ? "Active Websites" : "Website Reports"}
+            title={
+              selectedWebsite === "all" ? "Active Websites" : "Website Reports"
+            }
             value={
-              statsLoading ? "..." : 
-              selectedWebsite === "all" 
-                ? (stats?.websiteCount || 0) 
-                : (stats?.reportCount !== undefined ? stats.reportCount : 0)
+              statsLoading
+                ? "..."
+                : selectedWebsite === "all"
+                ? stats?.websiteCount || 0
+                : stats?.reportCount !== undefined
+                ? stats.reportCount
+                : 0
             }
             icon={Globe}
             iconColor="bg-blue-500"
           />
           <StatsCard
             title="Content Generated"
-            value={statsLoading ? "..." : (stats?.contentCount !== undefined ? stats.contentCount : 0)}
+            value={
+              statsLoading
+                ? "..."
+                : stats?.contentCount !== undefined
+                ? stats.contentCount
+                : 0
+            }
             icon={Bot}
             iconColor="bg-green-500"
           />
           <StatsCard
             title="Current Seo Score"
             value={
-              statsLoading ? "..." : 
-              stats?.avgSeoScore !== undefined && stats.avgSeoScore > 0
+              statsLoading
+                ? "..."
+                : stats?.avgSeoScore !== undefined && stats.avgSeoScore > 0
                 ? formatSeoScore(stats.avgSeoScore)
                 : "0%"
             }
             icon={Search}
             iconColor="bg-yellow-500"
             change={
-              statsLoading 
-                ? "..." 
-                : stats?.previousAvgSeoScore !== null && stats?.previousAvgSeoScore !== undefined
-                  ? seoScoreChange.percentage 
-                  : stats?.avgSeoScore > 0 
-                    ? "First Report"
-                    : ""
+              statsLoading
+                ? "..."
+                : stats?.previousAvgSeoScore !== null &&
+                  stats?.previousAvgSeoScore !== undefined
+                ? seoScoreChange.percentage
+                : stats?.avgSeoScore > 0
+                ? "First Report"
+                : ""
             }
             changeType={seoScoreChange.type}
           />
           <StatsCard
             title="Scheduled Posts"
-            value={statsLoading ? "..." : (stats?.scheduledPosts !== undefined ? stats.scheduledPosts : 0)}
+            value={
+              statsLoading
+                ? "..."
+                : stats?.scheduledPosts !== undefined
+                ? stats.scheduledPosts
+                : 0
+            }
             icon={Calendar}
             iconColor="bg-purple-500"
           />
@@ -234,7 +271,7 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-2">
-            <PerformanceChart 
+            <PerformanceChart
               performanceData={performanceData}
               isLoading={performanceLoading}
               selectedWebsite={selectedWebsite}
@@ -242,12 +279,11 @@ export default function Dashboard() {
           </div>
           <div>
             <RecentActivity />
-            
           </div>
         </div>
-<div>
-  <ApiKeyUsage />
-</div>
+        <div>
+          <ApiKeyUsage />
+        </div>
         <div className="mb-8">
           <WebsitesTable />
         </div>

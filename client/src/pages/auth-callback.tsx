@@ -1,5 +1,3 @@
-// client/src/pages/auth-callback.tsx
-
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import { Loader2, CheckCircle, AlertCircle, XCircle } from 'lucide-react';
@@ -17,7 +15,7 @@ const AuthCallback: React.FC = () => {
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
         const error = urlParams.get('error');
-        const state = urlParams.get('state'); // May contain user ID or other info
+        const state = urlParams.get('state'); 
         
         // Check for errors from Google
         if (error) {
@@ -57,9 +55,7 @@ const AuthCallback: React.FC = () => {
           return;
         }
         
-        // Check if this is a popup or redirect flow
         if (window.opener) {
-          // Popup flow - send message to parent window
           setMessage('Sending credentials to main window...');
           
           try {
@@ -71,8 +67,6 @@ const AuthCallback: React.FC = () => {
             
             setStatus('success');
             setMessage('Authentication successful!');
-            
-            // Close popup after short delay
             setTimeout(() => {
               window.close();
             }, 1500);
@@ -82,11 +76,9 @@ const AuthCallback: React.FC = () => {
             setErrorDetails('Please close this window and try again');
           }
         } else {
-          // Redirect flow - exchange code directly
           setMessage('Completing authentication...');
           
           try {
-            // Exchange the code for tokens via your backend
             const response = await fetch('http://localhost:5000/api/gsc/auth', {
               method: 'POST',
               headers: {
@@ -103,7 +95,6 @@ const AuthCallback: React.FC = () => {
             
             const data = await response.json();
             
-            // Store account info in localStorage if needed
             if (data.account) {
               const existingAccounts = JSON.parse(localStorage.getItem('gsc_accounts') || '[]');
               const accountExists = existingAccounts.some((acc: any) => acc.id === data.account.id);
@@ -116,8 +107,6 @@ const AuthCallback: React.FC = () => {
             
             setStatus('success');
             setMessage('Authentication successful!');
-            
-            // Redirect to Google Search Console page
             setTimeout(() => {
               setLocation('/google-search-console');
             }, 1500);
@@ -126,8 +115,6 @@ const AuthCallback: React.FC = () => {
             setStatus('error');
             setMessage('Failed to complete authentication');
             setErrorDetails(err instanceof Error ? err.message : 'Unknown error occurred');
-            
-            // Redirect after showing error
             setTimeout(() => {
               setLocation('/google-search-console');
             }, 3000);

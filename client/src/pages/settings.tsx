@@ -1,18 +1,46 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Key, Globe, Bot, Bell, Shield, User, Trash2, Eye, EyeOff, Check, X, Loader2, Plus, RotateCcw, AlertTriangle } from "lucide-react";
+import {
+  Save,
+  Key,
+  Globe,
+  Bot,
+  Bell,
+  Shield,
+  User,
+  Trash2,
+  Eye,
+  EyeOff,
+  Check,
+  X,
+  Loader2,
+  Plus,
+  RotateCcw,
+  AlertTriangle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-
 
 // Add these imports for the confirmation dialog
 import {
@@ -29,37 +57,59 @@ import {
 // Sanitizer import
 import { Sanitizer } from "@/utils/inputSanitizer";
 
-
-
-
 const timezoneOptions = [
-  { value: 'America/New_York', label: 'Eastern Time (ET)', offset: 'UTC-5/UTC-4' },
-  { value: 'America/Chicago', label: 'Central Time (CT)', offset: 'UTC-6/UTC-5' },
-  { value: 'America/Denver', label: 'Mountain Time (MT)', offset: 'UTC-7/UTC-6' },
-  { value: 'America/Los_Angeles', label: 'Pacific Time (PT)', offset: 'UTC-8/UTC-7' },
-  { value: 'America/Phoenix', label: 'Arizona (MST)', offset: 'UTC-7' },
-  { value: 'America/Anchorage', label: 'Alaska (AKST)', offset: 'UTC-9/UTC-8' },
-  { value: 'Pacific/Honolulu', label: 'Hawaii (HST)', offset: 'UTC-10' },
-  { value: 'Europe/London', label: 'London (GMT/BST)', offset: 'UTC+0/UTC+1' },
-  { value: 'Europe/Paris', label: 'Central European (CET)', offset: 'UTC+1/UTC+2' },
-  { value: 'Europe/Berlin', label: 'Berlin (CET)', offset: 'UTC+1/UTC+2' },
-  { value: 'Europe/Moscow', label: 'Moscow (MSK)', offset: 'UTC+3' },
-  { value: 'Asia/Dubai', label: 'Dubai (GST)', offset: 'UTC+4' },
-  { value: 'Asia/Kolkata', label: 'India (IST)', offset: 'UTC+5:30' },
-  { value: 'Asia/Bangkok', label: 'Bangkok (ICT)', offset: 'UTC+7' },
-  { value: 'Asia/Shanghai', label: 'China (CST)', offset: 'UTC+8' },
-  { value: 'Asia/Manila', label: 'Philippine Time (PHT)', offset: 'UTC+8' },  // Important for you!
-  { value: 'Asia/Singapore', label: 'Singapore (SGT)', offset: 'UTC+8' },
-  { value: 'Asia/Tokyo', label: 'Japan (JST)', offset: 'UTC+9' },
-  { value: 'Asia/Seoul', label: 'Seoul (KST)', offset: 'UTC+9' },
-  { value: 'Australia/Sydney', label: 'Sydney (AEDT/AEST)', offset: 'UTC+11/UTC+10' },
-  { value: 'Australia/Perth', label: 'Perth (AWST)', offset: 'UTC+8' },
-  { value: 'Pacific/Auckland', label: 'Auckland (NZDT/NZST)', offset: 'UTC+13/UTC+12' },
-  { value: 'UTC', label: 'UTC', offset: 'UTC+0' }
+  {
+    value: "America/New_York",
+    label: "Eastern Time (ET)",
+    offset: "UTC-5/UTC-4",
+  },
+  {
+    value: "America/Chicago",
+    label: "Central Time (CT)",
+    offset: "UTC-6/UTC-5",
+  },
+  {
+    value: "America/Denver",
+    label: "Mountain Time (MT)",
+    offset: "UTC-7/UTC-6",
+  },
+  {
+    value: "America/Los_Angeles",
+    label: "Pacific Time (PT)",
+    offset: "UTC-8/UTC-7",
+  },
+  { value: "America/Phoenix", label: "Arizona (MST)", offset: "UTC-7" },
+  { value: "America/Anchorage", label: "Alaska (AKST)", offset: "UTC-9/UTC-8" },
+  { value: "Pacific/Honolulu", label: "Hawaii (HST)", offset: "UTC-10" },
+  { value: "Europe/London", label: "London (GMT/BST)", offset: "UTC+0/UTC+1" },
+  {
+    value: "Europe/Paris",
+    label: "Central European (CET)",
+    offset: "UTC+1/UTC+2",
+  },
+  { value: "Europe/Berlin", label: "Berlin (CET)", offset: "UTC+1/UTC+2" },
+  { value: "Europe/Moscow", label: "Moscow (MSK)", offset: "UTC+3" },
+  { value: "Asia/Dubai", label: "Dubai (GST)", offset: "UTC+4" },
+  { value: "Asia/Kolkata", label: "India (IST)", offset: "UTC+5:30" },
+  { value: "Asia/Bangkok", label: "Bangkok (ICT)", offset: "UTC+7" },
+  { value: "Asia/Shanghai", label: "China (CST)", offset: "UTC+8" },
+  { value: "Asia/Manila", label: "Philippine Time (PHT)", offset: "UTC+8" }, // Important for you!
+  { value: "Asia/Singapore", label: "Singapore (SGT)", offset: "UTC+8" },
+  { value: "Asia/Tokyo", label: "Japan (JST)", offset: "UTC+9" },
+  { value: "Asia/Seoul", label: "Seoul (KST)", offset: "UTC+9" },
+  {
+    value: "Australia/Sydney",
+    label: "Sydney (AEDT/AEST)",
+    offset: "UTC+11/UTC+10",
+  },
+  { value: "Australia/Perth", label: "Perth (AWST)", offset: "UTC+8" },
+  {
+    value: "Pacific/Auckland",
+    label: "Auckland (NZDT/NZST)",
+    offset: "UTC+13/UTC+12",
+  },
+  { value: "UTC", label: "UTC", offset: "UTC+0" },
 ];
-
-
-
 
 // Keep existing interfaces...
 interface UserApiKey {
@@ -68,7 +118,7 @@ interface UserApiKey {
   keyName: string;
   maskedKey: string;
   isActive: boolean;
-  validationStatus: 'valid' | 'invalid' | 'pending';
+  validationStatus: "valid" | "invalid" | "pending";
   lastValidated?: string;
   createdAt: string;
 }
@@ -81,23 +131,52 @@ interface ApiKeyFormData {
 
 interface ApiKeyStatus {
   providers: {
-    openai: { configured: boolean; keyName?: string; lastValidated?: string; status: string; };
-    anthropic: { configured: boolean; keyName?: string; lastValidated?: string; status: string; };
-    google_pagespeed: { configured: boolean; keyName?: string; lastValidated?: string; status: string; };
+    openai: {
+      configured: boolean;
+      keyName?: string;
+      lastValidated?: string;
+      status: string;
+    };
+    anthropic: {
+      configured: boolean;
+      keyName?: string;
+      lastValidated?: string;
+      status: string;
+    };
+    google_pagespeed: {
+      configured: boolean;
+      keyName?: string;
+      lastValidated?: string;
+      status: string;
+    };
   };
 }
 
 interface UserSettings {
-  profile: { name: string; email: string; company: string; timezone: string; };
-  notifications: { emailReports: boolean; contentGenerated: boolean; seoIssues: boolean; systemAlerts: boolean; };
-  automation: { defaultAiModel: string; autoFixSeoIssues: boolean; contentGenerationFrequency: string; reportGeneration: string; };
-  security: { twoFactorAuth: boolean; sessionTimeout: number; allowApiAccess: boolean; };
+  profile: { name: string; email: string; company: string; timezone: string };
+  notifications: {
+    emailReports: boolean;
+    contentGenerated: boolean;
+    seoIssues: boolean;
+    systemAlerts: boolean;
+  };
+  automation: {
+    defaultAiModel: string;
+    autoFixSeoIssues: boolean;
+    contentGenerationFrequency: string;
+    reportGeneration: string;
+  };
+  security: {
+    twoFactorAuth: boolean;
+    sessionTimeout: number;
+    allowApiAccess: boolean;
+  };
 }
 
 // Delete confirmation state type
 interface DeleteConfirmation {
   isOpen: boolean;
-  type: 'apiKey' | 'website' | null;
+  type: "apiKey" | "website" | null;
   itemId: string;
   itemName: string;
 }
@@ -106,42 +185,47 @@ export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("profile");
-  
+
   // Delete confirmation state
-  const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation>({
-    isOpen: false,
-    type: null,
-    itemId: '',
-    itemName: ''
-  });
-  
+  const [deleteConfirmation, setDeleteConfirmation] =
+    useState<DeleteConfirmation>({
+      isOpen: false,
+      type: null,
+      itemId: "",
+      itemName: "",
+    });
+
   // API Key management state
   const [isAddingKey, setIsAddingKey] = useState(false);
   const [newKeyForm, setNewKeyForm] = useState<ApiKeyFormData>({
-    provider: '',
-    keyName: '',
-    apiKey: ''
+    provider: "",
+    keyName: "",
+    apiKey: "",
   });
   const [validatingKeys, setValidatingKeys] = useState<Set<string>>(new Set());
   const [showApiKey, setShowApiKey] = useState(false);
 
   // Password state
   const [passwordData, setPasswordData] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
   });
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
 
   // Fetch real user settings
-  const { data: settings, isLoading: settingsLoading, error: settingsError } = useQuery<UserSettings>({
+  const {
+    data: settings,
+    isLoading: settingsLoading,
+    error: settingsError,
+  } = useQuery<UserSettings>({
     queryKey: ["/api/user/settings"],
     queryFn: async () => {
       const response = await fetch("/api/user/settings", {
-        credentials: 'include'
+        credentials: "include",
       });
       if (!response.ok) {
-        throw new Error('Failed to fetch settings');
+        throw new Error("Failed to fetch settings");
       }
       return response.json();
     },
@@ -153,147 +237,133 @@ export default function Settings() {
   });
 
   // Fetch user API keys
-  const { data: userApiKeys, refetch: refetchApiKeys } = useQuery<UserApiKey[]>({
-    queryKey: ["/api/user/api-keys"],
-    queryFn: async () => {
-      const response = await fetch("/api/user/api-keys", {
-        credentials: 'include'
-      });
-      if (!response.ok) throw new Error('Failed to fetch API keys');
-      return response.json();
-    },
-  });
+  const { data: userApiKeys, refetch: refetchApiKeys } = useQuery<UserApiKey[]>(
+    {
+      queryKey: ["/api/user/api-keys"],
+      queryFn: async () => {
+        const response = await fetch("/api/user/api-keys", {
+          credentials: "include",
+        });
+        if (!response.ok) throw new Error("Failed to fetch API keys");
+        return response.json();
+      },
+    }
+  );
 
   const { data: apiKeyStatus } = useQuery<ApiKeyStatus>({
     queryKey: ["/api/user/api-keys/status"],
     queryFn: async () => {
       const response = await fetch("/api/user/api-keys/status", {
-        credentials: 'include'
+        credentials: "include",
       });
-      if (!response.ok) throw new Error('Failed to fetch API key status');
+      if (!response.ok) throw new Error("Failed to fetch API key status");
       return response.json();
     },
     refetchInterval: 30000,
   });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   //added
-// Replace your deleteWebsite mutation with this corrected version
+  // Replace your deleteWebsite mutation with this corrected version
 
-const deleteWebsite = useMutation({
-  mutationFn: async (websiteId: string) => {
-    const response = await fetch(`/api/user/websites/${websiteId}`, {
-      method: 'DELETE',
-      credentials: 'include'
+  const deleteWebsite = useMutation({
+    mutationFn: async (websiteId: string) => {
+      const response = await fetch(`/api/user/websites/${websiteId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to delete website");
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      // CRITICAL: Use the correct query key that matches your fetch query
+      queryClient.invalidateQueries({ queryKey: ["/api/user/websites"] });
+
+      toast({
+        title: "Website Disconnected",
+        description:
+          "The website has been successfully removed from your account.",
+      });
+
+      // Close the confirmation dialog
+      closeDeleteConfirmation();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to Delete Website",
+        description:
+          error.message ||
+          "Could not disconnect the website. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+  // Add these functions in your Settings component, after your state declarations
+  // and before the return statement:
+
+  // Function to open delete confirmation (looks like you already have this)
+  const openDeleteConfirmation = (
+    type: "apiKey" | "website",
+    itemId: string,
+    itemName: string
+  ) => {
+    setDeleteConfirmation({
+      isOpen: true,
+      type: type,
+      itemId: itemId,
+      itemName: itemName,
     });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to delete website');
+  };
+
+  // Function to close delete confirmation (THIS IS MISSING)
+  const closeDeleteConfirmation = () => {
+    setDeleteConfirmation({
+      isOpen: false,
+      type: null,
+      itemId: "",
+      itemName: "",
+    });
+  };
+
+  // Function to handle delete confirmation (THIS IS MISSING)
+  const handleConfirmDelete = () => {
+    if (deleteConfirmation.type === "apiKey" && deleteConfirmation.itemId) {
+      deleteApiKey.mutate(deleteConfirmation.itemId, {
+        onSuccess: () => {
+          closeDeleteConfirmation();
+        },
+      });
+    } else if (
+      deleteConfirmation.type === "website" &&
+      deleteConfirmation.itemId
+    ) {
+      deleteWebsite.mutate(deleteConfirmation.itemId, {
+        onSuccess: () => {
+          closeDeleteConfirmation();
+        },
+      });
     }
-    
-    return response.json();
-  },
-  onSuccess: () => {
-    // CRITICAL: Use the correct query key that matches your fetch query
-    queryClient.invalidateQueries({ queryKey: ["/api/user/websites"] });
-    
-    toast({
-      title: "Website Disconnected",
-      description: "The website has been successfully removed from your account.",
-    });
-    
-    // Close the confirmation dialog
-    closeDeleteConfirmation();
-  },
-  onError: (error: Error) => {
-    toast({
-      title: "Failed to Delete Website",
-      description: error.message || "Could not disconnect the website. Please try again.",
-      variant: "destructive",
-    });
-  },
-});
-  // Add these functions in your Settings component, after your state declarations 
-// and before the return statement:
-
-// Function to open delete confirmation (looks like you already have this)
-const openDeleteConfirmation = (type: 'apiKey' | 'website', itemId: string, itemName: string) => {
-  setDeleteConfirmation({
-    isOpen: true,
-    type: type,
-    itemId: itemId,
-    itemName: itemName
-  });
-};
-
-// Function to close delete confirmation (THIS IS MISSING)
-const closeDeleteConfirmation = () => {
-  setDeleteConfirmation({
-    isOpen: false,
-    type: null,
-    itemId: '',
-    itemName: ''
-  });
-};
-
-// Function to handle delete confirmation (THIS IS MISSING)
-const handleConfirmDelete = () => {
-  if (deleteConfirmation.type === 'apiKey' && deleteConfirmation.itemId) {
-    deleteApiKey.mutate(deleteConfirmation.itemId, {
-      onSuccess: () => {
-        closeDeleteConfirmation();
-      }
-    });
-  } else if (deleteConfirmation.type === 'website' && deleteConfirmation.itemId) {
-    deleteWebsite.mutate(deleteConfirmation.itemId, {
-      onSuccess: () => {
-        closeDeleteConfirmation();
-      }
-    });
-  }
-};
-
-
-
-
-
-
-
-
-
-
-
+  };
 
   // Update settings mutation
   const updateSettings = useMutation({
     mutationFn: async (newSettings: UserSettings) => {
       const response = await fetch("/api/user/settings", {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(newSettings)
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(newSettings),
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to update settings');
+        throw new Error(error.message || "Failed to update settings");
       }
-      
+
       return response.json();
     },
     onSuccess: (updatedSettings) => {
@@ -306,7 +376,8 @@ const handleConfirmDelete = () => {
     onError: (error: Error) => {
       toast({
         title: "Save Failed",
-        description: error.message || "Failed to save settings. Please try again.",
+        description:
+          error.message || "Failed to save settings. Please try again.",
         variant: "destructive",
       });
     },
@@ -316,15 +387,15 @@ const handleConfirmDelete = () => {
   const resetSettings = useMutation({
     mutationFn: async () => {
       const response = await fetch("/api/user/settings", {
-        method: 'DELETE',
-        credentials: 'include'
+        method: "DELETE",
+        credentials: "include",
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to reset settings');
+        throw new Error(error.message || "Failed to reset settings");
       }
-      
+
       return response.json();
     },
     onSuccess: (result) => {
@@ -337,7 +408,8 @@ const handleConfirmDelete = () => {
     onError: (error: Error) => {
       toast({
         title: "Reset Failed",
-        description: error.message || "Failed to reset settings. Please try again.",
+        description:
+          error.message || "Failed to reset settings. Please try again.",
         variant: "destructive",
       });
     },
@@ -347,17 +419,17 @@ const handleConfirmDelete = () => {
   const addApiKey = useMutation({
     mutationFn: async (keyData: ApiKeyFormData) => {
       const response = await fetch("/api/user/api-keys", {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(keyData)
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(keyData),
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to add API key');
+        throw new Error(error.message || "Failed to add API key");
       }
-      
+
       return response.json();
     },
     onSuccess: () => {
@@ -366,14 +438,17 @@ const handleConfirmDelete = () => {
         description: "Your API key has been added and validated successfully.",
       });
       setIsAddingKey(false);
-      setNewKeyForm({ provider: '', keyName: '', apiKey: '' });
+      setNewKeyForm({ provider: "", keyName: "", apiKey: "" });
       refetchApiKeys();
-      queryClient.invalidateQueries({ queryKey: ["/api/user/api-keys/status"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/user/api-keys/status"],
+      });
     },
     onError: (error: Error) => {
       toast({
         title: "Failed to Add API Key",
-        description: error.message || "Please check your API key and try again.",
+        description:
+          error.message || "Please check your API key and try again.",
         variant: "destructive",
       });
     },
@@ -382,38 +457,42 @@ const handleConfirmDelete = () => {
   const validateApiKey = useMutation({
     mutationFn: async (keyId: string) => {
       const response = await fetch(`/api/user/api-keys/${keyId}/validate`, {
-        method: 'POST',
-        credentials: 'include'
+        method: "POST",
+        credentials: "include",
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to validate API key');
+        throw new Error(error.message || "Failed to validate API key");
       }
-      
+
       return response.json();
     },
     onSuccess: (data, keyId) => {
       toast({
         title: data.isValid ? "Key Valid" : "Key Invalid",
-        description: data.isValid ? "API key is working correctly." : data.error,
+        description: data.isValid
+          ? "API key is working correctly."
+          : data.error,
         variant: data.isValid ? "default" : "destructive",
       });
       refetchApiKeys();
-      queryClient.invalidateQueries({ queryKey: ["/api/user/api-keys/status"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/user/api-keys/status"],
+      });
     },
   });
 
   const deleteApiKey = useMutation({
     mutationFn: async (keyId: string) => {
       const response = await fetch(`/api/user/api-keys/${keyId}`, {
-        method: 'DELETE',
-        credentials: 'include'
+        method: "DELETE",
+        credentials: "include",
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to delete API key');
+        throw new Error(error.message || "Failed to delete API key");
       }
     },
     onSuccess: () => {
@@ -422,7 +501,9 @@ const handleConfirmDelete = () => {
         description: "The API key has been removed from your account.",
       });
       refetchApiKeys();
-      queryClient.invalidateQueries({ queryKey: ["/api/user/api-keys/status"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/user/api-keys/status"],
+      });
     },
     onError: (error: Error) => {
       toast({
@@ -442,24 +523,20 @@ const handleConfirmDelete = () => {
         description: "Your password has been successfully updated.",
       });
       setPasswordData({
-        currentPassword: '',
-        newPassword: '',
-        confirmPassword: ''
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
       });
       setPasswordErrors([]);
     },
     onError: (error: Error) => {
       toast({
-        title: "Password Change Failed", 
+        title: "Password Change Failed",
         description: error.message,
         variant: "destructive",
       });
     },
   });
-
-
-
-
 
   // UPDATED: handleSave with sanitization
   const handleSave = () => {
@@ -475,11 +552,14 @@ const handleConfirmDelete = () => {
         automation: settings.automation,
         security: {
           twoFactorAuth: settings.security.twoFactorAuth,
-          sessionTimeout: Math.min(168, Math.max(1, settings.security.sessionTimeout)),
+          sessionTimeout: Math.min(
+            168,
+            Math.max(1, settings.security.sessionTimeout)
+          ),
           allowApiAccess: settings.security.allowApiAccess,
         },
       };
-      
+
       updateSettings.mutate(sanitizedSettings);
     }
   };
@@ -488,24 +568,29 @@ const handleConfirmDelete = () => {
     resetSettings.mutate();
   };
 
-  const updateSetting = (section: keyof UserSettings, key: string, value: any) => {
+  const updateSetting = (
+    section: keyof UserSettings,
+    key: string,
+    value: any
+  ) => {
     if (!settings) return;
-    
+
     let sanitizedValue = value;
-    
-    if (section === 'profile') {
+
+    if (section === "profile") {
       switch (key) {
-        case 'name':
-        case 'company':
+        case "name":
+        case "company":
           sanitizedValue = Sanitizer.sanitizeText(value);
           break;
-          
-        case 'email':
+
+        case "email":
           const emailValidation = Sanitizer.validateEmail(value);
-          if (!emailValidation.isValid && value !== '') {
+          if (!emailValidation.isValid && value !== "") {
             toast({
               title: "Invalid Email",
-              description: emailValidation.error || "Please enter a valid email address",
+              description:
+                emailValidation.error || "Please enter a valid email address",
               variant: "destructive",
             });
             return;
@@ -513,13 +598,13 @@ const handleConfirmDelete = () => {
           sanitizedValue = emailValidation.sanitized;
           break;
       }
-    } else if (section === 'security' && key === 'sessionTimeout') {
+    } else if (section === "security" && key === "sessionTimeout") {
       const numValue = parseInt(value);
       if (!isNaN(numValue)) {
         sanitizedValue = Math.min(168, Math.max(1, numValue));
       }
     }
-    
+
     queryClient.setQueryData(["/api/user/settings"], {
       ...settings,
       [section]: {
@@ -531,7 +616,7 @@ const handleConfirmDelete = () => {
 
   const handleAddApiKey = () => {
     const sanitizedKeyName = Sanitizer.sanitizeText(newKeyForm.keyName);
-    
+
     if (!newKeyForm.provider || !sanitizedKeyName || !newKeyForm.apiKey) {
       toast({
         title: "Missing Information",
@@ -540,7 +625,7 @@ const handleConfirmDelete = () => {
       });
       return;
     }
-    
+
     if (sanitizedKeyName.length < 2 || sanitizedKeyName.length > 100) {
       toast({
         title: "Invalid Key Name",
@@ -549,9 +634,9 @@ const handleConfirmDelete = () => {
       });
       return;
     }
-    
+
     const apiKey = newKeyForm.apiKey.trim();
-    if (newKeyForm.provider === 'openai' && !apiKey.startsWith('sk-')) {
+    if (newKeyForm.provider === "openai" && !apiKey.startsWith("sk-")) {
       toast({
         title: "Invalid API Key Format",
         description: "OpenAI API keys should start with 'sk-'",
@@ -559,8 +644,8 @@ const handleConfirmDelete = () => {
       });
       return;
     }
-    
-    if (newKeyForm.provider === 'anthropic' && !apiKey.startsWith('sk-ant-')) {
+
+    if (newKeyForm.provider === "anthropic" && !apiKey.startsWith("sk-ant-")) {
       toast({
         title: "Invalid API Key Format",
         description: "Anthropic API keys should start with 'sk-ant-'",
@@ -568,67 +653,83 @@ const handleConfirmDelete = () => {
       });
       return;
     }
-    
+
     addApiKey.mutate({
       provider: newKeyForm.provider,
       keyName: sanitizedKeyName,
-      apiKey: apiKey
+      apiKey: apiKey,
     });
   };
 
   const handleValidateKey = (keyId: string) => {
-    setValidatingKeys(prev => new Set(prev).add(keyId));
+    setValidatingKeys((prev) => new Set(prev).add(keyId));
     validateApiKey.mutate(keyId, {
       onFinally: () => {
-        setValidatingKeys(prev => {
+        setValidatingKeys((prev) => {
           const newSet = new Set(prev);
           newSet.delete(keyId);
           return newSet;
         });
-      }
+      },
     });
   };
-
 
   // UPDATED: validatePasswordForm with enhanced validation
   const validatePasswordForm = (): boolean => {
     const errors: string[] = [];
-    
+
     if (!passwordData.currentPassword) {
-      errors.push('Current password is required');
+      errors.push("Current password is required");
     }
-    
+
     if (!passwordData.newPassword) {
-      errors.push('New password is required');
+      errors.push("New password is required");
     }
-    
+
     if (!passwordData.confirmPassword) {
-      errors.push('Password confirmation is required');
+      errors.push("Password confirmation is required");
     }
-    
+
     if (passwordData.newPassword && passwordData.newPassword.length > 200) {
-      errors.push('Password is too long (maximum 200 characters)');
+      errors.push("Password is too long (maximum 200 characters)");
     }
-    
-    if (passwordData.newPassword && passwordData.confirmPassword && 
-        passwordData.newPassword !== passwordData.confirmPassword) {
-      errors.push('New password and confirmation do not match');
+
+    if (
+      passwordData.newPassword &&
+      passwordData.confirmPassword &&
+      passwordData.newPassword !== passwordData.confirmPassword
+    ) {
+      errors.push("New password and confirmation do not match");
     }
-    
+
     if (passwordData.newPassword && passwordData.newPassword.length < 8) {
-      errors.push('New password must be at least 8 characters long');
+      errors.push("New password must be at least 8 characters long");
     }
-    
-    if (passwordData.newPassword && passwordData.currentPassword && 
-        passwordData.newPassword === passwordData.currentPassword) {
-      errors.push('New password must be different from current password');
+
+    if (
+      passwordData.newPassword &&
+      passwordData.currentPassword &&
+      passwordData.newPassword === passwordData.currentPassword
+    ) {
+      errors.push("New password must be different from current password");
     }
-    
-    const weakPasswords = ['password', '12345678', 'qwerty', 'abc12345', 'password123'];
-    if (passwordData.newPassword && weakPasswords.includes(passwordData.newPassword.toLowerCase())) {
-      errors.push('This password is too common. Please choose a stronger password');
+
+    const weakPasswords = [
+      "password",
+      "12345678",
+      "qwerty",
+      "abc12345",
+      "password123",
+    ];
+    if (
+      passwordData.newPassword &&
+      weakPasswords.includes(passwordData.newPassword.toLowerCase())
+    ) {
+      errors.push(
+        "This password is too common. Please choose a stronger password"
+      );
     }
-    
+
     setPasswordErrors(errors);
     return errors.length === 0;
   };
@@ -642,21 +743,26 @@ const handleConfirmDelete = () => {
       });
       return;
     }
-    
+
     changePassword.mutate(passwordData);
   };
 
   // Helper functions
   const getStatusBadge = (status: string, provider: string) => {
-    const providerStatus = apiKeyStatus?.providers?.[provider as keyof typeof apiKeyStatus.providers];
-    
+    const providerStatus =
+      apiKeyStatus?.providers?.[
+        provider as keyof typeof apiKeyStatus.providers
+      ];
+
     if (!providerStatus?.configured) {
-      return <Badge className="bg-gray-100 text-gray-800">Not Configured</Badge>;
+      return (
+        <Badge className="bg-gray-100 text-gray-800">Not Configured</Badge>
+      );
     }
-    
-    if (status === 'valid') {
+
+    if (status === "valid") {
       return <Badge className="bg-green-100 text-green-800">✓ Active</Badge>;
-    } else if (status === 'invalid') {
+    } else if (status === "invalid") {
       return <Badge className="bg-red-100 text-red-800">✗ Invalid</Badge>;
     } else {
       return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>;
@@ -665,11 +771,11 @@ const handleConfirmDelete = () => {
 
   const getProviderIcon = (provider: string) => {
     switch (provider) {
-      case 'openai':
+      case "openai":
         return <Bot className="w-6 h-6 text-green-600" />;
-      case 'anthropic':
+      case "anthropic":
         return <Bot className="w-6 h-6 text-blue-600" />;
-      case 'google_pagespeed':
+      case "google_pagespeed":
         return <Globe className="w-6 h-6 text-orange-600" />;
       default:
         return <Key className="w-6 h-6 text-gray-400" />;
@@ -678,12 +784,12 @@ const handleConfirmDelete = () => {
 
   const getProviderName = (provider: string) => {
     switch (provider) {
-      case 'openai':
-        return 'OpenAI GPT-4';
-      case 'anthropic':
-        return 'Anthropic Claude';
-      case 'google_pagespeed':
-        return 'Google PageSpeed Insights';
+      case "openai":
+        return "OpenAI GPT-4";
+      case "anthropic":
+        return "Anthropic Claude";
+      case "google_pagespeed":
+        return "Google PageSpeed Insights";
       default:
         return provider;
     }
@@ -707,7 +813,9 @@ const handleConfirmDelete = () => {
       <div className="py-6">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 md:px-8">
           <div className="text-center py-12">
-            <p className="text-red-600">Failed to load settings. Please refresh the page.</p>
+            <p className="text-red-600">
+              Failed to load settings. Please refresh the page.
+            </p>
           </div>
         </div>
       </div>
@@ -728,16 +836,16 @@ const handleConfirmDelete = () => {
             </p>
           </div>
           <div className="mt-4 flex gap-2 md:mt-0 md:ml-4">
-            <Button 
+            <Button
               variant="outline"
-              onClick={handleReset} 
+              onClick={handleReset}
               disabled={resetSettings.isPending}
             >
               <RotateCcw className="w-4 h-4 mr-2" />
               {resetSettings.isPending ? "Resetting..." : "Reset to Defaults"}
             </Button>
-            <Button 
-              onClick={handleSave} 
+            <Button
+              onClick={handleSave}
               disabled={updateSettings.isPending}
               className="bg-primary-500 hover:bg-primary-600"
             >
@@ -774,7 +882,9 @@ const handleConfirmDelete = () => {
                     <Input
                       id="name"
                       value={settings.profile.name}
-                      onChange={(e) => updateSetting("profile", "name", e.target.value)}
+                      onChange={(e) =>
+                        updateSetting("profile", "name", e.target.value)
+                      }
                       maxLength={100}
                       placeholder="Enter your full name"
                     />
@@ -785,82 +895,119 @@ const handleConfirmDelete = () => {
                       id="email"
                       type="email"
                       value={settings.profile.email}
-                      onChange={(e) => updateSetting("profile", "email", e.target.value)}
+                      onChange={(e) =>
+                        updateSetting("profile", "email", e.target.value)
+                      }
                       maxLength={254}
                       placeholder="your.email@example.com"
                     />
                   </div>
                 </div>
-                
+
                 <div>
                   <Label htmlFor="company">Company</Label>
                   <Input
                     id="company"
                     value={settings.profile.company}
-                    onChange={(e) => updateSetting("profile", "company", e.target.value)}
+                    onChange={(e) =>
+                      updateSetting("profile", "company", e.target.value)
+                    }
                     maxLength={200}
                     placeholder="Your company name"
                   />
                 </div>
-                
-              
-<div>
-  <Label htmlFor="timezone">Timezone</Label>
-  <Select
-    value={settings.profile.timezone}
-    onValueChange={(value) => updateSetting("profile", "timezone", value)}
-  >
-    <SelectTrigger>
-      <SelectValue placeholder="Select your timezone" />
-    </SelectTrigger>
-    <SelectContent className="max-h-[300px]">
-      {/* Group by region for better organization */}
-      <SelectItem value="auto" className="font-semibold text-blue-600">
-        🌍 Auto-detect: {Intl.DateTimeFormat().resolvedOptions().timeZone}
-      </SelectItem>
-      
-      <div className="text-xs text-gray-500 px-2 py-1 font-semibold">Americas</div>
-      {timezoneOptions.filter(tz => tz.value.startsWith('America/') || tz.value.startsWith('Pacific/H')).map(tz => (
-        <SelectItem key={tz.value} value={tz.value}>
-          {tz.label} ({tz.offset})
-        </SelectItem>
-      ))}
-      
-      <div className="text-xs text-gray-500 px-2 py-1 font-semibold">Europe</div>
-      {timezoneOptions.filter(tz => tz.value.startsWith('Europe/')).map(tz => (
-        <SelectItem key={tz.value} value={tz.value}>
-          {tz.label} ({tz.offset})
-        </SelectItem>
-      ))}
-      
-      <div className="text-xs text-gray-500 px-2 py-1 font-semibold">Asia</div>
-      {timezoneOptions.filter(tz => tz.value.startsWith('Asia/')).map(tz => (
-        <SelectItem key={tz.value} value={tz.value}>
-          {tz.label} ({tz.offset})
-        </SelectItem>
-      ))}
-      
-      <div className="text-xs text-gray-500 px-2 py-1 font-semibold">Oceania</div>
-      {timezoneOptions.filter(tz => tz.value.startsWith('Australia/') || tz.value.startsWith('Pacific/Auckland')).map(tz => (
-        <SelectItem key={tz.value} value={tz.value}>
-          {tz.label} ({tz.offset})
-        </SelectItem>
-      ))}
-      
-      <div className="text-xs text-gray-500 px-2 py-1 font-semibold">UTC</div>
-      <SelectItem value="UTC">UTC (Coordinated Universal Time)</SelectItem>
-    </SelectContent>
-  </Select>
-  <p className="text-xs text-gray-500 mt-1">
-    Your timezone is used for scheduling content and reports. Currently: {
-      new Date().toLocaleString('en-US', { 
-        timeZone: settings.profile.timezone,
-        dateStyle: 'medium',
-        timeStyle: 'short'
-      })
-    }
-  </p>
-</div>
+
+                <div>
+                  <Label htmlFor="timezone">Timezone</Label>
+                  <Select
+                    value={settings.profile.timezone}
+                    onValueChange={(value) =>
+                      updateSetting("profile", "timezone", value)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select your timezone" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[300px]">
+                      {/* Group by region for better organization */}
+                      <SelectItem
+                        value="auto"
+                        className="font-semibold text-blue-600"
+                      >
+                        🌍 Auto-detect:{" "}
+                        {Intl.DateTimeFormat().resolvedOptions().timeZone}
+                      </SelectItem>
+
+                      <div className="text-xs text-gray-500 px-2 py-1 font-semibold">
+                        Americas
+                      </div>
+                      {timezoneOptions
+                        .filter(
+                          (tz) =>
+                            tz.value.startsWith("America/") ||
+                            tz.value.startsWith("Pacific/H")
+                        )
+                        .map((tz) => (
+                          <SelectItem key={tz.value} value={tz.value}>
+                            {tz.label} ({tz.offset})
+                          </SelectItem>
+                        ))}
+
+                      <div className="text-xs text-gray-500 px-2 py-1 font-semibold">
+                        Europe
+                      </div>
+                      {timezoneOptions
+                        .filter((tz) => tz.value.startsWith("Europe/"))
+                        .map((tz) => (
+                          <SelectItem key={tz.value} value={tz.value}>
+                            {tz.label} ({tz.offset})
+                          </SelectItem>
+                        ))}
+
+                      <div className="text-xs text-gray-500 px-2 py-1 font-semibold">
+                        Asia
+                      </div>
+                      {timezoneOptions
+                        .filter((tz) => tz.value.startsWith("Asia/"))
+                        .map((tz) => (
+                          <SelectItem key={tz.value} value={tz.value}>
+                            {tz.label} ({tz.offset})
+                          </SelectItem>
+                        ))}
+
+                      <div className="text-xs text-gray-500 px-2 py-1 font-semibold">
+                        Oceania
+                      </div>
+                      {timezoneOptions
+                        .filter(
+                          (tz) =>
+                            tz.value.startsWith("Australia/") ||
+                            tz.value.startsWith("Pacific/Auckland")
+                        )
+                        .map((tz) => (
+                          <SelectItem key={tz.value} value={tz.value}>
+                            {tz.label} ({tz.offset})
+                          </SelectItem>
+                        ))}
+
+                      <div className="text-xs text-gray-500 px-2 py-1 font-semibold">
+                        UTC
+                      </div>
+                      <SelectItem value="UTC">
+                        UTC (Coordinated Universal Time)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Your timezone is used for scheduling content and reports.
+                    Currently:{" "}
+                    {new Date().toLocaleString("en-US", {
+                      timeZone: settings.profile.timezone,
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -884,7 +1031,8 @@ const handleConfirmDelete = () => {
                   </Button>
                 </CardTitle>
                 <CardDescription>
-                  Securely store and manage your AI service API keys. Keys are encrypted and never visible in full.
+                  Securely store and manage your AI service API keys. Keys are
+                  encrypted and never visible in full.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -897,19 +1045,30 @@ const handleConfirmDelete = () => {
                         <Label htmlFor="provider">Service Provider</Label>
                         <Select
                           value={newKeyForm.provider}
-                          onValueChange={(value) => setNewKeyForm(prev => ({ ...prev, provider: value }))}
+                          onValueChange={(value) =>
+                            setNewKeyForm((prev) => ({
+                              ...prev,
+                              provider: value,
+                            }))
+                          }
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Select provider" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="openai">OpenAI (GPT-4)</SelectItem>
-                            <SelectItem value="anthropic">Anthropic (Claude)</SelectItem>
-                            <SelectItem value="google_pagespeed">Google PageSpeed Insights</SelectItem>
+                            <SelectItem value="openai">
+                              OpenAI (GPT-4)
+                            </SelectItem>
+                            <SelectItem value="anthropic">
+                              Anthropic (Claude)
+                            </SelectItem>
+                            <SelectItem value="google_pagespeed">
+                              Google PageSpeed Insights
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
-                      
+
                       <div>
                         <Label htmlFor="keyName">Key Name</Label>
                         <Input
@@ -917,16 +1076,22 @@ const handleConfirmDelete = () => {
                           placeholder="e.g., My OpenAI Key"
                           value={newKeyForm.keyName}
                           onChange={(e) => {
-                            const sanitized = Sanitizer.sanitizeText(e.target.value);
-                            setNewKeyForm(prev => ({ ...prev, keyName: sanitized }));
+                            const sanitized = Sanitizer.sanitizeText(
+                              e.target.value
+                            );
+                            setNewKeyForm((prev) => ({
+                              ...prev,
+                              keyName: sanitized,
+                            }));
                           }}
                           maxLength={100}
                         />
                         <p className="text-xs text-gray-400 mt-1">
-                          A friendly name to identify this key (2-100 characters)
+                          A friendly name to identify this key (2-100
+                          characters)
                         </p>
                       </div>
-                      
+
                       <div>
                         <Label htmlFor="apiKey">API Key</Label>
                         <div className="flex items-center space-x-2">
@@ -934,12 +1099,19 @@ const handleConfirmDelete = () => {
                             id="apiKey"
                             type={showApiKey ? "text" : "password"}
                             placeholder={
-                              newKeyForm.provider === 'openai' ? 'sk-...' :
-                              newKeyForm.provider === 'anthropic' ? 'sk-ant-...' :
-                              'AIza...'
+                              newKeyForm.provider === "openai"
+                                ? "sk-..."
+                                : newKeyForm.provider === "anthropic"
+                                ? "sk-ant-..."
+                                : "AIza..."
                             }
                             value={newKeyForm.apiKey}
-                            onChange={(e) => setNewKeyForm(prev => ({ ...prev, apiKey: e.target.value.trim() }))}
+                            onChange={(e) =>
+                              setNewKeyForm((prev) => ({
+                                ...prev,
+                                apiKey: e.target.value.trim(),
+                              }))
+                            }
                             maxLength={500}
                             autoComplete="off"
                             spellCheck={false}
@@ -950,21 +1122,28 @@ const handleConfirmDelete = () => {
                             size="sm"
                             onClick={() => setShowApiKey(!showApiKey)}
                           >
-                            {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            {showApiKey ? (
+                              <EyeOff className="w-4 h-4" />
+                            ) : (
+                              <Eye className="w-4 h-4" />
+                            )}
                           </Button>
                         </div>
                         {newKeyForm.provider && (
                           <p className="text-xs text-gray-400 mt-1">
-                            {newKeyForm.provider === 'openai' && 'OpenAI API keys start with "sk-"'}
-                            {newKeyForm.provider === 'anthropic' && 'Anthropic API keys start with "sk-ant-"'}
-                            {newKeyForm.provider === 'google_pagespeed' && 'Google API keys typically start with "AIza"'}
+                            {newKeyForm.provider === "openai" &&
+                              'OpenAI API keys start with "sk-"'}
+                            {newKeyForm.provider === "anthropic" &&
+                              'Anthropic API keys start with "sk-ant-"'}
+                            {newKeyForm.provider === "google_pagespeed" &&
+                              'Google API keys typically start with "AIza"'}
                           </p>
                         )}
                       </div>
-                      
+
                       <div className="flex items-center space-x-2">
-                        <Button 
-                          onClick={handleAddApiKey} 
+                        <Button
+                          onClick={handleAddApiKey}
                           disabled={addApiKey.isPending}
                         >
                           {addApiKey.isPending ? (
@@ -974,11 +1153,15 @@ const handleConfirmDelete = () => {
                           )}
                           {addApiKey.isPending ? "Validating..." : "Add Key"}
                         </Button>
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           onClick={() => {
                             setIsAddingKey(false);
-                            setNewKeyForm({ provider: '', keyName: '', apiKey: '' });
+                            setNewKeyForm({
+                              provider: "",
+                              keyName: "",
+                              apiKey: "",
+                            });
                           }}
                         >
                           Cancel
@@ -991,26 +1174,39 @@ const handleConfirmDelete = () => {
                 {/* Existing API Keys */}
                 <div className="space-y-3">
                   {userApiKeys?.map((apiKey: UserApiKey) => (
-                    <div key={apiKey.id} className="flex items-center justify-between p-4 border rounded-lg">
+                    <div
+                      key={apiKey.id}
+                      className="flex items-center justify-between p-4 border rounded-lg"
+                    >
                       <div className="flex items-center space-x-4">
                         <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center">
                           {getProviderIcon(apiKey.provider)}
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900">{Sanitizer.escapeHtml(apiKey.keyName)}</p>
+                          <p className="font-medium text-gray-900">
+                            {Sanitizer.escapeHtml(apiKey.keyName)}
+                          </p>
                           <p className="text-sm text-gray-500">
                             {getProviderName(apiKey.provider)}
                           </p>
-                          <p className="text-xs text-gray-400 font-mono">{apiKey.maskedKey}</p>
+                          <p className="text-xs text-gray-400 font-mono">
+                            {apiKey.maskedKey}
+                          </p>
                           {apiKey.lastValidated && (
                             <p className="text-xs text-gray-400">
-                              Last validated: {new Date(apiKey.lastValidated).toLocaleDateString()}
+                              Last validated:{" "}
+                              {new Date(
+                                apiKey.lastValidated
+                              ).toLocaleDateString()}
                             </p>
                           )}
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
-                        {getStatusBadge(apiKey.validationStatus, apiKey.provider)}
+                        {getStatusBadge(
+                          apiKey.validationStatus,
+                          apiKey.provider
+                        )}
                         <Button
                           size="sm"
                           variant="outline"
@@ -1026,7 +1222,13 @@ const handleConfirmDelete = () => {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => openDeleteConfirmation('apiKey', apiKey.id, apiKey.keyName)}
+                          onClick={() =>
+                            openDeleteConfirmation(
+                              "apiKey",
+                              apiKey.id,
+                              apiKey.keyName
+                            )
+                          }
                           disabled={deleteApiKey.isPending}
                         >
                           <Trash2 className="w-3 h-3" />
@@ -1034,19 +1236,21 @@ const handleConfirmDelete = () => {
                       </div>
                     </div>
                   ))}
-                  
-                  {(!userApiKeys || userApiKeys.length === 0) && !isAddingKey && (
-                    <div className="text-center py-8 text-gray-500">
-                      <Key className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                      <p>No API keys configured yet.</p>
-                      <p className="text-sm">Add your first API key to get started with AI content generation.</p>
-                    </div>
-                  )}
+
+                  {(!userApiKeys || userApiKeys.length === 0) &&
+                    !isAddingKey && (
+                      <div className="text-center py-8 text-gray-500">
+                        <Key className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                        <p>No API keys configured yet.</p>
+                        <p className="text-sm">
+                          Add your first API key to get started with AI content
+                          generation.
+                        </p>
+                      </div>
+                    )}
                 </div>
               </CardContent>
             </Card>
-
-            
           </TabsContent>
 
           {/* Automation Settings */}
@@ -1066,16 +1270,22 @@ const handleConfirmDelete = () => {
                   <Label htmlFor="defaultAi">Default AI Model</Label>
                   <Select
                     value={settings.automation.defaultAiModel}
-                    onValueChange={(value) => updateSetting("automation", "defaultAiModel", value)}
+                    onValueChange={(value) =>
+                      updateSetting("automation", "defaultAiModel", value)
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gpt-4o">GPT-4 (Recommended)</SelectItem>
+                      <SelectItem value="gpt-4o">
+                        GPT-4 (Recommended)
+                      </SelectItem>
                       <SelectItem value="claude-3">Claude-3</SelectItem>
                       <SelectItem value="gemini-1.5-pro">Gemini Pro</SelectItem>
-                      <SelectItem value="auto-select">Auto-Select Best</SelectItem>
+                      <SelectItem value="auto-select">
+                        Auto-Select Best
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-gray-500 mt-1">
@@ -1106,7 +1316,9 @@ const handleConfirmDelete = () => {
                   <Label htmlFor="reports">Report Generation</Label>
                   <Select
                     value={settings.automation.reportGeneration}
-                    onValueChange={(value) => updateSetting("automation", "reportGeneration", value)}
+                    onValueChange={(value) =>
+                      updateSetting("automation", "reportGeneration", value)
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -1160,19 +1372,29 @@ const handleConfirmDelete = () => {
                   <Switch
                     id="twoFactor"
                     checked={settings.security.twoFactorAuth}
-                    onCheckedChange={(checked) => updateSetting("security", "twoFactorAuth", checked)}
+                    onCheckedChange={(checked) =>
+                      updateSetting("security", "twoFactorAuth", checked)
+                    }
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="sessionTimeout">Session Timeout (hours)</Label>
+                  <Label htmlFor="sessionTimeout">
+                    Session Timeout (hours)
+                  </Label>
                   <Input
                     id="sessionTimeout"
                     type="number"
                     min="1"
                     max="168"
                     value={settings.security.sessionTimeout}
-                    onChange={(e) => updateSetting("security", "sessionTimeout", parseInt(e.target.value))}
+                    onChange={(e) =>
+                      updateSetting(
+                        "security",
+                        "sessionTimeout",
+                        parseInt(e.target.value)
+                      )
+                    }
                     onBlur={(e) => {
                       const value = parseInt(e.target.value);
                       if (isNaN(value) || value < 1) {
@@ -1183,7 +1405,8 @@ const handleConfirmDelete = () => {
                     }}
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    Automatically log out after this many hours of inactivity (1-168 hours)
+                    Automatically log out after this many hours of inactivity
+                    (1-168 hours)
                   </p>
                 </div>
 
@@ -1197,16 +1420,21 @@ const handleConfirmDelete = () => {
                   <Switch
                     id="apiAccess"
                     checked={settings.security.allowApiAccess}
-                    onCheckedChange={(checked) => updateSetting("security", "allowApiAccess", checked)}
+                    onCheckedChange={(checked) =>
+                      updateSetting("security", "allowApiAccess", checked)
+                    }
                   />
                 </div>
 
                 <div className="pt-4 border-t">
-                  <h4 className="font-medium text-gray-900 mb-2">Change Password</h4>
+                  <h4 className="font-medium text-gray-900 mb-2">
+                    Change Password
+                  </h4>
                   <p className="text-sm text-gray-500 mb-4">
-                    Update your password to keep your account secure. Use a strong password with at least 8 characters.
+                    Update your password to keep your account secure. Use a
+                    strong password with at least 8 characters.
                   </p>
-                  
+
                   {passwordErrors.length > 0 && (
                     <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
                       <div className="text-sm text-red-600">
@@ -1218,81 +1446,113 @@ const handleConfirmDelete = () => {
                       </div>
                     </div>
                   )}
-                  
+
                   <div className="space-y-3">
                     <div>
                       <Label htmlFor="currentPassword">Current Password</Label>
-                      <Input 
+                      <Input
                         id="currentPassword"
-                        type="password" 
+                        type="password"
                         placeholder="Enter your current password"
                         value={passwordData.currentPassword}
-                        onChange={(e) => setPasswordData(prev => ({ 
-                          ...prev, 
-                          currentPassword: e.target.value
-                        }))}
+                        onChange={(e) =>
+                          setPasswordData((prev) => ({
+                            ...prev,
+                            currentPassword: e.target.value,
+                          }))
+                        }
                         maxLength={200}
                         autoComplete="current-password"
-                        className={passwordErrors.some(e => e.includes('current')) ? 'border-red-500' : ''}
+                        className={
+                          passwordErrors.some((e) => e.includes("current"))
+                            ? "border-red-500"
+                            : ""
+                        }
                       />
                     </div>
-                    
+
                     <div>
                       <Label htmlFor="newPassword">New Password</Label>
-                      <Input 
+                      <Input
                         id="newPassword"
-                        type="password" 
+                        type="password"
                         placeholder="Enter your new password"
                         value={passwordData.newPassword}
-                        onChange={(e) => setPasswordData(prev => ({ 
-                          ...prev, 
-                          newPassword: e.target.value
-                        }))}
+                        onChange={(e) =>
+                          setPasswordData((prev) => ({
+                            ...prev,
+                            newPassword: e.target.value,
+                          }))
+                        }
                         maxLength={200}
                         autoComplete="new-password"
-                        className={passwordErrors.some(e => e.includes('new') || e.includes('8 characters')) ? 'border-red-500' : ''}
+                        className={
+                          passwordErrors.some(
+                            (e) =>
+                              e.includes("new") || e.includes("8 characters")
+                          )
+                            ? "border-red-500"
+                            : ""
+                        }
                       />
                       <p className="text-xs text-gray-500 mt-1">
                         Must be at least 8 characters. Avoid common passwords.
                       </p>
                     </div>
-                    
+
                     <div>
-                      <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                      <Input 
+                      <Label htmlFor="confirmPassword">
+                        Confirm New Password
+                      </Label>
+                      <Input
                         id="confirmPassword"
-                        type="password" 
+                        type="password"
                         placeholder="Confirm your new password"
                         value={passwordData.confirmPassword}
-                        onChange={(e) => setPasswordData(prev => ({ 
-                          ...prev, 
-                          confirmPassword: e.target.value
-                        }))}
+                        onChange={(e) =>
+                          setPasswordData((prev) => ({
+                            ...prev,
+                            confirmPassword: e.target.value,
+                          }))
+                        }
                         maxLength={200}
                         autoComplete="new-password"
-                        className={passwordErrors.some(e => e.includes('confirmation') || e.includes('match')) ? 'border-red-500' : ''}
+                        className={
+                          passwordErrors.some(
+                            (e) =>
+                              e.includes("confirmation") || e.includes("match")
+                          )
+                            ? "border-red-500"
+                            : ""
+                        }
                       />
                     </div>
-                    
+
                     {passwordData.newPassword && (
                       <div className="text-xs">
-                        Password strength: 
-                        <span className={
-                          passwordData.newPassword.length < 8 ? 'text-red-500' :
-                          passwordData.newPassword.length < 12 ? 'text-yellow-500' :
-                          'text-green-500'
-                        }>
-                          {passwordData.newPassword.length < 8 ? ' Weak' :
-                           passwordData.newPassword.length < 12 ? ' Fair' :
-                           ' Strong'}
+                        Password strength:
+                        <span
+                          className={
+                            passwordData.newPassword.length < 8
+                              ? "text-red-500"
+                              : passwordData.newPassword.length < 12
+                              ? "text-yellow-500"
+                              : "text-green-500"
+                          }
+                        >
+                          {passwordData.newPassword.length < 8
+                            ? " Weak"
+                            : passwordData.newPassword.length < 12
+                            ? " Fair"
+                            : " Strong"}
                         </span>
                       </div>
                     )}
-                    
-                    <Button 
-                      onClick={handlePasswordChange} 
+
+                    <Button
+                      onClick={handlePasswordChange}
                       disabled={changePassword.isPending}
-                      variant="outline" 
+                      variant="outline"
                       size="sm"
                       className="w-full sm:w-auto"
                     >
@@ -1302,7 +1562,7 @@ const handleConfirmDelete = () => {
                           Updating Password...
                         </>
                       ) : (
-                        'Update Password'
+                        "Update Password"
                       )}
                     </Button>
                   </div>
@@ -1314,7 +1574,10 @@ const handleConfirmDelete = () => {
       </div>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteConfirmation.isOpen} onOpenChange={closeDeleteConfirmation}>
+      <AlertDialog
+        open={deleteConfirmation.isOpen}
+        onOpenChange={closeDeleteConfirmation}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -1324,24 +1587,31 @@ const handleConfirmDelete = () => {
               </div>
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteConfirmation.type === 'apiKey' ? (
+              {deleteConfirmation.type === "apiKey" ? (
                 <>
-                  Are you sure you want to delete the API key <strong>"{deleteConfirmation.itemName}"</strong>?
-                  <br /><br />
-                  This action cannot be undone. You will need to add the key again if you want to use it in the future.
+                  Are you sure you want to delete the API key{" "}
+                  <strong>"{deleteConfirmation.itemName}"</strong>?
+                  <br />
+                  <br />
+                  This action cannot be undone. You will need to add the key
+                  again if you want to use it in the future.
                 </>
               ) : (
                 <>
-                  Are you sure you want to disconnect <strong>"{deleteConfirmation.itemName}"</strong>?
-                  <br /><br />
-                  This will remove the website from your account. You can reconnect it later, but you will need to re-enter your WordPress credentials.
+                  Are you sure you want to disconnect{" "}
+                  <strong>"{deleteConfirmation.itemName}"</strong>?
+                  <br />
+                  <br />
+                  This will remove the website from your account. You can
+                  reconnect it later, but you will need to re-enter your
+                  WordPress credentials.
                 </>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={handleConfirmDelete}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
@@ -1353,13 +1623,3 @@ const handleConfirmDelete = () => {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-

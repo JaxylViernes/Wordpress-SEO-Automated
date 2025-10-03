@@ -101,58 +101,57 @@ const api = {
 
   async uploadImages(files, websiteId, contentId) {
     const formData = new FormData();
-    Array.from(files).forEach(file => formData.append('images', file));
-    formData.append('websiteId', websiteId);
-    if (contentId) formData.append('contentId', contentId);
-    
-    const response = await fetch('/api/user/content/upload-images', {
-      method: 'POST',
-      body: formData
+    Array.from(files).forEach((file) => formData.append("images", file));
+    formData.append("websiteId", websiteId);
+    if (contentId) formData.append("contentId", contentId);
+
+    const response = await fetch("/api/user/content/upload-images", {
+      method: "POST",
+      body: formData,
     });
-    
-    if (!response.ok) throw new Error('Failed to upload images');
+
+    if (!response.ok) throw new Error("Failed to upload images");
     return response.json();
   },
 
   async getUserImages(websiteId, contentId) {
     const params = new URLSearchParams();
-    if (websiteId) params.append('websiteId', websiteId);
-    if (contentId) params.append('contentId', contentId);
-    
+    if (websiteId) params.append("websiteId", websiteId);
+    if (contentId) params.append("contentId", contentId);
+
     const response = await fetch(`/api/user/content/images?${params}`);
-    if (!response.ok) throw new Error('Failed to fetch images');
+    if (!response.ok) throw new Error("Failed to fetch images");
     return response.json();
   },
 
   async replaceContentImage(contentId, oldImageUrl, newImageUrl, newAltText) {
-    const response = await fetch('/api/user/content/replace-image', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const response = await fetch("/api/user/content/replace-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contentId,
         oldImageUrl,
         newImageUrl,
-        newAltText
-      })
+        newAltText,
+      }),
     });
-    if (!response.ok) throw new Error('Failed to replace image');
+    if (!response.ok) throw new Error("Failed to replace image");
     return response.json();
   },
 
-
   async deleteContent(contentId) {
-  const response = await fetch(`/api/user/content/${contentId}`, {
-    method: "DELETE",
-    headers: { "Content-Type": "application/json" },
-  });
-  
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || "Failed to delete content");
-  }
-  
-  return response.json();
-},
+    const response = await fetch(`/api/user/content/${contentId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "Failed to delete content");
+    }
+
+    return response.json();
+  },
 };
 
 // Utility functions
@@ -259,49 +258,61 @@ const getErrorSeverity = (error) => {
 };
 
 const escapeRegExp = (string) => {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 };
 
 // Image Picker Modal Component
-const ImagePickerModal = ({ uploadedImages, onSelect, onClose, onUpload, isUploadingImage }) => {
+const ImagePickerModal = ({
+  uploadedImages,
+  onSelect,
+  onClose,
+  onUpload,
+  isUploadingImage,
+}) => {
   return (
     <div className="fixed inset-0 z-[60] overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20">
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={onClose}></div>
+        <div
+          className="fixed inset-0 bg-gray-500 bg-opacity-75"
+          onClick={onClose}
+        ></div>
         <div className="relative bg-white rounded-lg shadow-xl max-w-3xl w-full">
           <div className="px-6 py-4 border-b">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-medium">Select or Upload Image</h3>
-              <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-500"
+              >
                 <X className="w-6 h-6" />
               </button>
             </div>
           </div>
-          
+
           <div className="p-6">
             {/* Upload section */}
             <div className="mb-6">
               <label className="block">
                 <input
-  type="file"
-  multiple
-  accept="image/*"
-  onChange={(e) => {
-    console.log("File input changed!");
-    console.log("Files selected:", e.target.files);
-    console.log("Files length:", e.target.files?.length);
-    onUpload(e.target.files);  // Changed from handleImageUpload to onUpload
-  }}
-  disabled={isUploadingImage}
-  className="hidden"
-/>
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={(e) => {
+                    console.log("File input changed!");
+                    console.log("Files selected:", e.target.files);
+                    console.log("Files length:", e.target.files?.length);
+                    onUpload(e.target.files);
+                  }}
+                  disabled={isUploadingImage}
+                  className="hidden"
+                />
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-gray-400">
                   <Upload className="mx-auto h-12 w-12 text-gray-400" />
                   <p className="mt-2">Click or drag images to upload</p>
                 </div>
               </label>
             </div>
-            
+
             {/* Image gallery */}
             {uploadedImages.length > 0 ? (
               <div className="grid grid-cols-4 gap-4">
@@ -311,7 +322,11 @@ const ImagePickerModal = ({ uploadedImages, onSelect, onClose, onUpload, isUploa
                     onClick={() => onSelect(img)}
                     className="cursor-pointer group relative border rounded hover:shadow-lg"
                   >
-                    <img src={img.url} alt={img.altText} className="w-full h-24 object-cover rounded" />
+                    <img
+                      src={img.url}
+                      alt={img.altText}
+                      className="w-full h-24 object-cover rounded"
+                    />
                     <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity rounded flex items-center justify-center">
                       <Plus className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
@@ -319,7 +334,9 @@ const ImagePickerModal = ({ uploadedImages, onSelect, onClose, onUpload, isUploa
                 ))}
               </div>
             ) : (
-              <p className="text-center text-gray-500">No images uploaded yet</p>
+              <p className="text-center text-gray-500">
+                No images uploaded yet
+              </p>
             )}
           </div>
         </div>
@@ -355,13 +372,12 @@ export default function AIContent() {
   const [contentImages, setContentImages] = useState([]);
   const [selectedImageToReplace, setSelectedImageToReplace] = useState(null);
   const [showImagePicker, setShowImagePicker] = useState(false);
-  
-  const [activeTab, setActiveTab] = useState("unpublished"); // "published" or "unpublished"
-const [isDeleting, setIsDeleting] = useState(false);
-const [deletingContentId, setDeletingContentId] = useState(null);
-const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-const [contentToDelete, setContentToDelete] = useState(null);
 
+  const [activeTab, setActiveTab] = useState("unpublished"); // "published" or "unpublished"
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deletingContentId, setDeletingContentId] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [contentToDelete, setContentToDelete] = useState(null);
 
   // Refs
   const bodyTextareaRef = useRef(null);
@@ -422,17 +438,17 @@ const [contentToDelete, setContentToDelete] = useState(null);
       const imgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
       const images = [];
       let match;
-      
+
       while ((match = imgRegex.exec(editFormData.body)) !== null) {
         const altMatch = match[0].match(/alt=["']([^"']*?)["']/i);
         images.push({
           url: match[1],
-          altText: altMatch ? altMatch[1] : '',
+          altText: altMatch ? altMatch[1] : "",
           htmlString: match[0],
-          position: match.index
+          position: match.index,
         });
       }
-      
+
       setContentImages(images);
     }
   }, [editFormData.body]);
@@ -472,111 +488,128 @@ const [contentToDelete, setContentToDelete] = useState(null);
     }
   };
 
-  const showToast = (title, description, variant = "default", errorType = null) => {
+  const showToast = (
+    title,
+    description,
+    variant = "default",
+    errorType = null
+  ) => {
     setToast({ title, description, variant, errorType });
     setTimeout(() => setToast(null), 6000);
   };
 
   // Image management functions
   const handleImageUpload = async (files) => {
-  console.log("=== handleImageUpload called ===");
-  console.log("Files received:", files);
-  console.log("Type of files:", typeof files);
-  console.log("Is FileList?", files instanceof FileList);
-  
-  if (!files || files.length === 0) {
-    console.log("No files to process");
-    return;
-  }
-  
-  console.log("Setting upload state to true...");
-  setIsUploadingImage(true);
-  setImageUploadProgress(0);
-  
-  try {
-    console.log("About to call api.uploadImages...");
-    console.log("selectedWebsite:", selectedWebsite);
-    console.log("editingContent?.id:", editingContent?.id);
-    
-    const result = await api.uploadImages(files, selectedWebsite, editingContent?.id);
-    
-    console.log("API call completed, result:", result);
-    
-    setUploadedImages(prev => {
-      console.log("Previous uploaded images:", prev);
-      console.log("Adding new images:", result.images);
-      return [...prev, ...result.images];
-    });
-    
-    showToast('Images Uploaded', `Successfully uploaded ${result.images.length} image(s)`);
-    
-    if (result.images.length === 1 && bodyTextareaRef.current) {
-      console.log("Auto-inserting single image...");
-      insertImageAtCursor(result.images[0].url, result.images[0].altText);
-    }
-    
-  } catch (error) {
-    console.error("Upload error caught:", error);
-    console.error("Error stack:", error.stack);
-    showToast('Upload Failed', error.message, 'destructive');
-  } finally {
-    console.log("Finally block - resetting upload state");
-    setIsUploadingImage(false);
-    setImageUploadProgress(0);
-  }
-};
+    console.log("=== handleImageUpload called ===");
+    console.log("Files received:", files);
+    console.log("Type of files:", typeof files);
+    console.log("Is FileList?", files instanceof FileList);
 
-  const insertImageAtCursor = (imageUrl, altText = '') => {
+    if (!files || files.length === 0) {
+      console.log("No files to process");
+      return;
+    }
+
+    console.log("Setting upload state to true...");
+    setIsUploadingImage(true);
+    setImageUploadProgress(0);
+
+    try {
+      console.log("About to call api.uploadImages...");
+      console.log("selectedWebsite:", selectedWebsite);
+      console.log("editingContent?.id:", editingContent?.id);
+
+      const result = await api.uploadImages(
+        files,
+        selectedWebsite,
+        editingContent?.id
+      );
+
+      console.log("API call completed, result:", result);
+
+      setUploadedImages((prev) => {
+        console.log("Previous uploaded images:", prev);
+        console.log("Adding new images:", result.images);
+        return [...prev, ...result.images];
+      });
+
+      showToast(
+        "Images Uploaded",
+        `Successfully uploaded ${result.images.length} image(s)`
+      );
+
+      if (result.images.length === 1 && bodyTextareaRef.current) {
+        console.log("Auto-inserting single image...");
+        insertImageAtCursor(result.images[0].url, result.images[0].altText);
+      }
+    } catch (error) {
+      console.error("Upload error caught:", error);
+      console.error("Error stack:", error.stack);
+      showToast("Upload Failed", error.message, "destructive");
+    } finally {
+      console.log("Finally block - resetting upload state");
+      setIsUploadingImage(false);
+      setImageUploadProgress(0);
+    }
+  };
+
+  const insertImageAtCursor = (imageUrl, altText = "") => {
     const textarea = bodyTextareaRef.current;
     if (!textarea) return;
-    
+
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const text = editFormData.body;
-    
+
     const imageHtml = `
 <figure class="wp-block-image size-large">
   <img src="${imageUrl}" alt="${altText}" class="aligncenter" />
   <figcaption>${altText}</figcaption>
 </figure>`;
-    
+
     const newText = text.substring(0, start) + imageHtml + text.substring(end);
-    
-    setEditFormData(prev => ({
+
+    setEditFormData((prev) => ({
       ...prev,
-      body: newText
+      body: newText,
     }));
-    
+
     setTimeout(() => {
       textarea.focus();
-      textarea.setSelectionRange(start + imageHtml.length, start + imageHtml.length);
+      textarea.setSelectionRange(
+        start + imageHtml.length,
+        start + imageHtml.length
+      );
     }, 0);
   };
 
   const replaceImage = (oldImageUrl, newImageUrl, newAltText) => {
     let updatedBody = editFormData.body;
-    
-    const imgRegex = new RegExp(`<img[^>]*src=["']${escapeRegExp(oldImageUrl)}["'][^>]*>`, 'gi');
-    
+
+    const imgRegex = new RegExp(
+      `<img[^>]*src=["']${escapeRegExp(oldImageUrl)}["'][^>]*>`,
+      "gi"
+    );
+
     updatedBody = updatedBody.replace(imgRegex, (match) => {
       return match
         .replace(/src=["'][^"']+["']/, `src="${newImageUrl}"`)
         .replace(/alt=["'][^"']*["']/, `alt="${newAltText}"`);
     });
-    
-    setEditFormData(prev => ({
+
+    setEditFormData((prev) => ({
       ...prev,
-      body: updatedBody
+      body: updatedBody,
     }));
-    
-    showToast('Image Replaced', 'Successfully replaced image in content');
+
+    showToast("Image Replaced", "Successfully replaced image in content");
   };
 
   const removeImage = (image) => {
-    const updatedBody = editFormData.body.replace(image.htmlString, '');
-    setEditFormData(prev => ({
+    const updatedBody = editFormData.body.replace(image.htmlString, "");
+    setEditFormData((prev) => ({
       ...prev,
-      body: updatedBody
+      body: updatedBody,
     }));
   };
 
@@ -588,7 +621,10 @@ const [contentToDelete, setContentToDelete] = useState(null);
     if (formData.wordCount < 100 || formData.wordCount > 5000) {
       errors.wordCount = "Word count must be between 100 and 5000";
     }
-    if (!formData.aiProvider || !["openai", "anthropic", "gemini"].includes(formData.aiProvider)) {
+    if (
+      !formData.aiProvider ||
+      !["openai", "anthropic", "gemini"].includes(formData.aiProvider)
+    ) {
       errors.aiProvider = "Please select a valid AI provider";
     }
 
@@ -597,7 +633,12 @@ const [contentToDelete, setContentToDelete] = useState(null);
         errors.imageCount = "Image count must be between 1 and 3";
       }
 
-      const validStyles = ["natural", "digital_art", "photographic", "cinematic"];
+      const validStyles = [
+        "natural",
+        "digital_art",
+        "photographic",
+        "cinematic",
+      ];
       if (!validStyles.includes(formData.imageStyle)) {
         errors.imageStyle = "Please select a valid image style";
       }
@@ -615,8 +656,10 @@ const [contentToDelete, setContentToDelete] = useState(null);
       errors.body = "Content body must be at least 50 characters long";
     }
 
-    if ((editFormData.regenerateImages || editFormData.includeImages) &&
-        (editFormData.imageCount < 1 || editFormData.imageCount > 3)) {
+    if (
+      (editFormData.regenerateImages || editFormData.includeImages) &&
+      (editFormData.imageCount < 1 || editFormData.imageCount > 3)
+    ) {
       errors.imageCount = "Image count must be between 1 and 3";
     }
 
@@ -667,7 +710,9 @@ const [contentToDelete, setContentToDelete] = useState(null);
           setGenerationPhase("Analyzing topic and keywords...");
           setEstimatedTimeRemaining(20);
         } else if (newProgress < 45) {
-          setGenerationPhase(`Generating content with ${getProviderName(formData.aiProvider)}...`);
+          setGenerationPhase(
+            `Generating content with ${getProviderName(formData.aiProvider)}...`
+          );
           setEstimatedTimeRemaining(15);
         } else if (newProgress < 60) {
           setGenerationPhase("Optimizing for SEO...");
@@ -676,7 +721,11 @@ const [contentToDelete, setContentToDelete] = useState(null);
           setGenerationPhase("Analyzing readability and brand voice...");
           setEstimatedTimeRemaining(5);
         } else if (newProgress < 85) {
-          setGenerationPhase(formData.includeImages ? "Generating AI images..." : "Finalizing content...");
+          setGenerationPhase(
+            formData.includeImages
+              ? "Generating AI images..."
+              : "Finalizing content..."
+          );
           setEstimatedTimeRemaining(3);
         } else {
           setGenerationPhase("Almost done...");
@@ -716,13 +765,20 @@ const [contentToDelete, setContentToDelete] = useState(null);
 
       const aiResult = result.aiResult;
 
-      const imageInfo = aiResult.images?.length > 0
-        ? ` + ${aiResult.images.length} images ($${aiResult.totalImageCost?.toFixed(4)})`
-        : "";
+      const imageInfo =
+        aiResult.images?.length > 0
+          ? ` + ${
+              aiResult.images.length
+            } images ($${aiResult.totalImageCost?.toFixed(4)})`
+          : "";
 
       showToast(
         "Content Generated Successfully",
-        `${getProviderName(aiResult.aiProvider)} generated content with SEO: ${aiResult.seoScore}%, Readability: ${aiResult.readabilityScore}%, Brand Voice: ${aiResult.brandVoiceScore}%. Cost: $${(aiResult.costUsd / 100).toFixed(4)}${imageInfo}`
+        `${getProviderName(aiResult.aiProvider)} generated content with SEO: ${
+          aiResult.seoScore
+        }%, Readability: ${aiResult.readabilityScore}%, Brand Voice: ${
+          aiResult.brandVoiceScore
+        }%. Cost: $${(aiResult.costUsd / 100).toFixed(4)}${imageInfo}`
       );
 
       setIsGenerateDialogOpen(false);
@@ -746,10 +802,17 @@ const [contentToDelete, setContentToDelete] = useState(null);
 
       if (error.message.includes("Image generation failed")) {
         errorTitle = "Image Generation Failed";
-        errorDescription = "Content generated successfully, but image generation failed. " + error.message;
+        errorDescription =
+          "Content generated successfully, but image generation failed. " +
+          error.message;
       }
 
-      showToast(errorTitle, errorDescription, severity === "error" ? "destructive" : "warning", errorType);
+      showToast(
+        errorTitle,
+        errorDescription,
+        severity === "error" ? "destructive" : "warning",
+        errorType
+      );
     } finally {
       setIsGenerating(false);
     }
@@ -804,45 +867,56 @@ const [contentToDelete, setContentToDelete] = useState(null);
   };
 
   const saveContent = async () => {
-  if (!validateEditForm() || !editingContent) return;
+    if (!validateEditForm() || !editingContent) return;
 
-  setIsSaving(true);
+    setIsSaving(true);
 
-  try {
-    const keywords = editFormData.keywords
-      .split(",")
-      .map((k) => k.trim())
-      .filter((k) => k);
+    try {
+      const keywords = editFormData.keywords
+        .split(",")
+        .map((k) => k.trim())
+        .filter((k) => k);
 
-    await api.updateContent(editingContent.id, {
-      title: sanitizeFormInput(editFormData.title),
-      body: sanitizeHtmlContent(editFormData.body, true), // Pass true to preserve HTML
-      excerpt: sanitizeFormInput(editFormData.excerpt),
-      seoKeywords: keywords,
-      tone: editFormData.tone,
-      brandVoice: editFormData.brandVoice || undefined,
-      targetAudience: editFormData.targetAudience || undefined,
-      eatCompliance: editFormData.eatCompliance,
-      websiteId: selectedWebsite,
-    });
+      await api.updateContent(editingContent.id, {
+        title: sanitizeFormInput(editFormData.title),
+        body: sanitizeHtmlContent(editFormData.body, true), // Pass true to preserve HTML
+        excerpt: sanitizeFormInput(editFormData.excerpt),
+        seoKeywords: keywords,
+        tone: editFormData.tone,
+        brandVoice: editFormData.brandVoice || undefined,
+        targetAudience: editFormData.targetAudience || undefined,
+        eatCompliance: editFormData.eatCompliance,
+        websiteId: selectedWebsite,
+      });
 
-    await loadContent();
-    closeEditDialog();
+      await loadContent();
+      closeEditDialog();
 
-    showToast("Content Saved Successfully", "Your changes have been saved to the database.");
-  } catch (error) {
-    showToast("Save Failed", error.message || "Failed to save content changes", "destructive");
-  } finally {
-    setIsSaving(false);
-  }
-};
+      showToast(
+        "Content Saved Successfully",
+        "Your changes have been saved to the database."
+      );
+    } catch (error) {
+      showToast(
+        "Save Failed",
+        error.message || "Failed to save content changes",
+        "destructive"
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const regenerateContent = async () => {
     if (!validateEditForm() || !editingContent) return;
 
-    if (!editFormData.aiProvider || !["openai", "anthropic", "gemini"].includes(editFormData.aiProvider)) {
+    if (
+      !editFormData.aiProvider ||
+      !["openai", "anthropic", "gemini"].includes(editFormData.aiProvider)
+    ) {
       setEditFormErrors({
-        aiProvider: "Please select a valid AI provider for content regeneration",
+        aiProvider:
+          "Please select a valid AI provider for content regeneration",
       });
       return;
     }
@@ -877,20 +951,36 @@ const [contentToDelete, setContentToDelete] = useState(null);
 
       if (result.regeneration && result.regeneration.success) {
         const regen = result.regeneration;
-        let successMessage = `${getProviderName(regen.contentAiProvider)} created new content - SEO: ${regen.seoScore}%, Readability: ${regen.readabilityScore}%, Brand Voice: ${regen.brandVoiceScore}%. Text cost: $${regen.costUsd.toFixed(4)}`;
+        let successMessage = `${getProviderName(
+          regen.contentAiProvider
+        )} created new content - SEO: ${regen.seoScore}%, Readability: ${
+          regen.readabilityScore
+        }%, Brand Voice: ${
+          regen.brandVoiceScore
+        }%. Text cost: $${regen.costUsd.toFixed(4)}`;
 
         if (regen.imagesRegenerated && regen.newImageCount > 0) {
-          successMessage += `. Generated ${regen.newImageCount} new image${regen.newImageCount > 1 ? "s" : ""} with DALL-E for $${regen.imageCostUsd.toFixed(4)}`;
+          successMessage += `. Generated ${regen.newImageCount} new image${
+            regen.newImageCount > 1 ? "s" : ""
+          } with DALL-E for $${regen.imageCostUsd.toFixed(4)}`;
         }
 
         showToast("Content Regenerated Successfully", successMessage);
       } else {
-        showToast("Content Saved Successfully", "Your content has been updated and saved.");
+        showToast(
+          "Content Saved Successfully",
+          "Your content has been updated and saved."
+        );
       }
     } catch (error) {
       const errorType = getErrorType(error);
       const severity = getErrorSeverity(error);
-      showToast("Regeneration Failed", error.message, severity === "error" ? "destructive" : "warning", errorType);
+      showToast(
+        "Regeneration Failed",
+        error.message,
+        severity === "error" ? "destructive" : "warning",
+        errorType
+      );
     } finally {
       setIsRegenerating(false);
     }
@@ -903,42 +993,52 @@ const [contentToDelete, setContentToDelete] = useState(null);
       await api.publishContent(contentId);
       await loadContent();
 
-      showToast("Content Published", "Content has been published to your WordPress site.");
+      showToast(
+        "Content Published",
+        "Content has been published to your WordPress site."
+      );
     } catch (error) {
-      showToast("Publish Failed", error.message || "Failed to publish content. Please try again.", "destructive");
+      showToast(
+        "Publish Failed",
+        error.message || "Failed to publish content. Please try again.",
+        "destructive"
+      );
     } finally {
       setIsPublishing(false);
     }
   };
 
   const deleteContent = async (contentId) => {
-  setIsDeleting(true);
-  setDeletingContentId(contentId);
-  
-  try {
-    await api.deleteContent(contentId);
-    await loadContent();
-    showToast("Content Deleted", "Content has been successfully deleted.");
+    setIsDeleting(true);
+    setDeletingContentId(contentId);
+
+    try {
+      await api.deleteContent(contentId);
+      await loadContent();
+      showToast("Content Deleted", "Content has been successfully deleted.");
+      setShowDeleteConfirm(false);
+      setContentToDelete(null);
+    } catch (error) {
+      showToast(
+        "Delete Failed",
+        error.message || "Failed to delete content. Please try again.",
+        "destructive"
+      );
+    } finally {
+      setIsDeleting(false);
+      setDeletingContentId(null);
+    }
+  };
+
+  const openDeleteConfirm = (item) => {
+    setContentToDelete(item);
+    setShowDeleteConfirm(true);
+  };
+
+  const closeDeleteConfirm = () => {
     setShowDeleteConfirm(false);
     setContentToDelete(null);
-  } catch (error) {
-    showToast("Delete Failed", error.message || "Failed to delete content. Please try again.", "destructive");
-  } finally {
-    setIsDeleting(false);
-    setDeletingContentId(null);
-  }
-};
-
-const openDeleteConfirm = (item) => {
-  setContentToDelete(item);
-  setShowDeleteConfirm(true);
-};
-
-const closeDeleteConfirm = () => {
-  setShowDeleteConfirm(false);
-  setContentToDelete(null);
-};
-
+  };
 
   const getWebsiteName = (websiteId) => {
     const website = websites.find((w) => w.id === websiteId);
@@ -962,21 +1062,27 @@ const closeDeleteConfirm = () => {
   );
   const avgSeoScore =
     validScores.length > 0
-      ? Math.round(validScores.reduce((sum, item) => sum + item.seoScore, 0) / validScores.length)
+      ? Math.round(
+          validScores.reduce((sum, item) => sum + item.seoScore, 0) /
+            validScores.length
+        )
       : null;
 
+  const tabFilteredContent = filteredContent.filter((item) => {
+    if (activeTab === "published") {
+      return item.status === "published";
+    } else {
+      return item.status !== "published";
+    }
+  });
 
-      const tabFilteredContent = filteredContent.filter(item => {
-  if (activeTab === "published") {
-    return item.status === "published";
-  } else {
-    return item.status !== "published";
-  }
-});
-
-// Update metrics to use filtered content
-const publishedCount = filteredContent.filter(c => c.status === "published").length;
-const unpublishedCount = filteredContent.filter(c => c.status !== "published").length;
+  // Update metrics to use filtered content
+  const publishedCount = filteredContent.filter(
+    (c) => c.status === "published"
+  ).length;
+  const unpublishedCount = filteredContent.filter(
+    (c) => c.status !== "published"
+  ).length;
 
   return (
     <div className="py-6 bg-gray-50 min-h-screen">
@@ -1015,12 +1121,15 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
           >
             <div className="flex items-start justify-between">
               <div className="flex items-start flex-1">
-                {(toast.variant === "destructive" || toast.variant === "warning") && (
+                {(toast.variant === "destructive" ||
+                  toast.variant === "warning") && (
                   <AlertTriangle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
                 )}
                 <div className="flex-1">
                   <div className="font-medium text-sm">{toast.title}</div>
-                  <div className="text-xs opacity-90 mt-1">{toast.description}</div>
+                  <div className="text-xs opacity-90 mt-1">
+                    {toast.description}
+                  </div>
                   {toast.errorType && (
                     <div className="text-xs mt-1 opacity-75">
                       Error Type: {toast.errorType.toUpperCase()}
@@ -1045,7 +1154,8 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
               AI Content Generation
             </h2>
             <p className="mt-1 text-sm text-gray-500">
-              Create high-quality, SEO-optimized content with OpenAI GPT-4O, Anthropic Claude, or Google Gemini
+              Create high-quality, SEO-optimized content with OpenAI GPT-4O,
+              Anthropic Claude, or Google Gemini
             </p>
           </div>
           <div className="mt-4 flex space-x-3 md:mt-0 md:ml-4">
@@ -1054,7 +1164,11 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
               disabled={isLoadingWebsites}
               className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingWebsites ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`w-4 h-4 mr-2 ${
+                  isLoadingWebsites ? "animate-spin" : ""
+                }`}
+              />
               Refresh
             </button>
             <button
@@ -1083,7 +1197,8 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                       Generate AI Content
                     </h3>
                     <p className="mt-1 text-sm text-gray-500">
-                      Create SEO-optimized content with your preferred AI provider
+                      Create SEO-optimized content with your preferred AI
+                      provider
                     </p>
                   </div>
 
@@ -1094,12 +1209,18 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                         AI Provider for Content *
                       </label>
                       <p className="text-xs text-gray-600 mb-3">
-                        Select AI provider for content generation. Images will always use DALL-E 3 when enabled.
+                        Select AI provider for content generation. Images will
+                        always use DALL-E 3 when enabled.
                       </p>
                       <div className="grid grid-cols-3 gap-3">
                         <button
                           type="button"
-                          onClick={() => setFormData((prev) => ({ ...prev, aiProvider: "openai" }))}
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              aiProvider: "openai",
+                            }))
+                          }
                           className={`p-3 border-2 rounded-lg text-left transition-all ${
                             formData.aiProvider === "openai"
                               ? "border-green-500 bg-green-50"
@@ -1108,15 +1229,27 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                         >
                           <div className="flex items-center mb-1">
                             <Cpu className="w-4 h-4 text-green-600 mr-2" />
-                            <span className="font-medium text-sm">OpenAI GPT-4O</span>
+                            <span className="font-medium text-sm">
+                              OpenAI GPT-4O
+                            </span>
                           </div>
-                          <p className="text-xs text-gray-600">Advanced language model with excellent content generation</p>
-                          <p className="text-xs text-green-600 mt-1">$0.005/$0.015 per 1K tokens</p>
+                          <p className="text-xs text-gray-600">
+                            Advanced language model with excellent content
+                            generation
+                          </p>
+                          <p className="text-xs text-green-600 mt-1">
+                            $0.005/$0.015 per 1K tokens
+                          </p>
                         </button>
 
                         <button
                           type="button"
-                          onClick={() => setFormData((prev) => ({ ...prev, aiProvider: "anthropic" }))}
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              aiProvider: "anthropic",
+                            }))
+                          }
                           className={`p-3 border-2 rounded-lg text-left transition-all ${
                             formData.aiProvider === "anthropic"
                               ? "border-purple-500 bg-purple-50"
@@ -1125,15 +1258,26 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                         >
                           <div className="flex items-center mb-1">
                             <Bot className="w-4 h-4 text-purple-600 mr-2" />
-                            <span className="font-medium text-sm">Anthropic Claude</span>
+                            <span className="font-medium text-sm">
+                              Anthropic Claude
+                            </span>
                           </div>
-                          <p className="text-xs text-gray-600">Thoughtful AI with strong analytical capabilities</p>
-                          <p className="text-xs text-purple-600 mt-1">$0.003/$0.015 per 1K tokens</p>
+                          <p className="text-xs text-gray-600">
+                            Thoughtful AI with strong analytical capabilities
+                          </p>
+                          <p className="text-xs text-purple-600 mt-1">
+                            $0.003/$0.015 per 1K tokens
+                          </p>
                         </button>
 
                         <button
                           type="button"
-                          onClick={() => setFormData((prev) => ({ ...prev, aiProvider: "gemini" }))}
+                          onClick={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              aiProvider: "gemini",
+                            }))
+                          }
                           className={`p-3 border-2 rounded-lg text-left transition-all ${
                             formData.aiProvider === "gemini"
                               ? "border-blue-500 bg-blue-50"
@@ -1142,14 +1286,22 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                         >
                           <div className="flex items-center mb-1">
                             <Sparkles className="w-4 h-4 text-blue-600 mr-2" />
-                            <span className="font-medium text-sm">Google Gemini</span>
+                            <span className="font-medium text-sm">
+                              Google Gemini
+                            </span>
                           </div>
-                          <p className="text-xs text-gray-600">Google's multimodal AI with strong reasoning</p>
-                          <p className="text-xs text-blue-600 mt-1">$0.0025/$0.0075 per 1K tokens</p>
+                          <p className="text-xs text-gray-600">
+                            Google's multimodal AI with strong reasoning
+                          </p>
+                          <p className="text-xs text-blue-600 mt-1">
+                            $0.0025/$0.0075 per 1K tokens
+                          </p>
                         </button>
                       </div>
                       {formErrors.aiProvider && (
-                        <p className="text-sm text-red-600 mt-1">{formErrors.aiProvider}</p>
+                        <p className="text-sm text-red-600 mt-1">
+                          {formErrors.aiProvider}
+                        </p>
                       )}
                     </div>
 
@@ -1177,7 +1329,9 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                           ))}
                         </select>
                         {formErrors.websiteId && (
-                          <p className="text-sm text-red-600 mt-1">{formErrors.websiteId}</p>
+                          <p className="text-sm text-red-600 mt-1">
+                            {formErrors.websiteId}
+                          </p>
                         )}
                       </div>
 
@@ -1187,7 +1341,12 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                         </label>
                         <select
                           value={formData.tone}
-                          onChange={(e) => setFormData((prev) => ({ ...prev, tone: e.target.value }))}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              tone: e.target.value,
+                            }))
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                         >
                           <option value="professional">Professional</option>
@@ -1207,12 +1366,19 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                       <input
                         type="text"
                         value={formData.topic}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, topic: e.target.value }))}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            topic: e.target.value,
+                          }))
+                        }
                         placeholder="e.g., Latest WordPress Security Tips"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       />
                       {formErrors.topic && (
-                        <p className="text-sm text-red-600 mt-1">{formErrors.topic}</p>
+                        <p className="text-sm text-red-600 mt-1">
+                          {formErrors.topic}
+                        </p>
                       )}
                     </div>
 
@@ -1223,11 +1389,18 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                       <input
                         type="text"
                         value={formData.keywords}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, keywords: e.target.value }))}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            keywords: e.target.value,
+                          }))
+                        }
                         placeholder="wordpress, security, tips, 2024"
                         className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       />
-                      <p className="text-xs text-gray-500 mt-1">Separate keywords with commas</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Separate keywords with commas
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -1238,13 +1411,20 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                         <input
                           type="number"
                           value={formData.wordCount}
-                          onChange={(e) => setFormData((prev) => ({ ...prev, wordCount: parseInt(e.target.value) || 0 }))}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              wordCount: parseInt(e.target.value) || 0,
+                            }))
+                          }
                           min="100"
                           max="5000"
                           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                         />
                         {formErrors.wordCount && (
-                          <p className="text-sm text-red-600 mt-1">{formErrors.wordCount}</p>
+                          <p className="text-sm text-red-600 mt-1">
+                            {formErrors.wordCount}
+                          </p>
                         )}
                       </div>
 
@@ -1253,10 +1433,17 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                           <input
                             type="checkbox"
                             checked={formData.seoOptimized}
-                            onChange={(e) => setFormData((prev) => ({ ...prev, seoOptimized: e.target.checked }))}
+                            onChange={(e) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                seoOptimized: e.target.checked,
+                              }))
+                            }
                             className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                           />
-                          <span className="ml-2 text-sm text-gray-700">SEO Optimized</span>
+                          <span className="ml-2 text-sm text-gray-700">
+                            SEO Optimized
+                          </span>
                         </label>
                       </div>
                     </div>
@@ -1281,7 +1468,12 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                             <input
                               type="text"
                               value={formData.targetAudience}
-                              onChange={(e) => setFormData((prev) => ({ ...prev, targetAudience: e.target.value }))}
+                              onChange={(e) =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  targetAudience: e.target.value,
+                                }))
+                              }
                               placeholder="e.g., Small business owners, Developers"
                               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                             />
@@ -1294,7 +1486,12 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                             <input
                               type="text"
                               value={formData.brandVoice}
-                              onChange={(e) => setFormData((prev) => ({ ...prev, brandVoice: e.target.value }))}
+                              onChange={(e) =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  brandVoice: e.target.value,
+                                }))
+                              }
                               placeholder="Leave empty to use website's brand voice"
                               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                             />
@@ -1305,10 +1502,17 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                               <input
                                 type="checkbox"
                                 checked={formData.eatCompliance}
-                                onChange={(e) => setFormData((prev) => ({ ...prev, eatCompliance: e.target.checked }))}
+                                onChange={(e) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    eatCompliance: e.target.checked,
+                                  }))
+                                }
                                 className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                               />
-                              <span className="ml-2 text-sm text-gray-700">E-E-A-T Compliance (YMYL Content)</span>
+                              <span className="ml-2 text-sm text-gray-700">
+                                E-E-A-T Compliance (YMYL Content)
+                              </span>
                             </label>
                           </div>
 
@@ -1318,18 +1522,26 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                                 <input
                                   type="checkbox"
                                   checked={formData.includeImages}
-                                  onChange={(e) => setFormData((prev) => ({ ...prev, includeImages: e.target.checked }))}
+                                  onChange={(e) =>
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      includeImages: e.target.checked,
+                                    }))
+                                  }
                                   className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                                 />
                                 <span className="ml-2 text-sm font-medium text-gray-700">
                                   Generate Images with DALL-E 3
                                 </span>
                               </label>
-                              <span className="text-xs text-orange-600">$0.04-$0.12 per image</span>
+                              <span className="text-xs text-orange-600">
+                                $0.04-$0.12 per image
+                              </span>
                             </div>
 
                             <p className="text-xs text-gray-600 mb-3">
-                              Images are generated using OpenAI's DALL-E 3 regardless of your content AI provider choice.
+                              Images are generated using OpenAI's DALL-E 3
+                              regardless of your content AI provider choice.
                             </p>
 
                             {formData.includeImages && (
@@ -1341,12 +1553,21 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                                     </label>
                                     <select
                                       value={formData.imageCount}
-                                      onChange={(e) => setFormData((prev) => ({ ...prev, imageCount: parseInt(e.target.value) }))}
+                                      onChange={(e) =>
+                                        setFormData((prev) => ({
+                                          ...prev,
+                                          imageCount: parseInt(e.target.value),
+                                        }))
+                                      }
                                       className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                                     >
                                       <option value={1}>1 Image (Hero)</option>
-                                      <option value={2}>2 Images (Hero + Support)</option>
-                                      <option value={3}>3 Images (Full Set)</option>
+                                      <option value={2}>
+                                        2 Images (Hero + Support)
+                                      </option>
+                                      <option value={3}>
+                                        3 Images (Full Set)
+                                      </option>
                                     </select>
                                   </div>
 
@@ -1356,13 +1577,26 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                                     </label>
                                     <select
                                       value={formData.imageStyle}
-                                      onChange={(e) => setFormData((prev) => ({ ...prev, imageStyle: e.target.value }))}
+                                      onChange={(e) =>
+                                        setFormData((prev) => ({
+                                          ...prev,
+                                          imageStyle: e.target.value,
+                                        }))
+                                      }
                                       className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                                     >
-                                      <option value="natural">Natural/Photorealistic</option>
-                                      <option value="digital_art">Digital Art</option>
-                                      <option value="photographic">Professional Photography</option>
-                                      <option value="cinematic">Cinematic</option>
+                                      <option value="natural">
+                                        Natural/Photorealistic
+                                      </option>
+                                      <option value="digital_art">
+                                        Digital Art
+                                      </option>
+                                      <option value="photographic">
+                                        Professional Photography
+                                      </option>
+                                      <option value="cinematic">
+                                        Cinematic
+                                      </option>
                                     </select>
                                   </div>
                                 </div>
@@ -1404,12 +1638,16 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                         <div className="flex items-center justify-between text-sm">
                           <div className="flex items-center">
                             <Loader2 className="w-4 h-4 mr-2 animate-spin text-blue-600" />
-                            <span className="text-gray-700">{generationPhase}</span>
+                            <span className="text-gray-700">
+                              {generationPhase}
+                            </span>
                           </div>
                           {estimatedTimeRemaining > 0 && (
                             <div className="flex items-center text-gray-500">
                               <Clock className="w-4 h-4 mr-1" />
-                              <span className="text-xs">~{estimatedTimeRemaining}s remaining</span>
+                              <span className="text-xs">
+                                ~{estimatedTimeRemaining}s remaining
+                              </span>
                             </div>
                           )}
                         </div>
@@ -1443,7 +1681,9 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                     </button>
                     <button
                       type="button"
-                      onClick={() => !isGenerating && setIsGenerateDialogOpen(false)}
+                      onClick={() =>
+                        !isGenerating && setIsGenerateDialogOpen(false)
+                      }
                       disabled={isGenerating}
                       className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -1473,7 +1713,8 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                         Edit Content
                       </h3>
                       <p className="mt-1 text-sm text-gray-500">
-                        Edit content with live preview - Save changes or regenerate with AI
+                        Edit content with live preview - Save changes or
+                        regenerate with AI
                       </p>
                     </div>
                     <button
@@ -1517,15 +1758,19 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
 
                         <div className="prose prose-lg max-w-none">
                           <div
-  className="wordpress-content"
-  dangerouslySetInnerHTML={{
-    __html: editFormData.body || "<p>Start typing your content...</p>", 
-  }}
-  style={{ lineHeight: "1.7", fontSize: "16px" }}
-/>
+                            className="wordpress-content"
+                            dangerouslySetInnerHTML={{
+                              __html:
+                                editFormData.body ||
+                                "<p>Start typing your content...</p>",
+                            }}
+                            style={{ lineHeight: "1.7", fontSize: "16px" }}
+                          />
                         </div>
 
-                        {(editFormData.targetAudience || editFormData.brandVoice || editFormData.eatCompliance) && (
+                        {(editFormData.targetAudience ||
+                          editFormData.brandVoice ||
+                          editFormData.eatCompliance) && (
                           <div className="mt-8 pt-6 border-t border-gray-200">
                             <h4 className="text-sm font-medium text-gray-900 mb-3">
                               Content Metadata
@@ -1566,13 +1811,19 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                           AI Provider for Regeneration
                         </label>
                         <p className="text-xs text-gray-600 mb-3">
-                          Select an AI provider to completely regenerate this content with new AI-generated text
+                          Select an AI provider to completely regenerate this
+                          content with new AI-generated text
                         </p>
 
                         <div className="space-y-2">
                           <button
                             type="button"
-                            onClick={() => setEditFormData((prev) => ({ ...prev, aiProvider: "openai" }))}
+                            onClick={() =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                aiProvider: "openai",
+                              }))
+                            }
                             className={`w-full p-3 border rounded-lg text-left text-sm transition-all ${
                               editFormData.aiProvider === "openai"
                                 ? "border-green-500 bg-green-50"
@@ -1582,14 +1833,21 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                             <div className="flex items-center justify-between">
                               <div className="flex items-center">
                                 <Cpu className="w-4 h-4 text-green-600 mr-2" />
-                                <span className="font-medium">OpenAI GPT-4</span>
+                                <span className="font-medium">
+                                  OpenAI GPT-4
+                                </span>
                               </div>
                             </div>
                           </button>
 
                           <button
                             type="button"
-                            onClick={() => setEditFormData((prev) => ({ ...prev, aiProvider: "anthropic" }))}
+                            onClick={() =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                aiProvider: "anthropic",
+                              }))
+                            }
                             className={`w-full p-3 border rounded-lg text-left text-sm transition-all ${
                               editFormData.aiProvider === "anthropic"
                                 ? "border-purple-500 bg-purple-50"
@@ -1598,13 +1856,20 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                           >
                             <div className="flex items-center">
                               <Bot className="w-4 h-4 text-purple-600 mr-2" />
-                              <span className="font-medium">Anthropic Claude</span>
+                              <span className="font-medium">
+                                Anthropic Claude
+                              </span>
                             </div>
                           </button>
 
                           <button
                             type="button"
-                            onClick={() => setEditFormData((prev) => ({ ...prev, aiProvider: "gemini" }))}
+                            onClick={() =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                aiProvider: "gemini",
+                              }))
+                            }
                             className={`w-full p-3 border rounded-lg text-left text-sm transition-all ${
                               editFormData.aiProvider === "gemini"
                                 ? "border-blue-500 bg-blue-50"
@@ -1628,25 +1893,29 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                       {/* Image Management Section */}
                       <div className="border border-indigo-200 bg-indigo-50 rounded-lg p-4">
                         <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-medium text-gray-700">Image Management</h4>
+                          <h4 className="text-sm font-medium text-gray-700">
+                            Image Management
+                          </h4>
                           <span className="text-xs text-indigo-600">
                             {contentImages.length} images in content
                           </span>
                         </div>
-                        
+
                         {/* Upload New Images */}
                         <div className="mb-4">
                           <label className="block text-xs font-medium text-gray-700 mb-2">
                             Upload Custom Images
                           </label>
-                          
+
                           <div className="flex items-center space-x-2">
                             <label className="flex-1">
                               <input
                                 type="file"
                                 multiple
                                 accept="image/*"
-                                onChange={(e) => handleImageUpload(e.target.files)}
+                                onChange={(e) =>
+                                  handleImageUpload(e.target.files)
+                                }
                                 disabled={isUploadingImage}
                                 className="hidden"
                               />
@@ -1654,17 +1923,21 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                                 {isUploadingImage ? (
                                   <div className="flex items-center justify-center">
                                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    <span className="text-xs">Uploading... {imageUploadProgress}%</span>
+                                    <span className="text-xs">
+                                      Uploading... {imageUploadProgress}%
+                                    </span>
                                   </div>
                                 ) : (
                                   <div className="flex items-center justify-center">
                                     <Upload className="w-4 h-4 mr-2 text-indigo-600" />
-                                    <span className="text-xs text-indigo-700">Click to upload images</span>
+                                    <span className="text-xs text-indigo-700">
+                                      Click to upload images
+                                    </span>
                                   </div>
                                 )}
                               </div>
                             </label>
-                            
+
                             <button
                               type="button"
                               onClick={() => setShowImagePicker(true)}
@@ -1674,11 +1947,11 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                               <ImagePlus className="w-4 h-4 text-indigo-600" />
                             </button>
                           </div>
-                          
+
                           {isUploadingImage && (
                             <div className="mt-2">
                               <div className="bg-gray-200 rounded-full h-2">
-                                <div 
+                                <div
                                   className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
                                   style={{ width: `${imageUploadProgress}%` }}
                                 />
@@ -1686,7 +1959,7 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                             </div>
                           )}
                         </div>
-                        
+
                         {/* Uploaded Images Gallery */}
                         {uploadedImages.length > 0 && (
                           <div className="mb-4">
@@ -1695,13 +1968,15 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                             </label>
                             <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
                               {uploadedImages.map((img, idx) => (
-                                <div 
+                                <div
                                   key={idx}
                                   className="relative group cursor-pointer"
-                                  onClick={() => insertImageAtCursor(img.url, img.altText)}
+                                  onClick={() =>
+                                    insertImageAtCursor(img.url, img.altText)
+                                  }
                                 >
-                                  <img 
-                                    src={img.url} 
+                                  <img
+                                    src={img.url}
                                     alt={img.altText}
                                     className="w-full h-20 object-cover rounded border hover:border-indigo-500"
                                   />
@@ -1711,10 +1986,12 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                                 </div>
                               ))}
                             </div>
-                            <p className="text-xs text-gray-500 mt-1">Click image to insert at cursor position</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Click image to insert at cursor position
+                            </p>
                           </div>
                         )}
-                        
+
                         {/* Current Content Images */}
                         {contentImages.length > 0 && (
                           <div>
@@ -1723,24 +2000,33 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                             </label>
                             <div className="space-y-2 max-h-48 overflow-y-auto">
                               {contentImages.map((img, idx) => (
-                                <div key={idx} className="flex items-center space-x-2 p-2 bg-white rounded border">
-                                  <img 
-                                    src={img.url} 
+                                <div
+                                  key={idx}
+                                  className="flex items-center space-x-2 p-2 bg-white rounded border"
+                                >
+                                  <img
+                                    src={img.url}
                                     alt={img.altText}
                                     className="w-16 h-12 object-cover rounded"
                                     onError={(e) => {
-                                      e.target.src = '/placeholder-image.png';
+                                      e.target.src = "/placeholder-image.png";
                                     }}
                                   />
                                   <div className="flex-1 min-w-0">
-                                    <p className="text-xs truncate">{img.altText || 'No alt text'}</p>
-                                    <p className="text-xs text-gray-500 truncate">{img.url}</p>
+                                    <p className="text-xs truncate">
+                                      {img.altText || "No alt text"}
+                                    </p>
+                                    <p className="text-xs text-gray-500 truncate">
+                                      {img.url}
+                                    </p>
                                   </div>
                                   <button
                                     type="button"
                                     onClick={() => {
                                       setSelectedImageToReplace(img);
-                                      document.getElementById('replace-image-input').click();
+                                      document
+                                        .getElementById("replace-image-input")
+                                        .click();
                                     }}
                                     className="p-1 hover:bg-gray-100 rounded"
                                     title="Replace image"
@@ -1760,7 +2046,7 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                             </div>
                           </div>
                         )}
-                        
+
                         {/* Hidden file input for image replacement */}
                         <input
                           id="replace-image-input"
@@ -1772,7 +2058,11 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                               const file = e.target.files[0];
                               try {
                                 setIsUploadingImage(true);
-                                const result = await api.uploadImages([file], selectedWebsite, editingContent?.id);
+                                const result = await api.uploadImages(
+                                  [file],
+                                  selectedWebsite,
+                                  editingContent?.id
+                                );
                                 if (result.images?.[0]) {
                                   replaceImage(
                                     selectedImageToReplace.url,
@@ -1781,7 +2071,11 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                                   );
                                 }
                               } catch (error) {
-                                showToast('Replace Failed', error.message, 'destructive');
+                                showToast(
+                                  "Replace Failed",
+                                  error.message,
+                                  "destructive"
+                                );
                               } finally {
                                 setIsUploadingImage(false);
                                 setSelectedImageToReplace(null);
@@ -1797,11 +2091,14 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                           <h4 className="text-sm font-medium text-gray-700">
                             AI Image Options
                           </h4>
-                          <span className="text-xs text-orange-600">DALL-E 3 Only</span>
+                          <span className="text-xs text-orange-600">
+                            DALL-E 3 Only
+                          </span>
                         </div>
 
                         <p className="text-xs text-gray-600 mb-3">
-                          Images are always generated with DALL-E 3, regardless of your content AI provider choice.
+                          Images are always generated with DALL-E 3, regardless
+                          of your content AI provider choice.
                         </p>
 
                         <div className="space-y-3">
@@ -1809,15 +2106,28 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                             <input
                               type="radio"
                               name="imageRegenOption"
-                              checked={!editFormData.regenerateImages && !editFormData.includeImages}
-                              onChange={() => setEditFormData((prev) => ({ ...prev, regenerateImages: false, includeImages: false }))}
+                              checked={
+                                !editFormData.regenerateImages &&
+                                !editFormData.includeImages
+                              }
+                              onChange={() =>
+                                setEditFormData((prev) => ({
+                                  ...prev,
+                                  regenerateImages: false,
+                                  includeImages: false,
+                                }))
+                              }
                               className="mt-1 rounded border-gray-300 text-orange-600"
                             />
                             <div className="ml-3">
-                              <span className="text-sm font-medium text-gray-700">Keep Current Setup</span>
+                              <span className="text-sm font-medium text-gray-700">
+                                Keep Current Setup
+                              </span>
                               <p className="text-xs text-gray-600">
                                 {editingContent && editingContent.hasImages
-                                  ? `Keep existing ${editingContent.imageCount || 0} images`
+                                  ? `Keep existing ${
+                                      editingContent.imageCount || 0
+                                    } images`
                                   : "No images (text content only)"}
                               </p>
                               <span className="inline-block mt-1 text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
@@ -1832,12 +2142,23 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                                 type="radio"
                                 name="imageRegenOption"
                                 checked={editFormData.regenerateImages}
-                                onChange={() => setEditFormData((prev) => ({ ...prev, regenerateImages: true, includeImages: true }))}
+                                onChange={() =>
+                                  setEditFormData((prev) => ({
+                                    ...prev,
+                                    regenerateImages: true,
+                                    includeImages: true,
+                                  }))
+                                }
                                 className="mt-1 rounded border-gray-300 text-orange-600"
                               />
                               <div className="ml-3">
-                                <span className="text-sm font-medium text-gray-700">Regenerate Images</span>
-                                <p className="text-xs text-gray-600">Create completely new AI-generated images for this content</p>
+                                <span className="text-sm font-medium text-gray-700">
+                                  Regenerate Images
+                                </span>
+                                <p className="text-xs text-gray-600">
+                                  Create completely new AI-generated images for
+                                  this content
+                                </p>
                                 <span className="inline-block mt-1 text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">
                                   $0.04 per image
                                 </span>
@@ -1850,13 +2171,27 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                               <input
                                 type="radio"
                                 name="imageRegenOption"
-                                checked={!editFormData.regenerateImages && editFormData.includeImages}
-                                onChange={() => setEditFormData((prev) => ({ ...prev, regenerateImages: false, includeImages: true }))}
+                                checked={
+                                  !editFormData.regenerateImages &&
+                                  editFormData.includeImages
+                                }
+                                onChange={() =>
+                                  setEditFormData((prev) => ({
+                                    ...prev,
+                                    regenerateImages: false,
+                                    includeImages: true,
+                                  }))
+                                }
                                 className="mt-1 rounded border-gray-300 text-orange-600"
                               />
                               <div className="ml-3">
-                                <span className="text-sm font-medium text-gray-700">Add New Images</span>
-                                <p className="text-xs text-gray-600">Generate images for content that doesn't currently have any</p>
+                                <span className="text-sm font-medium text-gray-700">
+                                  Add New Images
+                                </span>
+                                <p className="text-xs text-gray-600">
+                                  Generate images for content that doesn't
+                                  currently have any
+                                </p>
                                 <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
                                   $0.04 per image
                                 </span>
@@ -1864,7 +2199,8 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                             </label>
                           )}
 
-                          {(editFormData.regenerateImages || editFormData.includeImages) && (
+                          {(editFormData.regenerateImages ||
+                            editFormData.includeImages) && (
                             <div className="ml-6 pl-4 border-l-2 border-orange-200 space-y-3 bg-white p-3 rounded">
                               <div className="grid grid-cols-2 gap-3">
                                 <div>
@@ -1873,12 +2209,21 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                                   </label>
                                   <select
                                     value={editFormData.imageCount}
-                                    onChange={(e) => setEditFormData((prev) => ({ ...prev, imageCount: parseInt(e.target.value) }))}
+                                    onChange={(e) =>
+                                      setEditFormData((prev) => ({
+                                        ...prev,
+                                        imageCount: parseInt(e.target.value),
+                                      }))
+                                    }
                                     className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md"
                                   >
                                     <option value={1}>1 Image (Hero)</option>
-                                    <option value={2}>2 Images (Hero + Support)</option>
-                                    <option value={3}>3 Images (Full Set)</option>
+                                    <option value={2}>
+                                      2 Images (Hero + Support)
+                                    </option>
+                                    <option value={3}>
+                                      3 Images (Full Set)
+                                    </option>
                                   </select>
                                 </div>
 
@@ -1888,12 +2233,23 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                                   </label>
                                   <select
                                     value={editFormData.imageStyle}
-                                    onChange={(e) => setEditFormData((prev) => ({ ...prev, imageStyle: e.target.value }))}
+                                    onChange={(e) =>
+                                      setEditFormData((prev) => ({
+                                        ...prev,
+                                        imageStyle: e.target.value,
+                                      }))
+                                    }
                                     className="w-full px-2 py-1 text-xs border border-gray-300 rounded-md"
                                   >
-                                    <option value="natural">Natural/Photorealistic</option>
-                                    <option value="digital_art">Digital Art</option>
-                                    <option value="photographic">Professional Photography</option>
+                                    <option value="natural">
+                                      Natural/Photorealistic
+                                    </option>
+                                    <option value="digital_art">
+                                      Digital Art
+                                    </option>
+                                    <option value="photographic">
+                                      Professional Photography
+                                    </option>
                                     <option value="cinematic">Cinematic</option>
                                   </select>
                                 </div>
@@ -1905,45 +2261,71 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
 
                       {/* Title */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Title *
+                        </label>
                         <input
                           type="text"
                           value={editFormData.title}
-                          onChange={(e) => setEditFormData((prev) => ({ ...prev, title: e.target.value }))}
+                          onChange={(e) =>
+                            setEditFormData((prev) => ({
+                              ...prev,
+                              title: e.target.value,
+                            }))
+                          }
                           placeholder="Enter content title"
                           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                         />
                         {editFormErrors.title && (
-                          <p className="text-sm text-red-600 mt-1">{editFormErrors.title}</p>
+                          <p className="text-sm text-red-600 mt-1">
+                            {editFormErrors.title}
+                          </p>
                         )}
                       </div>
 
                       {/* Content Body */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Content Body *</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Content Body *
+                        </label>
                         <textarea
                           ref={bodyTextareaRef}
                           value={editFormData.body}
-                          onChange={(e) => setEditFormData((prev) => ({ ...prev, body: e.target.value }))}
+                          onChange={(e) =>
+                            setEditFormData((prev) => ({
+                              ...prev,
+                              body: e.target.value,
+                            }))
+                          }
                           placeholder="Enter the main content..."
                           rows={12}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 resize-none text-sm font-mono"
                           style={{ fontSize: "13px", lineHeight: "1.4" }}
                         />
                         {editFormErrors.body && (
-                          <p className="text-sm text-red-600 mt-1">{editFormErrors.body}</p>
+                          <p className="text-sm text-red-600 mt-1">
+                            {editFormErrors.body}
+                          </p>
                         )}
                         <p className="text-xs text-gray-500 mt-1">
-                          {editFormData.body.length} characters • You can use HTML tags for formatting
+                          {editFormData.body.length} characters • You can use
+                          HTML tags for formatting
                         </p>
                       </div>
 
                       {/* Excerpt */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Excerpt</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Excerpt
+                        </label>
                         <textarea
                           value={editFormData.excerpt}
-                          onChange={(e) => setEditFormData((prev) => ({ ...prev, excerpt: e.target.value }))}
+                          onChange={(e) =>
+                            setEditFormData((prev) => ({
+                              ...prev,
+                              excerpt: e.target.value,
+                            }))
+                          }
                           placeholder="Brief description or summary..."
                           rows={3}
                           className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 resize-none text-sm"
@@ -1953,22 +2335,38 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                       {/* SEO Keywords and Tone */}
                       <div className="grid grid-cols-1 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">SEO Keywords</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            SEO Keywords
+                          </label>
                           <input
                             type="text"
                             value={editFormData.keywords}
-                            onChange={(e) => setEditFormData((prev) => ({ ...prev, keywords: e.target.value }))}
+                            onChange={(e) =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                keywords: e.target.value,
+                              }))
+                            }
                             placeholder="wordpress, security, tips"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                           />
-                          <p className="text-xs text-gray-500 mt-1">Separate keywords with commas</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Separate keywords with commas
+                          </p>
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Content Tone</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Content Tone
+                          </label>
                           <select
                             value={editFormData.tone}
-                            onChange={(e) => setEditFormData((prev) => ({ ...prev, tone: e.target.value }))}
+                            onChange={(e) =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                tone: e.target.value,
+                              }))
+                            }
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                           >
                             <option value="professional">Professional</option>
@@ -1984,22 +2382,36 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                       {/* Target Audience and Brand Voice */}
                       <div className="grid grid-cols-1 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Target Audience</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Target Audience
+                          </label>
                           <input
                             type="text"
                             value={editFormData.targetAudience}
-                            onChange={(e) => setEditFormData((prev) => ({ ...prev, targetAudience: e.target.value }))}
+                            onChange={(e) =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                targetAudience: e.target.value,
+                              }))
+                            }
                             placeholder="e.g., Small business owners"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Brand Voice</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Brand Voice
+                          </label>
                           <input
                             type="text"
                             value={editFormData.brandVoice}
-                            onChange={(e) => setEditFormData((prev) => ({ ...prev, brandVoice: e.target.value }))}
+                            onChange={(e) =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                brandVoice: e.target.value,
+                              }))
+                            }
                             placeholder="Brand voice description"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                           />
@@ -2012,10 +2424,17 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                           <input
                             type="checkbox"
                             checked={editFormData.eatCompliance}
-                            onChange={(e) => setEditFormData((prev) => ({ ...prev, eatCompliance: e.target.checked }))}
+                            onChange={(e) =>
+                              setEditFormData((prev) => ({
+                                ...prev,
+                                eatCompliance: e.target.checked,
+                              }))
+                            }
                             className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
                           />
-                          <span className="ml-2 text-sm text-gray-700">E-E-A-T Compliance (YMYL Content)</span>
+                          <span className="ml-2 text-sm text-gray-700">
+                            E-E-A-T Compliance (YMYL Content)
+                          </span>
                         </label>
                       </div>
                     </div>
@@ -2026,7 +2445,9 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                 <div className="bg-gray-50 px-6 py-4 border-t border-gray-200 flex items-center justify-between">
                   <div className="flex items-center text-sm text-gray-500">
                     <Edit className="w-4 h-4 mr-2" />
-                    <span>Choose: Save your edits OR regenerate completely with AI</span>
+                    <span>
+                      Choose: Save your edits OR regenerate completely with AI
+                    </span>
                   </div>
                   <div className="flex items-center space-x-3">
                     <button
@@ -2065,13 +2486,20 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                       {isRegenerating ? (
                         <>
                           <Brain className="w-4 h-4 mr-2 animate-spin" />
-                          Regenerating{editFormData.regenerateImages || editFormData.includeImages ? " + Images" : ""}...
+                          Regenerating
+                          {editFormData.regenerateImages ||
+                          editFormData.includeImages
+                            ? " + Images"
+                            : ""}
+                          ...
                         </>
                       ) : (
                         <>
                           <RefreshCw className="w-4 h-4 mr-2" />
-                          Regenerate with {getProviderName(editFormData.aiProvider)}
-                          {(editFormData.regenerateImages || editFormData.includeImages) && (
+                          Regenerate with{" "}
+                          {getProviderName(editFormData.aiProvider)}
+                          {(editFormData.regenerateImages ||
+                            editFormData.includeImages) && (
                             <span className="ml-1 text-xs bg-orange-500 px-1 rounded">
                               +${(editFormData.imageCount * 0.04).toFixed(2)}
                             </span>
@@ -2088,17 +2516,17 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
 
         {/* Image Picker Modal */}
         {showImagePicker && (
-  <ImagePickerModal
-    uploadedImages={uploadedImages}
-    onSelect={(img) => {
-      insertImageAtCursor(img.url, img.altText);
-      setShowImagePicker(false);
-    }}
-    onClose={() => setShowImagePicker(false)}
-    onUpload={handleImageUpload}
-    isUploadingImage={isUploadingImage}  // ADD THIS LINE
-  />
-)}
+          <ImagePickerModal
+            uploadedImages={uploadedImages}
+            onSelect={(img) => {
+              insertImageAtCursor(img.url, img.altText);
+              setShowImagePicker(false);
+            }}
+            onClose={() => setShowImagePicker(false)}
+            onUpload={handleImageUpload}
+            isUploadingImage={isUploadingImage} // ADD THIS LINE
+          />
+        )}
 
         {/* Website Selector */}
         <div className="mb-6">
@@ -2134,7 +2562,9 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">Total Content</dt>
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        Total Content
+                      </dt>
                       <dd className="text-2xl font-bold text-gray-900">
                         {isLoadingContent ? "..." : filteredContent.length}
                       </dd>
@@ -2152,9 +2582,15 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">Published</dt>
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        Published
+                      </dt>
                       <dd className="text-2xl font-bold text-green-600">
-                        {isLoadingContent ? "..." : filteredContent.filter((c) => c.status === "published").length}
+                        {isLoadingContent
+                          ? "..."
+                          : filteredContent.filter(
+                              (c) => c.status === "published"
+                            ).length}
                       </dd>
                     </dl>
                   </div>
@@ -2170,9 +2606,21 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">Avg SEO Score</dt>
-                      <dd className={`text-2xl font-bold ${avgSeoScore !== null ? getScoreColor(avgSeoScore) : "text-gray-400"}`}>
-                        {isLoadingContent ? "..." : avgSeoScore !== null ? `${avgSeoScore}%` : "N/A"}
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        Avg SEO Score
+                      </dt>
+                      <dd
+                        className={`text-2xl font-bold ${
+                          avgSeoScore !== null
+                            ? getScoreColor(avgSeoScore)
+                            : "text-gray-400"
+                        }`}
+                      >
+                        {isLoadingContent
+                          ? "..."
+                          : avgSeoScore !== null
+                          ? `${avgSeoScore}%`
+                          : "N/A"}
                       </dd>
                     </dl>
                   </div>
@@ -2188,9 +2636,14 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">E-E-A-T Compliant</dt>
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        E-E-A-T Compliant
+                      </dt>
                       <dd className="text-2xl font-bold text-purple-600">
-                        {isLoadingContent ? "..." : filteredContent.filter((c) => c.eatCompliance).length}
+                        {isLoadingContent
+                          ? "..."
+                          : filteredContent.filter((c) => c.eatCompliance)
+                              .length}
                       </dd>
                     </dl>
                   </div>
@@ -2206,9 +2659,13 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
                   </div>
                   <div className="ml-5 w-0 flex-1">
                     <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">Total Cost</dt>
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                        Total Cost
+                      </dt>
                       <dd className="text-2xl font-bold text-yellow-600">
-                        {isLoadingContent ? "..." : `$${(totalCost / 100).toFixed(3)}`}
+                        {isLoadingContent
+                          ? "..."
+                          : `$${(totalCost / 100).toFixed(3)}`}
                       </dd>
                     </dl>
                   </div>
@@ -2218,323 +2675,411 @@ const unpublishedCount = filteredContent.filter(c => c.status !== "published").l
           </div>
         )}
 
+        {/* Delete Confirmation Dialog */}
+        {showDeleteConfirm && contentToDelete && (
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+              <div
+                className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+                onClick={closeDeleteConfirm}
+              ></div>
 
-{/* Delete Confirmation Dialog */}
-{showDeleteConfirm && contentToDelete && (
-  <div className="fixed inset-0 z-50 overflow-y-auto">
-    <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-      <div 
-        className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
-        onClick={closeDeleteConfirm}
-      ></div>
-      
-      <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-        <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-          <div className="sm:flex sm:items-start">
-            <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
-              <AlertTriangle className="h-6 w-6 text-red-600" />
-            </div>
-            <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">
-                Delete Content
-              </h3>
-              <div className="mt-2">
-                <p className="text-sm text-gray-500">
-                  Are you sure you want to delete "{contentToDelete.title}"? This action cannot be undone.
-                </p>
-                {contentToDelete.status === "published" && (
-                  <p className="mt-2 text-sm text-yellow-600 bg-yellow-50 p-2 rounded">
-                    Warning: This content is currently published. Deleting it will only remove it from your database, not from WordPress.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-          <button
-            type="button"
-            onClick={() => deleteContent(contentToDelete.id)}
-            disabled={isDeleting}
-            className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
-          >
-            {isDeleting ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Deleting...
-              </>
-            ) : (
-              <>
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete
-              </>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={closeDeleteConfirm}
-            disabled={isDeleting}
-            className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
-
-        {/* Content List */}
-{selectedWebsite ? (
-  <div className="bg-white shadow overflow-hidden sm:rounded-md">
-    <div className="px-4 py-5 sm:p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h3 className="text-lg leading-6 font-medium text-gray-900">Generated Content</h3>
-          <p className="text-sm text-gray-500">
-            Manage AI-generated content for {getWebsiteName(selectedWebsite)}
-          </p>
-        </div>
-        <button
-          onClick={loadContent}
-          disabled={isLoadingContent}
-          className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-        >
-          <RefreshCw className={`w-3 h-3 mr-1 ${isLoadingContent ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-          <button
-            onClick={() => setActiveTab("unpublished")}
-            className={`${
-              activeTab === "unpublished"
-                ? "border-blue-500 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200`}
-          >
-            Unpublished
-            <span className={`ml-2 ${
-              activeTab === "unpublished"
-                ? "bg-blue-100 text-blue-600"
-                : "bg-gray-100 text-gray-900"
-            } inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium`}>
-              {unpublishedCount}
-            </span>
-          </button>
-          
-          <button
-            onClick={() => setActiveTab("published")}
-            className={`${
-              activeTab === "published"
-                ? "border-green-500 text-green-600"
-                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200`}
-          >
-            Published
-            <span className={`ml-2 ${
-              activeTab === "published"
-                ? "bg-green-100 text-green-600"
-                : "bg-gray-100 text-gray-900"
-            } inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium`}>
-              {publishedCount}
-            </span>
-          </button>
-        </nav>
-      </div>
-
-      {isLoadingContent ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="border rounded-lg p-6 animate-pulse">
-              <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-              <div className="h-3 bg-gray-200 rounded w-full mb-4"></div>
-              <div className="h-3 bg-gray-200 rounded w-2/3"></div>
-            </div>
-          ))}
-        </div>
-      ) : tabFilteredContent.length > 0 ? (
-        <div className="space-y-6">
-          {tabFilteredContent.map((item) => (
-            <div key={item.id} className="border rounded-lg p-6 hover:shadow-sm transition-shadow">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <h4 className="font-medium text-gray-900 text-lg">{item.title}</h4>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(item.status)}`}>
-                      {getStatusIcon(item.status)}
-                      <span className="ml-1 capitalize">{item.status.replace("_", " ")}</span>
-                    </span>
-                    {item.aiProvider && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
-                        {getProviderIcon(item.aiProvider)}
-                        <span className="ml-1">{getProviderName(item.aiProvider)}</span>
-                      </span>
-                    )}
-                    {item.hasImages && item.imageCount > 0 && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
-                        <Image className="w-3 h-3 mr-1" />
-                        {item.imageCount} image{item.imageCount > 1 ? "s" : ""}
-                      </span>
-                    )}
+              <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                  <div className="sm:flex sm:items-start">
+                    <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                      <AlertTriangle className="h-6 w-6 text-red-600" />
+                    </div>
+                    <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                      <h3 className="text-lg leading-6 font-medium text-gray-900">
+                        Delete Content
+                      </h3>
+                      <div className="mt-2">
+                        <p className="text-sm text-gray-500">
+                          Are you sure you want to delete "
+                          {contentToDelete.title}"? This action cannot be
+                          undone.
+                        </p>
+                        {contentToDelete.status === "published" && (
+                          <p className="mt-2 text-sm text-yellow-600 bg-yellow-50 p-2 rounded">
+                            Warning: This content is currently published.
+                            Deleting it will only remove it from your database,
+                            not from WordPress.
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-sm text-gray-600 mb-3 leading-relaxed">
-                    {item.excerpt || (item.body && item.body.substring(0, 200) + "...")}
-                  </p>
                 </div>
-                <div className="flex items-center space-x-2 ml-4">
-                  {/* Publish button - only for unpublished content */}
-                  {activeTab === "unpublished" && (
-                    <button
-                      onClick={() => publishContent(item.id)}
-                      disabled={isPublishing}
-                      className={`inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 ${
-                        item.status === "publish_failed"
-                          ? "bg-orange-600 hover:bg-orange-700 focus:ring-orange-500"
-                          : "bg-green-600 hover:bg-green-700 focus:ring-green-500"
-                      }`}
-                    >
-                      <Play className="w-3 h-3 mr-1" />
-                      {item.status === "publish_failed" ? "Retry" : "Publish"}
-                    </button>
-                  )}
-                  
-                  {/* Edit button - only for unpublished content */}
-                  {activeTab === "unpublished" && (
-                    <button
-                      onClick={() => openEditDialog(item)}
-                      className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      <Edit className="w-3 h-3 mr-1" />
-                      Edit
-                    </button>
-                  )}
-                  
-                  {/* Delete button - for all content */}
+                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                   <button
-                    onClick={() => openDeleteConfirm(item)}
-                    disabled={isDeleting && deletingContentId === item.id}
-                    className="inline-flex items-center px-3 py-1.5 border border-red-300 text-xs font-medium rounded text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                    type="button"
+                    onClick={() => deleteContent(contentToDelete.id)}
+                    disabled={isDeleting}
+                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
                   >
-                    {isDeleting && deletingContentId === item.id ? (
+                    {isDeleting ? (
                       <>
-                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         Deleting...
                       </>
                     ) : (
                       <>
-                        <Trash2 className="w-3 h-3 mr-1" />
+                        <Trash2 className="w-4 h-4 mr-2" />
                         Delete
                       </>
                     )}
                   </button>
+                  <button
+                    type="button"
+                    onClick={closeDeleteConfirm}
+                    disabled={isDeleting}
+                    className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
 
-              {/* Rest of the content card remains the same */}
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
-                <div className="text-center">
-                  <div className={`text-lg font-bold ${typeof item.seoScore === "number" && item.seoScore > 0 ? getScoreColor(item.seoScore) : "text-red-500"}`}>
-                    {typeof item.seoScore === "number" && item.seoScore > 0 ? `${item.seoScore}%` : "Error"}
-                  </div>
-                  <div className="text-xs text-gray-500">SEO Score</div>
-                </div>
-                <div className="text-center">
-                  <div className={`text-lg font-bold ${typeof item.readabilityScore === "number" && item.readabilityScore > 0 ? getScoreColor(item.readabilityScore) : "text-red-500"}`}>
-                    {typeof item.readabilityScore === "number" && item.readabilityScore > 0 ? `${item.readabilityScore}%` : "Error"}
-                  </div>
-                  <div className="text-xs text-gray-500">Readability</div>
-                </div>
-                <div className="text-center">
-                  <div className={`text-lg font-bold ${typeof item.brandVoiceScore === "number" && item.brandVoiceScore > 0 ? getScoreColor(item.brandVoiceScore) : "text-red-500"}`}>
-                    {typeof item.brandVoiceScore === "number" && item.brandVoiceScore > 0 ? `${item.brandVoiceScore}%` : "Error"}
-                  </div>
-                  <div className="text-xs text-gray-500">Brand Voice</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-bold text-blue-600">
-                    {item.wordpressPostId ? `#${item.wordpressPostId}` : "-"}
-                  </div>
-                  <div className="text-xs text-gray-500">WP Post ID</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-bold text-orange-600">
-                    {item.hasImages && item.imageCostCents ? `$${(item.imageCostCents / 100).toFixed(3)}` : "-"}
-                  </div>
-                  <div className="text-xs text-gray-500">Image Cost</div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-gray-500 border-t pt-3">
-                <div className="flex items-center space-x-4">
-                  <span>Tokens: {item.tokensUsed || "N/A"}</span>
-                  <span>Text Cost: ${typeof item.costUsd === "number" ? (item.costUsd / 100).toFixed(4) : "N/A"}</span>
-                  {item.hasImages && item.imageCostCents && (
-                    <span>Image Cost: ${(item.imageCostCents / 100).toFixed(4)}</span>
-                  )}
-                  {item.seoKeywords && item.seoKeywords.length > 0 && (
-                    <span>Keywords: {item.seoKeywords.join(", ")}</span>
-                  )}
-                  {item.eatCompliance && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-xs">
-                      <Shield className="w-3 h-3 mr-1" />
-                      E-E-A-T
-                    </span>
-                  )}
-                </div>
+        {/* Content List */}
+        {selectedWebsite ? (
+          <div className="bg-white shadow overflow-hidden sm:rounded-md">
+            <div className="px-4 py-5 sm:p-6">
+              <div className="flex items-center justify-between mb-6">
                 <div>
-                  <span>Created: {formatDistanceToNow(item.createdAt)}</span>
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">
+                    Generated Content
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    Manage AI-generated content for{" "}
+                    {getWebsiteName(selectedWebsite)}
+                  </p>
                 </div>
+                <button
+                  onClick={loadContent}
+                  disabled={isLoadingContent}
+                  className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`w-3 h-3 mr-1 ${
+                      isLoadingContent ? "animate-spin" : ""
+                    }`}
+                  />
+                  Refresh
+                </button>
               </div>
+
+              {/* Tabs */}
+              <div className="border-b border-gray-200 mb-6">
+                <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+                  <button
+                    onClick={() => setActiveTab("unpublished")}
+                    className={`${
+                      activeTab === "unpublished"
+                        ? "border-blue-500 text-blue-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200`}
+                  >
+                    Unpublished
+                    <span
+                      className={`ml-2 ${
+                        activeTab === "unpublished"
+                          ? "bg-blue-100 text-blue-600"
+                          : "bg-gray-100 text-gray-900"
+                      } inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium`}
+                    >
+                      {unpublishedCount}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab("published")}
+                    className={`${
+                      activeTab === "published"
+                        ? "border-green-500 text-green-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200`}
+                  >
+                    Published
+                    <span
+                      className={`ml-2 ${
+                        activeTab === "published"
+                          ? "bg-green-100 text-green-600"
+                          : "bg-gray-100 text-gray-900"
+                      } inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium`}
+                    >
+                      {publishedCount}
+                    </span>
+                  </button>
+                </nav>
+              </div>
+
+              {isLoadingContent ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="border rounded-lg p-6 animate-pulse"
+                    >
+                      <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                      <div className="h-3 bg-gray-200 rounded w-full mb-4"></div>
+                      <div className="h-3 bg-gray-200 rounded w-2/3"></div>
+                    </div>
+                  ))}
+                </div>
+              ) : tabFilteredContent.length > 0 ? (
+                <div className="space-y-6">
+                  {tabFilteredContent.map((item) => (
+                    <div
+                      key={item.id}
+                      className="border rounded-lg p-6 hover:shadow-sm transition-shadow"
+                    >
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2">
+                            <h4 className="font-medium text-gray-900 text-lg">
+                              {item.title}
+                            </h4>
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(
+                                item.status
+                              )}`}
+                            >
+                              {getStatusIcon(item.status)}
+                              <span className="ml-1 capitalize">
+                                {item.status.replace("_", " ")}
+                              </span>
+                            </span>
+                            {item.aiProvider && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                                {getProviderIcon(item.aiProvider)}
+                                <span className="ml-1">
+                                  {getProviderName(item.aiProvider)}
+                                </span>
+                              </span>
+                            )}
+                            {item.hasImages && item.imageCount > 0 && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
+                                <Image className="w-3 h-3 mr-1" />
+                                {item.imageCount} image
+                                {item.imageCount > 1 ? "s" : ""}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600 mb-3 leading-relaxed">
+                            {item.excerpt ||
+                              (item.body &&
+                                item.body.substring(0, 200) + "...")}
+                          </p>
+                        </div>
+                        <div className="flex items-center space-x-2 ml-4">
+                          {/* Publish button - only for unpublished content */}
+                          {activeTab === "unpublished" && (
+                            <button
+                              onClick={() => publishContent(item.id)}
+                              disabled={isPublishing}
+                              className={`inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 ${
+                                item.status === "publish_failed"
+                                  ? "bg-orange-600 hover:bg-orange-700 focus:ring-orange-500"
+                                  : "bg-green-600 hover:bg-green-700 focus:ring-green-500"
+                              }`}
+                            >
+                              <Play className="w-3 h-3 mr-1" />
+                              {item.status === "publish_failed"
+                                ? "Retry"
+                                : "Publish"}
+                            </button>
+                          )}
+
+                          {/* Edit button - only for unpublished content */}
+                          {activeTab === "unpublished" && (
+                            <button
+                              onClick={() => openEditDialog(item)}
+                              className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                            >
+                              <Edit className="w-3 h-3 mr-1" />
+                              Edit
+                            </button>
+                          )}
+
+                          {/* Delete button - for all content */}
+                          <button
+                            onClick={() => openDeleteConfirm(item)}
+                            disabled={
+                              isDeleting && deletingContentId === item.id
+                            }
+                            className="inline-flex items-center px-3 py-1.5 border border-red-300 text-xs font-medium rounded text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                          >
+                            {isDeleting && deletingContentId === item.id ? (
+                              <>
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                Deleting...
+                              </>
+                            ) : (
+                              <>
+                                <Trash2 className="w-3 h-3 mr-1" />
+                                Delete
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Rest of the content card remains the same */}
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+                        <div className="text-center">
+                          <div
+                            className={`text-lg font-bold ${
+                              typeof item.seoScore === "number" &&
+                              item.seoScore > 0
+                                ? getScoreColor(item.seoScore)
+                                : "text-red-500"
+                            }`}
+                          >
+                            {typeof item.seoScore === "number" &&
+                            item.seoScore > 0
+                              ? `${item.seoScore}%`
+                              : "Error"}
+                          </div>
+                          <div className="text-xs text-gray-500">SEO Score</div>
+                        </div>
+                        <div className="text-center">
+                          <div
+                            className={`text-lg font-bold ${
+                              typeof item.readabilityScore === "number" &&
+                              item.readabilityScore > 0
+                                ? getScoreColor(item.readabilityScore)
+                                : "text-red-500"
+                            }`}
+                          >
+                            {typeof item.readabilityScore === "number" &&
+                            item.readabilityScore > 0
+                              ? `${item.readabilityScore}%`
+                              : "Error"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Readability
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div
+                            className={`text-lg font-bold ${
+                              typeof item.brandVoiceScore === "number" &&
+                              item.brandVoiceScore > 0
+                                ? getScoreColor(item.brandVoiceScore)
+                                : "text-red-500"
+                            }`}
+                          >
+                            {typeof item.brandVoiceScore === "number" &&
+                            item.brandVoiceScore > 0
+                              ? `${item.brandVoiceScore}%`
+                              : "Error"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Brand Voice
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-blue-600">
+                            {item.wordpressPostId
+                              ? `#${item.wordpressPostId}`
+                              : "-"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            WP Post ID
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-lg font-bold text-orange-600">
+                            {item.hasImages && item.imageCostCents
+                              ? `$${(item.imageCostCents / 100).toFixed(3)}`
+                              : "-"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Image Cost
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs text-gray-500 border-t pt-3">
+                        <div className="flex items-center space-x-4">
+                          <span>Tokens: {item.tokensUsed || "N/A"}</span>
+                          <span>
+                            Text Cost: $
+                            {typeof item.costUsd === "number"
+                              ? (item.costUsd / 100).toFixed(4)
+                              : "N/A"}
+                          </span>
+                          {item.hasImages && item.imageCostCents && (
+                            <span>
+                              Image Cost: $
+                              {(item.imageCostCents / 100).toFixed(4)}
+                            </span>
+                          )}
+                          {item.seoKeywords && item.seoKeywords.length > 0 && (
+                            <span>Keywords: {item.seoKeywords.join(", ")}</span>
+                          )}
+                          {item.eatCompliance && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-xs">
+                              <Shield className="w-3 h-3 mr-1" />
+                              E-E-A-T
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <span>
+                            Created: {formatDistanceToNow(item.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Bot className="mx-auto h-12 w-12 text-gray-400" />
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">
+                    No {activeTab} content
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {activeTab === "published"
+                      ? "You haven't published any content yet. Check the Unpublished tab to publish your drafts."
+                      : "Start by generating your first AI-powered content piece."}
+                  </p>
+                  {activeTab === "unpublished" && (
+                    <div className="mt-6">
+                      <button
+                        onClick={() => setIsGenerateDialogOpen(true)}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        Generate Content
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-12">
-          <Bot className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">
-            No {activeTab} content
-          </h3>
-          <p className="mt-1 text-sm text-gray-500">
-            {activeTab === "published" 
-              ? "You haven't published any content yet. Check the Unpublished tab to publish your drafts."
-              : "Start by generating your first AI-powered content piece."
-            }
-          </p>
-          {activeTab === "unpublished" && (
-            <div className="mt-6">
-              <button
-                onClick={() => setIsGenerateDialogOpen(true)}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                <Sparkles className="w-4 h-4 mr-2" />
-                Generate Content
-              </button>
+          </div>
+        ) : (
+          // Keep the existing "Select a website" view as is
+          <div className="bg-white shadow overflow-hidden sm:rounded-md">
+            <div className="text-center py-12">
+              <Bot className="mx-auto h-12 w-12 text-gray-400" />
+              <h3 className="mt-2 text-sm font-medium text-gray-900">
+                {isLoadingWebsites ? "Loading websites..." : "Select a website"}
+              </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                {isLoadingWebsites
+                  ? "Please wait while we fetch your websites from the database."
+                  : "Choose a website to view and manage its AI-generated content with real-time analytics and error reporting."}
+              </p>
             </div>
-          )}
-        </div>
-      )}
-    </div>
-  </div>
-) : (
-  // Keep the existing "Select a website" view as is
-  <div className="bg-white shadow overflow-hidden sm:rounded-md">
-    <div className="text-center py-12">
-      <Bot className="mx-auto h-12 w-12 text-gray-400" />
-      <h3 className="mt-2 text-sm font-medium text-gray-900">
-        {isLoadingWebsites ? "Loading websites..." : "Select a website"}
-      </h3>
-      <p className="mt-1 text-sm text-gray-500">
-        {isLoadingWebsites
-          ? "Please wait while we fetch your websites from the database."
-          : "Choose a website to view and manage its AI-generated content with real-time analytics and error reporting."}
-      </p>
-    </div>
-  </div>
-)}
+          </div>
+        )}
         {/* Auto Content Scheduler Section */}
         {selectedWebsite && (
           <div className="mt-8">

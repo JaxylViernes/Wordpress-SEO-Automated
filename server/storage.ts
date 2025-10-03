@@ -1568,23 +1568,23 @@ async bulkDeleteReports(reportIds: string[], userId: string): Promise<number> {
 
 
 // Get all client reports for a user across all their websites
-async getUserClientReports(userId: string): Promise<ClientReport[]> {
-  try {
-    const reports = await db
-      .select({
-        report: clientReports
-      })
-      .from(clientReports)
-      .innerJoin(websites, eq(clientReports.websiteId, websites.id))
-      .where(eq(websites.userId, userId))
-      .orderBy(desc(clientReports.generatedAt));
+// async getUserClientReports(userId: string): Promise<ClientReport[]> {
+//   try {
+//     const reports = await db
+//       .select({
+//         report: clientReports
+//       })
+//       .from(clientReports)
+//       .innerJoin(websites, eq(clientReports.websiteId, websites.id))
+//       .where(eq(websites.userId, userId))
+//       .orderBy(desc(clientReports.generatedAt));
     
-    return reports.map(r => r.report);
-  } catch (error) {
-    console.error(`Error fetching user client reports:`, error);
-    throw error;
-  }
-}
+//     return reports.map(r => r.report);
+//   } catch (error) {
+//     console.error(`Error fetching user client reports:`, error);
+//     throw error;
+//   }
+// }
 
   // Enhanced Security and Management Features
   async createContentApproval(approval: InsertContentApproval & { userId: string }): Promise<ContentApproval> {
@@ -1631,56 +1631,56 @@ async getUserClientReports(userId: string): Promise<ClientReport[]> {
   return usageRecord;
 }
 
-async getApiKeyUsageStats(userId: string, provider: string): Promise<{
-  totalTokens: number;
-  totalCostCents: number;
-  operationsCount: number;
-  userKeyUsage: {
-    tokens: number;
-    costCents: number;
-    operations: number;
-  };
-  systemKeyUsage: {
-    tokens: number;
-    costCents: number;
-    operations: number;
-  };
-}> {
-  const usage = await db
-    .select({
-      keyType: aiUsageTracking.keyType,
-      totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)`,
-      totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)`,
-      operationsCount: sql<number>`COUNT(*)`,
-    })
-    .from(aiUsageTracking)
-    .where(
-      and(
-        eq(aiUsageTracking.userId, userId),
-        sql`${aiUsageTracking.model} LIKE ${provider === 'openai' ? 'gpt%' : provider === 'anthropic' ? 'claude%' : '%'}`
-      )
-    )
-    .groupBy(aiUsageTracking.keyType);
+// async getApiKeyUsageStats(userId: string, provider: string): Promise<{
+//   totalTokens: number;
+//   totalCostCents: number;
+//   operationsCount: number;
+//   userKeyUsage: {
+//     tokens: number;
+//     costCents: number;
+//     operations: number;
+//   };
+//   systemKeyUsage: {
+//     tokens: number;
+//     costCents: number;
+//     operations: number;
+//   };
+// }> {
+//   const usage = await db
+//     .select({
+//       keyType: aiUsageTracking.keyType,
+//       totalTokens: sql<number>`COALESCE(SUM(${aiUsageTracking.tokensUsed}), 0)`,
+//       totalCostCents: sql<number>`COALESCE(SUM(${aiUsageTracking.costUsd}), 0)`,
+//       operationsCount: sql<number>`COUNT(*)`,
+//     })
+//     .from(aiUsageTracking)
+//     .where(
+//       and(
+//         eq(aiUsageTracking.userId, userId),
+//         sql`${aiUsageTracking.model} LIKE ${provider === 'openai' ? 'gpt%' : provider === 'anthropic' ? 'claude%' : '%'}`
+//       )
+//     )
+//     .groupBy(aiUsageTracking.keyType);
 
-  const userUsage = usage.find(u => u.keyType === 'user') || { totalTokens: 0, totalCostCents: 0, operationsCount: 0 };
-  const systemUsage = usage.find(u => u.keyType === 'system') || { totalTokens: 0, totalCostCents: 0, operationsCount: 0 };
+//   const userUsage = usage.find(u => u.keyType === 'user') || { totalTokens: 0, totalCostCents: 0, operationsCount: 0 };
+//   const systemUsage = usage.find(u => u.keyType === 'system') || { totalTokens: 0, totalCostCents: 0, operationsCount: 0 };
 
-  return {
-    totalTokens: Number(userUsage.totalTokens) + Number(systemUsage.totalTokens),
-    totalCostCents: Number(userUsage.totalCostCents) + Number(systemUsage.totalCostCents),
-    operationsCount: Number(userUsage.operationsCount) + Number(systemUsage.operationsCount),
-    userKeyUsage: {
-      tokens: Number(userUsage.totalTokens),
-      costCents: Number(userUsage.totalCostCents),
-      operations: Number(userUsage.operationsCount),
-    },
-    systemKeyUsage: {
-      tokens: Number(systemUsage.totalTokens),
-      costCents: Number(systemUsage.totalCostCents),
-      operations: Number(systemUsage.operationsCount),
-    },
-  };
-}
+//   return {
+//     totalTokens: Number(userUsage.totalTokens) + Number(systemUsage.totalTokens),
+//     totalCostCents: Number(userUsage.totalCostCents) + Number(systemUsage.totalCostCents),
+//     operationsCount: Number(userUsage.operationsCount) + Number(systemUsage.operationsCount),
+//     userKeyUsage: {
+//       tokens: Number(userUsage.totalTokens),
+//       costCents: Number(userUsage.totalCostCents),
+//       operations: Number(userUsage.operationsCount),
+//     },
+//     systemKeyUsage: {
+//       tokens: Number(systemUsage.totalTokens),
+//       costCents: Number(systemUsage.totalCostCents),
+//       operations: Number(systemUsage.operationsCount),
+//     },
+//   };
+// }
 
   async createSeoAudit(audit: InsertSeoAudit & { userId: string }): Promise<SeoAudit> {
     const [auditRecord] = await db

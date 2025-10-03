@@ -82,28 +82,25 @@ const ProgressDialog: React.FC<ProgressDialogProps> = ({
       { at: 75, message: 'Improving content quality...', icon: <PenTool className="h-4 w-4 text-indigo-500 animate-pulse" /> },
       { at: 90, message: 'Saving changes...', icon: <CheckCircle2 className="h-4 w-4 text-green-500" /> },
     ];
-  }, [type]); // Only recreate when type changes
-
-  // Start progress simulation when dialog opens and status is running
+  }, [type]);
+  
   useEffect(() => {
     if (open && status === 'running') {
       setSimulatedProgress(initialProgress || 0);
       
-      // Clear any existing interval
+
       if (progressInterval.current) {
         clearInterval(progressInterval.current);
       }
       
-      // Start new progress simulation
       progressInterval.current = setInterval(() => {
         setSimulatedProgress(prev => {
           if (prev >= 95) {
             if (progressInterval.current) {
               clearInterval(progressInterval.current);
             }
-            return 95; // Stay at 95% until actual completion
+            return 95; n
           }
-          // Slow down as we get closer to completion
           const increment = prev < 50 ? 2 : prev < 80 ? 1 : 0.5;
           return Math.min(prev + increment, 95);
         });
@@ -117,7 +114,6 @@ const ProgressDialog: React.FC<ProgressDialogProps> = ({
     };
   }, [open, status, initialProgress]);
   
-  // Update progress to 100% when status changes to success
   useEffect(() => {
     if (status === 'success') {
       setSimulatedProgress(100);
@@ -131,9 +127,7 @@ const ProgressDialog: React.FC<ProgressDialogProps> = ({
     }
   }, [status]);
 
-  // Update activity based on progress or logs
   useEffect(() => {
-    // If we have real logs, use the latest one
     if (logs && logs.length > 0) {
       const latestLog = logs[logs.length - 1];
       const cleanMessage = latestLog.message

@@ -1,9 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, X, Image, Trash2, Plus, Replace, Move, AlertCircle, ChevronUp, ChevronDown, Eye, EyeOff } from 'lucide-react';
 
-// This component integrates directly into your edit dialog
-// Replace the image management section in your edit dialog with this
-
 interface ContentImage {
   url: string;
   cloudinaryUrl?: string;
@@ -54,13 +51,9 @@ export default function IntegratedImageEditor({
 
   // Function to embed images in content HTML
   const embedImagesInContent = (body: string, imageList: ContentImage[]) => {
-    // Remove existing image tags first
     let cleanBody = body.replace(/<figure[^>]*class="wp-block-image[^"]*"[^>]*>[\s\S]*?<\/figure>/gi, '');
-    
-    // If no images, return clean body
     if (imageList.length === 0) return cleanBody;
     
-    // Build the HTML for visible images
     const imageHtml = imageList
       .filter(img => img.isVisible !== false)
       .map((img, idx) => `
@@ -69,12 +62,9 @@ export default function IntegratedImageEditor({
   <figcaption>${img.altText}</figcaption>
 </figure>`)
       .join('\n\n');
-    
-    // Find good positions to insert images
     const paragraphs = cleanBody.split('</p>');
     
     if (paragraphs.length > 2) {
-      // Insert first image after first paragraph
       paragraphs[0] += '</p>\n' + imageHtml.split('</figure>')[0] + '</figure>';
       
       // Insert remaining images throughout content

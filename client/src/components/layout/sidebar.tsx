@@ -61,20 +61,20 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
 
   // Add this useEffect to fetch user data
   useEffect(() => {
-    fetch('/api/auth/me', { credentials: 'include' })
-      .then(res => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((res) => {
         if (res.ok) {
           return res.json();
         }
         return null;
       })
-      .then(data => {
+      .then((data) => {
         if (data) {
           setUser(data);
         }
       })
-      .catch(error => {
-        console.error('Failed to fetch user:', error);
+      .catch((error) => {
+        console.error("Failed to fetch user:", error);
       });
   }, []);
 

@@ -46,16 +46,14 @@ const sanitizeUrl = (raw: string): string => {
   let s = Sanitizer.sanitizeText(raw);
   s = s.trim();
 
-  // Add protocol if missing
   if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
 
   try {
     const u = new URL(s);
-    // Lowercase host, strip dangerous chars in pathname/query as a basic hardening step
     u.hostname = u.hostname.toLowerCase();
     return u.toString();
   } catch {
-    return s; // let zod/validateUrl handle actual invalids
+    return s; 
   }
 };
 
@@ -84,7 +82,7 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
     resolver: zodResolver(formSchema),
     defaultValues: {
       aiModel: "gpt-4o",
-      autoPosting: false, // Default to manual approval for security
+      autoPosting: false,
       requireApproval: true,
       brandVoice: "professional",
     },
@@ -186,8 +184,6 @@ export default function AddWebsiteForm({ onSuccess }: AddWebsiteFormProps) {
 
     // Sanitize everything before validating/creating
     const cleaned = sanitizeFormData(raw);
-
-    // optional: write back sanitized values so UI reflects what will be sent
     setValue("name", cleaned.name, { shouldValidate: true });
     setValue("url", cleaned.url, { shouldValidate: true });
     setValue("wpApplicationName", cleaned.wpApplicationName, { shouldValidate: true });

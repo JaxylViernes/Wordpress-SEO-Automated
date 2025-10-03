@@ -58,9 +58,9 @@ interface AuthContextType {
   signup: (
     username: string,
     password: string,
-    email: string,  // Now required
+    email: string, 
     name?: string,
-    verificationCode?: string  // Added for email verification
+    verificationCode?: string  
   ) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
@@ -122,9 +122,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signup = async (
     username: string,
     password: string,
-    email: string,  // Now required
+    email: string,  
     name?: string,
-    verificationCode?: string  // Added for email verification
+    verificationCode?: string 
   ) => {
     const response = await fetch("/api/auth/signup", {
       method: "POST",
@@ -710,7 +710,6 @@ export function CompactSidebarUserMenu() {
     setIsLoggingOut(true);
     try {
       await logout();
-      // No forced redirect - React will handle the state change
     } catch (error) {
       console.error("Logout failed:", error);
     } finally {

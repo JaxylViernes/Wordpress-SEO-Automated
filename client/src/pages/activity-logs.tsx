@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { 
-  Activity, 
-  Filter, 
-  Download, 
-  Search, 
-  Calendar, 
-  Trash2, 
+import {
+  Activity,
+  Filter,
+  Download,
+  Search,
+  Calendar,
+  Trash2,
   CheckSquare,
   X,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,10 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Alert,
-  AlertDescription,
-} from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,20 +48,33 @@ import { api } from "@/lib/api";
 const format = (date, formatStr) => {
   const d = new Date(date);
   if (formatStr === "MMM dd, yyyy 'at' HH:mm") {
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
     const month = months[d.getMonth()];
     const day = d.getDate();
     const year = d.getFullYear();
-    const hours = d.getHours().toString().padStart(2, '0');
-    const minutes = d.getMinutes().toString().padStart(2, '0');
+    const hours = d.getHours().toString().padStart(2, "0");
+    const minutes = d.getMinutes().toString().padStart(2, "0");
     return `${month} ${day}, ${year} at ${hours}:${minutes}`;
   }
   if (formatStr === "yyyy-MM-dd HH:mm") {
     const year = d.getFullYear();
-    const month = (d.getMonth() + 1).toString().padStart(2, '0');
-    const day = d.getDate().toString().padStart(2, '0');
-    const hours = d.getHours().toString().padStart(2, '0');
-    const minutes = d.getMinutes().toString().padStart(2, '0');
+    const month = (d.getMonth() + 1).toString().padStart(2, "0");
+    const day = d.getDate().toString().padStart(2, "0");
+    const hours = d.getHours().toString().padStart(2, "0");
+    const minutes = d.getMinutes().toString().padStart(2, "0");
     return `${year}-${month}-${day} ${hours}:${minutes}`;
   }
   return d.toISOString();
@@ -78,18 +88,18 @@ const formatDistanceToNow = (date, options) => {
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
-  
+
   let result;
   if (days > 0) {
-    result = `${days} day${days > 1 ? 's' : ''}`;
+    result = `${days} day${days > 1 ? "s" : ""}`;
   } else if (hours > 0) {
-    result = `${hours} hour${hours > 1 ? 's' : ''}`;
+    result = `${hours} hour${hours > 1 ? "s" : ""}`;
   } else if (minutes > 0) {
-    result = `${minutes} minute${minutes > 1 ? 's' : ''}`;
+    result = `${minutes} minute${minutes > 1 ? "s" : ""}`;
   } else {
-    result = `${seconds} second${seconds > 1 ? 's' : ''}`;
+    result = `${seconds} second${seconds > 1 ? "s" : ""}`;
   }
-  
+
   return options?.addSuffix ? `${result} ago` : result;
 };
 
@@ -194,19 +204,25 @@ const formatMetadataValue = (value) => {
     return (
       <div className="space-y-1">
         {value.slice(0, 3).map((item, i) => (
-          <div key={i} className="text-xs bg-gray-100 rounded px-2 py-1 inline-block mr-1">
+          <div
+            key={i}
+            className="text-xs bg-gray-100 rounded px-2 py-1 inline-block mr-1"
+          >
             {typeof item === "object" ? JSON.stringify(item) : String(item)}
           </div>
         ))}
         {value.length > 3 && (
-          <div className="text-xs text-gray-500">+{value.length - 3} more items</div>
+          <div className="text-xs text-gray-500">
+            +{value.length - 3} more items
+          </div>
         )}
       </div>
     );
   }
   if (typeof value === "object") {
     const entries = Object.entries(value);
-    if (entries.length === 0) return <span className="text-gray-400 italic">Empty</span>;
+    if (entries.length === 0)
+      return <span className="text-gray-400 italic">Empty</span>;
     return (
       <div className="space-y-1">
         {entries.slice(0, 3).map(([k, v]) => (
@@ -216,7 +232,9 @@ const formatMetadataValue = (value) => {
           </div>
         ))}
         {entries.length > 3 && (
-          <div className="text-xs text-gray-500">+{entries.length - 3} more fields</div>
+          <div className="text-xs text-gray-500">
+            +{entries.length - 3} more fields
+          </div>
         )}
       </div>
     );
@@ -227,7 +245,11 @@ const formatMetadataValue = (value) => {
 const MetadataDisplay = ({ metadata }) => {
   const entries = Object.entries(metadata);
   if (entries.length === 0) {
-    return <div className="text-xs text-gray-500 italic">No additional details available</div>;
+    return (
+      <div className="text-xs text-gray-500 italic">
+        No additional details available
+      </div>
+    );
   }
   return (
     <div className="mt-2 border rounded-lg bg-gray-50 p-3">
@@ -254,7 +276,7 @@ export default function ActivityLogs() {
   const [selectedLogs, setSelectedLogs] = useState(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [notification, setNotification] = useState(null);
-  
+
   const queryClient = useQueryClient();
 
   const { data: websites } = useQuery({
@@ -279,7 +301,7 @@ export default function ActivityLogs() {
     onError: (error) => {
       showNotification("Failed to delete activity log", "error");
       console.error("Delete error:", error);
-    }
+    },
   });
 
   // Bulk delete mutation
@@ -289,12 +311,17 @@ export default function ActivityLogs() {
       queryClient.invalidateQueries({ queryKey: ["/api/activity-logs"] });
       setSelectedLogs(new Set());
       setIsSelectionMode(false);
-      showNotification(`${data.deletedCount || logIds.length} activity logs deleted successfully`, "success");
+      showNotification(
+        `${
+          data.deletedCount || logIds.length
+        } activity logs deleted successfully`,
+        "success"
+      );
     },
     onError: (error) => {
       showNotification("Failed to delete selected logs", "error");
       console.error("Bulk delete error:", error);
-    }
+    },
   });
 
   // Clear all mutation
@@ -307,7 +334,7 @@ export default function ActivityLogs() {
     onError: (error) => {
       showNotification("Failed to clear all logs", "error");
       console.error("Clear all error:", error);
-    }
+    },
   });
 
   const showNotification = (message, type = "info") => {
@@ -325,10 +352,17 @@ export default function ActivityLogs() {
 
   const filteredActivities =
     activities?.filter((activity) => {
-      if (searchQuery && !activity.description.toLowerCase().includes(searchQuery.toLowerCase())) {
+      if (
+        searchQuery &&
+        !activity.description.toLowerCase().includes(searchQuery.toLowerCase())
+      ) {
         return false;
       }
-      if (activityFilter && activityFilter !== "all" && activity.type !== activityFilter) {
+      if (
+        activityFilter &&
+        activityFilter !== "all" &&
+        activity.type !== activityFilter
+      ) {
         return false;
       }
       return true;
@@ -347,7 +381,7 @@ export default function ActivityLogs() {
   };
 
   const handleSelectLog = (logId, checked) => {
-    setSelectedLogs(prev => {
+    setSelectedLogs((prev) => {
       const newSet = new Set(prev);
       if (checked) {
         newSet.add(logId);
@@ -362,7 +396,7 @@ export default function ActivityLogs() {
     if (selectedLogs.size === filteredActivities.length) {
       setSelectedLogs(new Set());
     } else {
-      setSelectedLogs(new Set(filteredActivities.map(a => a.id)));
+      setSelectedLogs(new Set(filteredActivities.map((a) => a.id)));
     }
   };
 
@@ -392,10 +426,16 @@ export default function ActivityLogs() {
       import("jspdf-autotable"),
     ]);
     const autoTable = autoTableMod.default;
-    const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "pt",
+      format: "a4",
+    });
 
     const scopeAll = selectedWebsite === "all";
-    const scopeName = scopeAll ? "All websites" : getWebsiteName(selectedWebsite);
+    const scopeName = scopeAll
+      ? "All websites"
+      : getWebsiteName(selectedWebsite);
     const fileScope = scopeAll
       ? "all-websites"
       : (scopeName || "website").toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -474,7 +514,11 @@ export default function ActivityLogs() {
       }
     }
 
-    doc.save(`activity-logs-${fileScope}-${new Date().toISOString().replace(/[:.]/g, "-")}.pdf`);
+    doc.save(
+      `activity-logs-${fileScope}-${new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-")}.pdf`
+    );
   };
 
   return (
@@ -499,24 +543,31 @@ export default function ActivityLogs() {
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button 
-                      variant="destructive" 
-                      disabled={selectedLogs.size === 0 || bulkDeleteMutation.isPending}
+                    <Button
+                      variant="destructive"
+                      disabled={
+                        selectedLogs.size === 0 || bulkDeleteMutation.isPending
+                      }
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
-                      {bulkDeleteMutation.isPending ? "Deleting..." : `Delete Selected (${selectedLogs.size})`}
+                      {bulkDeleteMutation.isPending
+                        ? "Deleting..."
+                        : `Delete Selected (${selectedLogs.size})`}
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Delete {selectedLogs.size} Activity Logs?</AlertDialogTitle>
+                      <AlertDialogTitle>
+                        Delete {selectedLogs.size} Activity Logs?
+                      </AlertDialogTitle>
                       <AlertDialogDescription>
-                        This action cannot be undone. The selected activity logs will be permanently deleted from the history.
+                        This action cannot be undone. The selected activity logs
+                        will be permanently deleted from the history.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction 
+                      <AlertDialogAction
                         onClick={handleBulkDelete}
                         className="bg-red-600 hover:bg-red-700"
                       >
@@ -528,7 +579,7 @@ export default function ActivityLogs() {
               </>
             ) : (
               <>
-                <Button 
+                <Button
                   variant="outline"
                   onClick={() => setIsSelectionMode(true)}
                   disabled={filteredActivities.length === 0}
@@ -538,10 +589,14 @@ export default function ActivityLogs() {
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button 
+                    <Button
                       variant="outline"
                       className="text-red-600 hover:bg-red-50"
-                      disabled={!activities || activities.length === 0 || clearAllMutation.isPending}
+                      disabled={
+                        !activities ||
+                        activities.length === 0 ||
+                        clearAllMutation.isPending
+                      }
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
                       {clearAllMutation.isPending ? "Clearing..." : "Clear All"}
@@ -549,14 +604,18 @@ export default function ActivityLogs() {
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Clear All Activity Logs?</AlertDialogTitle>
+                      <AlertDialogTitle>
+                        Clear All Activity Logs?
+                      </AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will permanently delete ALL activity logs across all websites. This action cannot be undone and will remove your complete activity history.
+                        This will permanently delete ALL activity logs across
+                        all websites. This action cannot be undone and will
+                        remove your complete activity history.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction 
+                      <AlertDialogAction
                         onClick={handleClearAllLogs}
                         className="bg-red-600 hover:bg-red-700"
                       >
@@ -589,18 +648,30 @@ export default function ActivityLogs() {
 
         {/* Notification */}
         {notification && (
-          <Alert className={`mb-4 ${
-            notification.type === "success" ? "border-green-200" : 
-            notification.type === "error" ? "border-red-200" : 
-            "border-blue-200"
-          }`}>
-            {notification.type === "success" && <CheckCircle className="h-4 w-4 text-green-600" />}
-            {notification.type === "error" && <AlertCircle className="h-4 w-4 text-red-600" />}
-            <AlertDescription className={
-              notification.type === "success" ? "text-green-800" : 
-              notification.type === "error" ? "text-red-800" : 
-              "text-blue-800"
-            }>
+          <Alert
+            className={`mb-4 ${
+              notification.type === "success"
+                ? "border-green-200"
+                : notification.type === "error"
+                ? "border-red-200"
+                : "border-blue-200"
+            }`}
+          >
+            {notification.type === "success" && (
+              <CheckCircle className="h-4 w-4 text-green-600" />
+            )}
+            {notification.type === "error" && (
+              <AlertCircle className="h-4 w-4 text-red-600" />
+            )}
+            <AlertDescription
+              className={
+                notification.type === "success"
+                  ? "text-green-800"
+                  : notification.type === "error"
+                  ? "text-red-800"
+                  : "text-blue-800"
+              }
+            >
               {notification.message}
             </AlertDescription>
           </Alert>
@@ -610,41 +681,61 @@ export default function ActivityLogs() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Total Activities</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Total Activities
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-gray-900">{activityStats.total}</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {activityStats.total}
+              </div>
               <p className="text-xs text-gray-500 mt-1">All time</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Today</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Today
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-600">{activityStats.today}</div>
+              <div className="text-2xl font-bold text-blue-600">
+                {activityStats.today}
+              </div>
               <p className="text-xs text-gray-500 mt-1">Activities today</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">Content Actions</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                Content Actions
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{activityStats.content}</div>
-              <p className="text-xs text-gray-500 mt-1">Generation & publishing</p>
+              <div className="text-2xl font-bold text-green-600">
+                {activityStats.content}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Generation & publishing
+              </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-gray-600">SEO Actions</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-600">
+                SEO Actions
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-purple-600">{activityStats.seo}</div>
-              <p className="text-xs text-gray-500 mt-1">Analysis & optimization</p>
+              <div className="text-2xl font-bold text-purple-600">
+                {activityStats.seo}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Analysis & optimization
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -657,7 +748,9 @@ export default function ActivityLogs() {
               onClick={handleSelectAll}
               className="w-fit"
             >
-              {selectedLogs.size === filteredActivities.length ? "Deselect All" : "Select All"}
+              {selectedLogs.size === filteredActivities.length
+                ? "Deselect All"
+                : "Select All"}
             </Button>
           )}
           <div className="relative flex-1">
@@ -706,7 +799,8 @@ export default function ActivityLogs() {
             <CardTitle>Activity Timeline</CardTitle>
             <CardDescription>
               Chronological view of all automation activities
-              {selectedWebsite !== "all" && ` for ${getWebsiteName(selectedWebsite)}`}
+              {selectedWebsite !== "all" &&
+                ` for ${getWebsiteName(selectedWebsite)}`}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-grow overflow-hidden">
@@ -719,10 +813,10 @@ export default function ActivityLogs() {
                 <div className="space-y-4">
                   {filteredActivities.map((activity, index) => {
                     const isSelected = selectedLogs.has(activity.id);
-                    
+
                     return (
-                      <div 
-                        key={activity.id} 
+                      <div
+                        key={activity.id}
                         className={`relative ${
                           isSelected ? "bg-blue-50 rounded-lg p-2 -m-2" : ""
                         }`}
@@ -735,13 +829,13 @@ export default function ActivityLogs() {
                           {isSelectionMode && (
                             <Checkbox
                               checked={isSelected}
-                              onCheckedChange={(checked) => 
+                              onCheckedChange={(checked) =>
                                 handleSelectLog(activity.id, checked)
                               }
                               className="mt-1.5"
                             />
                           )}
-                          
+
                           <div className="flex-shrink-0 w-8 h-8 bg-white border-2 border-gray-300 rounded-full flex items-center justify-center">
                             {getActivityIcon(activity.type)}
                           </div>
@@ -750,37 +844,58 @@ export default function ActivityLogs() {
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
                                 <div className="flex items-center space-x-2 mb-1">
-                                  <p className="text-sm font-medium text-gray-900">{activity.description}</p>
+                                  <p className="text-sm font-medium text-gray-900">
+                                    {activity.description}
+                                  </p>
                                   <Badge
                                     className={
-                                      activityTypeColors[activity.type] || "bg-gray-100 text-gray-800"
+                                      activityTypeColors[activity.type] ||
+                                      "bg-gray-100 text-gray-800"
                                     }
                                   >
-                                    {activityTypeLabels[activity.type] || activity.type}
+                                    {activityTypeLabels[activity.type] ||
+                                      activity.type}
                                   </Badge>
                                 </div>
 
                                 <div className="flex items-center space-x-4 text-xs text-gray-500">
-                                  <span>{getWebsiteName(activity.websiteId)}</span>
                                   <span>
-                                    {format(new Date(activity.createdAt), "MMM dd, yyyy 'at' HH:mm")}
+                                    {getWebsiteName(activity.websiteId)}
                                   </span>
-                                  <span>{formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}</span>
+                                  <span>
+                                    {format(
+                                      new Date(activity.createdAt),
+                                      "MMM dd, yyyy 'at' HH:mm"
+                                    )}
+                                  </span>
+                                  <span>
+                                    {formatDistanceToNow(
+                                      new Date(activity.createdAt),
+                                      { addSuffix: true }
+                                    )}
+                                  </span>
                                 </div>
 
-                                {activity.metadata && Object.keys(activity.metadata).length > 0 && (
-                                  <div className="mt-3">
-                                    <details className="cursor-pointer group">
-                                      <summary className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                                        <span className="group-open:hidden">Show details</span>
-                                        <span className="hidden group-open:inline">Hide details</span>
-                                      </summary>
-                                      <MetadataDisplay metadata={activity.metadata} />
-                                    </details>
-                                  </div>
-                                )}
+                                {activity.metadata &&
+                                  Object.keys(activity.metadata).length > 0 && (
+                                    <div className="mt-3">
+                                      <details className="cursor-pointer group">
+                                        <summary className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                                          <span className="group-open:hidden">
+                                            Show details
+                                          </span>
+                                          <span className="hidden group-open:inline">
+                                            Hide details
+                                          </span>
+                                        </summary>
+                                        <MetadataDisplay
+                                          metadata={activity.metadata}
+                                        />
+                                      </details>
+                                    </div>
+                                  )}
                               </div>
-                              
+
                               {!isSelectionMode && (
                                 <AlertDialog>
                                   <AlertDialogTrigger asChild>
@@ -795,21 +910,33 @@ export default function ActivityLogs() {
                                   </AlertDialogTrigger>
                                   <AlertDialogContent>
                                     <AlertDialogHeader>
-                                      <AlertDialogTitle>Delete Activity Log?</AlertDialogTitle>
+                                      <AlertDialogTitle>
+                                        Delete Activity Log?
+                                      </AlertDialogTitle>
                                       <AlertDialogDescription>
-                                        This will permanently delete this activity log entry:
+                                        This will permanently delete this
+                                        activity log entry:
                                         <div className="mt-2 p-2 bg-gray-50 rounded">
-                                          <div className="text-sm font-medium">{activity.description}</div>
+                                          <div className="text-sm font-medium">
+                                            {activity.description}
+                                          </div>
                                           <div className="text-xs text-gray-500 mt-1">
-                                            {format(new Date(activity.createdAt), "MMM dd, yyyy 'at' HH:mm")}
+                                            {format(
+                                              new Date(activity.createdAt),
+                                              "MMM dd, yyyy 'at' HH:mm"
+                                            )}
                                           </div>
                                         </div>
                                       </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
-                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                      <AlertDialogAction 
-                                        onClick={() => handleDeleteLog(activity.id)}
+                                      <AlertDialogCancel>
+                                        Cancel
+                                      </AlertDialogCancel>
+                                      <AlertDialogAction
+                                        onClick={() =>
+                                          handleDeleteLog(activity.id)
+                                        }
                                         className="bg-red-600 hover:bg-red-700"
                                       >
                                         Delete Log
@@ -828,7 +955,9 @@ export default function ActivityLogs() {
               ) : (
                 <div className="text-center py-12">
                   <Activity className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">No activities found</h3>
+                  <h3 className="mt-2 text-sm font-medium text-gray-900">
+                    No activities found
+                  </h3>
                   <p className="mt-1 text-sm text-gray-500">
                     {searchQuery || activityFilter !== "all"
                       ? "No activities match your current filters."
@@ -864,10 +993,13 @@ export default function ActivityLogs() {
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {Object.entries(activityTypeLabels).map(([type, label]) => {
-                const count = activities?.filter((a) => a.type === type).length || 0;
+                const count =
+                  activities?.filter((a) => a.type === type).length || 0;
                 return (
                   <div key={type} className="text-center p-4 border rounded-lg">
-                    <div className="text-2xl font-bold text-gray-900">{count}</div>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {count}
+                    </div>
                     <p className="text-sm text-gray-600 mt-1">{label}</p>
                   </div>
                 );

@@ -62,68 +62,71 @@ import ProgressDialog from "@/components/ProgressDialog";
 
 // Constants
 
-
-
 const parseBackendLogs = (detailedLog: string[] | undefined) => {
   if (!detailedLog || !Array.isArray(detailedLog)) return [];
-  
-  return detailedLog.map(log => {
-    const match = log.match(/\[(\d{2}:\d{2}:\d{2})\]\s*([🔍✅❌⚠️ℹ️🔧🚀📊🎯🔄]?)\s*(.*)/);
-    
+
+  return detailedLog.map((log) => {
+    const match = log.match(
+      /\[(\d{2}:\d{2}:\d{2})\]\s*([🔍✅❌⚠️ℹ️🔧🚀📊🎯🔄]?)\s*(.*)/
+    );
+
     if (match) {
       const [, timestamp, emoji, message] = match;
-      let level: 'info' | 'success' | 'warning' | 'error' = 'info';
-      
-      if (emoji === '✅' || message.toLowerCase().includes('success')) {
-        level = 'success';
-      } else if (emoji === '❌' || message.toLowerCase().includes('error') || message.toLowerCase().includes('failed')) {
-        level = 'error';
-      } else if (emoji === '⚠️' || message.toLowerCase().includes('warning')) {
-        level = 'warning';
+      let level: "info" | "success" | "warning" | "error" = "info";
+
+      if (emoji === "✅" || message.toLowerCase().includes("success")) {
+        level = "success";
+      } else if (
+        emoji === "❌" ||
+        message.toLowerCase().includes("error") ||
+        message.toLowerCase().includes("failed")
+      ) {
+        level = "error";
+      } else if (emoji === "⚠️" || message.toLowerCase().includes("warning")) {
+        level = "warning";
       }
-      
+
       return { timestamp, level, message };
     }
-    
+
     return {
-      timestamp: new Date().toTimeString().split(' ')[0],
-      level: 'info' as const,
-      message: log
+      timestamp: new Date().toTimeString().split(" ")[0],
+      level: "info" as const,
+      message: log,
     };
   });
 };
-
 
 const AI_FIXABLE_TITLES = [
   // Title issues
   "missing page title",
   "title tag too long",
   "title tag too short",
-  
+
   // Meta description issues
   "missing meta description",
   "meta description too long",
   "meta description too short",
-  
+
   // Heading issues
   "missing h1 tag",
   "multiple h1 tags",
   "improper heading hierarchy",
-  
+
   // Image issues
   "images missing alt text",
-  
+
   // Content quality issues
   "low content quality",
   "poor readability",
   "poor content readability",
   "poor content structure",
-  
+
   // Technical SEO issues (newly fixable)
   "missing viewport meta tag",
   "missing schema markup",
   "missing open graph tags",
-  
+
   // Keyword optimization issues (newly fixable)
   "poor keyword distribution",
   "keyword over-optimization",
@@ -237,20 +240,22 @@ const getKeywordDistributionColor = (distribution: string) => {
 
 //Fixables
 const getFixableIssuesOnly = (issues: any[]) => {
- return issues.filter((issue) => {
+  return issues.filter((issue) => {
     // Check if the issue title contains any of the AI-fixable patterns
     const titleLower = issue.title.toLowerCase();
-    
+
     // Direct title match
-    if (AI_FIXABLE_TITLES.some(type => titleLower.includes(type.toLowerCase()))) {
+    if (
+      AI_FIXABLE_TITLES.some((type) => titleLower.includes(type.toLowerCase()))
+    ) {
       return true;
     }
-    
+
     // Also check the autoFixAvailable flag from backend
     if (issue.autoFixAvailable === true) {
       return true;
     }
-    
+
     return false;
   });
 };
@@ -263,20 +268,25 @@ const getFixableIssuesWithStatus = (issues: any[], trackedIssues: any[]) => {
     const tracked = trackedIssues.find((t) => {
       // First try exact title match
       if (t.issueTitle === issue.title) return true;
-      
+
       // Then try issue type matching
       const mappedType = mapReportIssueToTrackingType(issue.title);
       if (t.issueType === mappedType) return true;
-      
+
       // Finally try partial title matching for common patterns
-      return t.issueTitle.toLowerCase().includes(issue.title.toLowerCase().substring(0, 20));
+      return t.issueTitle
+        .toLowerCase()
+        .includes(issue.title.toLowerCase().substring(0, 20));
     });
 
     return {
       ...issue,
       trackingStatus: tracked?.status || "detected",
       trackingInfo: tracked,
-      lastSeen: tracked?.lastSeenAt || tracked?.last_seen_at || new Date().toISOString(),
+      lastSeen:
+        tracked?.lastSeenAt ||
+        tracked?.last_seen_at ||
+        new Date().toISOString(),
       fixedAt: tracked?.fixedAt || tracked?.fixed_at,
       detectedAt: tracked?.detectedAt || tracked?.detected_at,
     };
@@ -287,13 +297,18 @@ const getFixableIssuesWithStatus = (issues: any[], trackedIssues: any[]) => {
 const mapReportIssueToTrackingType = (title: string): string => {
   const titleLower = title.toLowerCase();
 
-  if (titleLower.includes("meta description")) return "missing_meta_description";
-  if (titleLower.includes("title tag")) return "poor_title_tag"; 
-  if (titleLower.includes("h1") || titleLower.includes("heading")) return "heading_structure";
-  if (titleLower.includes("alt text") || titleLower.includes("image")) return "missing_alt_text";
+  if (titleLower.includes("meta description"))
+    return "missing_meta_description";
+  if (titleLower.includes("title tag")) return "poor_title_tag";
+  if (titleLower.includes("h1") || titleLower.includes("heading"))
+    return "heading_structure";
+  if (titleLower.includes("alt text") || titleLower.includes("image"))
+    return "missing_alt_text";
   if (titleLower.includes("viewport")) return "missing_viewport_meta";
-  if (titleLower.includes("schema") || titleLower.includes("structured data")) return "missing_schema";
-  if (titleLower.includes("mobile") || titleLower.includes("responsive")) return "mobile_responsiveness";
+  if (titleLower.includes("schema") || titleLower.includes("structured data"))
+    return "missing_schema";
+  if (titleLower.includes("mobile") || titleLower.includes("responsive"))
+    return "mobile_responsiveness";
   if (titleLower.includes("content quality")) return "low_content_quality";
   if (titleLower.includes("readability")) return "poor_readability";
   if (titleLower.includes("e-a-t")) return "low_eat_score";
@@ -307,19 +322,19 @@ export default function SEOAnalysis() {
   const [selectedWebsite, setSelectedWebsite] = useState<string>("");
   const [fixResult, setFixResult] = useState<any>(null);
   const [progressDialog, setProgressDialog] = useState({
-  open: false,
-  type: 'seo-analysis' as 'seo-analysis' | 'ai-fix',
-  title: '',
-  description: '',
-  progress: 0,
-  logs: [] as Array<{
-    timestamp: string;
-    level: 'info' | 'success' | 'warning' | 'error';
-    message: string;
-  }>,
-  status: 'idle' as 'idle' | 'running' | 'success' | 'error',
-  result: null as any
-});
+    open: false,
+    type: "seo-analysis" as "seo-analysis" | "ai-fix",
+    title: "",
+    description: "",
+    progress: 0,
+    logs: [] as Array<{
+      timestamp: string;
+      level: "info" | "success" | "warning" | "error";
+      message: string;
+    }>,
+    status: "idle" as "idle" | "running" | "success" | "error",
+    result: null as any,
+  });
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -352,496 +367,564 @@ export default function SEOAnalysis() {
   // Calculate current score
   const currentScore = latestReport?.score || 0;
 
- const runAnalysis = useMutation({
-  mutationFn: () => api.runSeoAnalysis(selectedWebsite),
-  onMutate: () => {
-    // Initialize with better starting state
-    setProgressDialog({
-      open: true,
-      type: 'seo-analysis',
-      title: 'AI-Enhanced SEO Analysis',
-      description: `Analyzing ${getWebsiteName(selectedWebsite)} with comprehensive AI insights...`,
-      progress: 5, // Start with a small value
-      logs: [{
-        timestamp: new Date().toTimeString().split(' ')[0],
-        level: 'info',
-        message: 'Starting SEO analysis...'
-      }],
-      status: 'running',
-      result: null
-    });
-    
-    // Simulate progress updates while waiting for response
-    let currentProgress = 5;
-    const progressTimer = setInterval(() => {
-      currentProgress = Math.min(currentProgress + Math.random() * 15, 90);
-      
-      setProgressDialog(prev => {
-        if (prev.status !== 'running') {
-          clearInterval(progressTimer);
-          return prev;
-        }
-        
-        // Add simulated log messages based on progress
-        const newLogs = [...prev.logs];
-        
-        if (currentProgress > 20 && !prev.logs.some(l => l.message.includes('Fetching'))) {
-          newLogs.push({
-            timestamp: new Date().toTimeString().split(' ')[0],
-            level: 'info',
-            message: 'Fetching page content...'
-          });
-        }
-        if (currentProgress > 40 && !prev.logs.some(l => l.message.includes('technical'))) {
-          newLogs.push({
-            timestamp: new Date().toTimeString().split(' ')[0],
-            level: 'info',
-            message: 'Analyzing technical SEO factors...'
-          });
-        }
-        if (currentProgress > 60 && !prev.logs.some(l => l.message.includes('AI'))) {
-          newLogs.push({
-            timestamp: new Date().toTimeString().split(' ')[0],
-            level: 'info',
-            message: 'Running AI content analysis...'
-          });
-        }
-        if (currentProgress > 80 && !prev.logs.some(l => l.message.includes('score'))) {
-          newLogs.push({
-            timestamp: new Date().toTimeString().split(' ')[0],
-            level: 'info',
-            message: 'Calculating SEO score...'
-          });
-        }
-        
-        return {
-          ...prev,
-          progress: currentProgress,
-          logs: newLogs
-        };
+  const runAnalysis = useMutation({
+    mutationFn: () => api.runSeoAnalysis(selectedWebsite),
+    onMutate: () => {
+      // Initialize with better starting state
+      setProgressDialog({
+        open: true,
+        type: "seo-analysis",
+        title: "AI-Enhanced SEO Analysis",
+        description: `Analyzing ${getWebsiteName(
+          selectedWebsite
+        )} with comprehensive AI insights...`,
+        progress: 5, // Start with a small value
+        logs: [
+          {
+            timestamp: new Date().toTimeString().split(" ")[0],
+            level: "info",
+            message: "Starting SEO analysis...",
+          },
+        ],
+        status: "running",
+        result: null,
       });
-    }, 1000);
-    
-    // Store timer reference for cleanup
-    (window as any).__seoAnalysisTimer = progressTimer;
-    
-    // Clear any existing data
-    queryClient.setQueryData(["/api/seo-reports", selectedWebsite], []);
-    queryClient.setQueryData(["/api/seo-detailed", selectedWebsite], null);
-  },
-  
-  onSuccess: (data) => {
-    // Clear the progress timer
-    if ((window as any).__seoAnalysisTimer) {
-      clearInterval((window as any).__seoAnalysisTimer);
-      delete (window as any).__seoAnalysisTimer;
-    }
-    
-    // Parse real logs if available
-    const logs = data?.detailedLog ? parseBackendLogs(data.detailedLog) : [];
-    
-    const hasValidScore = typeof data?.score === "number" && data.score >= 0;
-    
-    if (hasValidScore) {
-      setProgressDialog(prev => ({
+
+      // Simulate progress updates while waiting for response
+      let currentProgress = 5;
+      const progressTimer = setInterval(() => {
+        currentProgress = Math.min(currentProgress + Math.random() * 15, 90);
+
+        setProgressDialog((prev) => {
+          if (prev.status !== "running") {
+            clearInterval(progressTimer);
+            return prev;
+          }
+
+          // Add simulated log messages based on progress
+          const newLogs = [...prev.logs];
+
+          if (
+            currentProgress > 20 &&
+            !prev.logs.some((l) => l.message.includes("Fetching"))
+          ) {
+            newLogs.push({
+              timestamp: new Date().toTimeString().split(" ")[0],
+              level: "info",
+              message: "Fetching page content...",
+            });
+          }
+          if (
+            currentProgress > 40 &&
+            !prev.logs.some((l) => l.message.includes("technical"))
+          ) {
+            newLogs.push({
+              timestamp: new Date().toTimeString().split(" ")[0],
+              level: "info",
+              message: "Analyzing technical SEO factors...",
+            });
+          }
+          if (
+            currentProgress > 60 &&
+            !prev.logs.some((l) => l.message.includes("AI"))
+          ) {
+            newLogs.push({
+              timestamp: new Date().toTimeString().split(" ")[0],
+              level: "info",
+              message: "Running AI content analysis...",
+            });
+          }
+          if (
+            currentProgress > 80 &&
+            !prev.logs.some((l) => l.message.includes("score"))
+          ) {
+            newLogs.push({
+              timestamp: new Date().toTimeString().split(" ")[0],
+              level: "info",
+              message: "Calculating SEO score...",
+            });
+          }
+
+          return {
+            ...prev,
+            progress: currentProgress,
+            logs: newLogs,
+          };
+        });
+      }, 1000);
+
+      // Store timer reference for cleanup
+      (window as any).__seoAnalysisTimer = progressTimer;
+
+      // Clear any existing data
+      queryClient.setQueryData(["/api/seo-reports", selectedWebsite], []);
+      queryClient.setQueryData(["/api/seo-detailed", selectedWebsite], null);
+    },
+
+    onSuccess: (data) => {
+      // Clear the progress timer
+      if ((window as any).__seoAnalysisTimer) {
+        clearInterval((window as any).__seoAnalysisTimer);
+        delete (window as any).__seoAnalysisTimer;
+      }
+
+      // Parse real logs if available
+      const logs = data?.detailedLog ? parseBackendLogs(data.detailedLog) : [];
+
+      const hasValidScore = typeof data?.score === "number" && data.score >= 0;
+
+      if (hasValidScore) {
+        setProgressDialog((prev) => ({
+          ...prev,
+          progress: 100,
+          logs:
+            logs.length > 0
+              ? logs
+              : [
+                  ...prev.logs,
+                  {
+                    timestamp: new Date().toTimeString().split(" ")[0],
+                    level: "success" as const,
+                    message: `✅ Analysis complete! Score: ${data.score}/100`,
+                  },
+                ],
+          status: "success",
+          result: data,
+        }));
+
+        queryClient.invalidateQueries({
+          queryKey: ["/api/seo-reports", selectedWebsite],
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["/api/seo-detailed", selectedWebsite],
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/websites"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/activity-logs"] });
+
+        const websiteName = getWebsiteName(selectedWebsite);
+        const issueCount = data.issues?.length || 0;
+        const criticalIssues =
+          data.issues?.filter((i: any) => i.type === "critical").length || 0;
+        const scoreText =
+          data.score >= 80
+            ? "Excellent SEO!"
+            : data.score >= 60
+            ? "Good progress!"
+            : "Needs attention.";
+
+        const hasAIAnalysis = !!data.contentAnalysis;
+        const aiMessage = hasAIAnalysis
+          ? ` Content Quality: ${data.contentAnalysis.qualityScore}/100, E-A-T: ${data.contentAnalysis.eatScore.overall}/100.`
+          : "";
+
+        toast({
+          title: `${
+            hasAIAnalysis ? "AI-Enhanced" : "Technical"
+          } SEO Analysis Complete - ${data.score}/100`,
+          description: `${websiteName} analysis finished. ${scoreText} Found ${issueCount} issue(s) (${criticalIssues} critical).${aiMessage}`,
+        });
+      } else {
+        // Update progress dialog with error
+        setProgressDialog((prev) => ({
+          ...prev,
+          status: "error",
+          logs: [
+            ...prev.logs,
+            {
+              timestamp: new Date().toTimeString().split(" ")[0],
+              level: "error" as const,
+              message: "❌ Analysis incomplete or invalid data received",
+            },
+          ],
+        }));
+
+        queryClient.setQueryData(["/api/seo-reports", selectedWebsite], []);
+        queryClient.setQueryData(["/api/seo-detailed", selectedWebsite], null);
+
+        toast({
+          title: "Analysis Incomplete",
+          description:
+            "The website analysis didn't complete successfully. Please try again or check if the website is accessible.",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: any) => {
+      // Clear the progress timer
+      if ((window as any).__seoAnalysisTimer) {
+        clearInterval((window as any).__seoAnalysisTimer);
+        delete (window as any).__seoAnalysisTimer;
+      }
+
+      setProgressDialog((prev) => ({
         ...prev,
-        progress: 100,
-        logs: logs.length > 0 ? logs : [
+        status: "error",
+        logs: [
           ...prev.logs,
           {
-            timestamp: new Date().toTimeString().split(' ')[0],
-            level: 'success' as const,
-            message: `✅ Analysis complete! Score: ${data.score}/100`
-          }
+            timestamp: new Date().toTimeString().split(" ")[0],
+            level: "error" as const,
+            message: `❌ Analysis failed: ${error?.message || "Unknown error"}`,
+          },
         ],
-        status: 'success',
-        result: data
       }));
 
+      queryClient.setQueryData(["/api/seo-reports", selectedWebsite], []);
+      queryClient.setQueryData(["/api/seo-detailed", selectedWebsite], null);
+
+      let userMessage = "Unable to analyze this website. Please try again.";
+      let title = "Analysis Failed";
+
+      if (error?.message) {
+        const errorText = error.message.toLowerCase();
+        if (
+          errorText.includes("cannot access") ||
+          errorText.includes("not accessible")
+        ) {
+          title = "Website Not Accessible";
+          userMessage =
+            "Cannot reach the website. Please check if the URL is correct and the site is online.";
+        } else if (
+          errorText.includes("timeout") ||
+          errorText.includes("took too long")
+        ) {
+          title = "Website Too Slow";
+          userMessage =
+            "The website is taking too long to respond. Try again later or check if the site is working properly.";
+        } else if (errorText.includes("dns") || errorText.includes("domain")) {
+          title = "Website Not Found";
+          userMessage =
+            "Cannot find this website. Please verify the URL is correct.";
+        } else if (
+          errorText.includes("ssl") ||
+          errorText.includes("certificate")
+        ) {
+          title = "Security Certificate Issue";
+          userMessage =
+            "There's a security certificate problem with this website. Contact the site owner to fix this issue.";
+        } else if (
+          errorText.includes("blocked") ||
+          errorText.includes("forbidden")
+        ) {
+          title = "Access Blocked";
+          userMessage =
+            "This website is blocking our analysis tool. Contact the site owner to allow SEO analysis.";
+        } else if (
+          errorText.includes("ai") ||
+          errorText.includes("content analysis")
+        ) {
+          title = "AI Analysis Unavailable";
+          userMessage =
+            "Technical analysis completed, but AI-powered content analysis failed. Configure OpenAI or Anthropic API keys for enhanced analysis.";
+        }
+      }
+
+      toast({
+        title,
+        description: userMessage,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Fix with AI mutations
+  const fixWithAIMutation = useMutation({
+    mutationFn: (dryRun: boolean) => api.fixWithAI(selectedWebsite, dryRun),
+    onMutate: (dryRun) => {
+      setProgressDialog({
+        open: true,
+        type: "ai-fix",
+        title: dryRun ? "AI Fix Preview (Dry Run)" : "Applying AI Fixes",
+        description: `${
+          dryRun ? "Simulating" : "Applying"
+        } automatic SEO fixes for ${getWebsiteName(selectedWebsite)}...`,
+        progress: 5,
+        logs: [
+          {
+            timestamp: new Date().toTimeString().split(" ")[0],
+            level: "info",
+            message: `🔧 Starting AI fix process (${
+              dryRun ? "dry run" : "live"
+            } mode)...`,
+          },
+        ],
+        status: "running",
+        result: null,
+      });
+
+      // Simulate detailed progress for AI fixes
+      let currentProgress = 5;
+      const progressSteps = [
+        { at: 10, message: "🔍 Analyzing fixable issues...", level: "info" },
+        { at: 20, message: "📊 Loading tracked SEO issues...", level: "info" },
+        { at: 30, message: "🔐 Connecting to WordPress...", level: "info" },
+        {
+          at: 35,
+          message: "✅ WordPress connection verified",
+          level: "success",
+        },
+        { at: 40, message: "💾 Creating backup...", level: "info" },
+        { at: 45, message: "📄 Fetching pages and posts...", level: "info" },
+        { at: 50, message: "🤖 Applying AI fixes...", level: "info" },
+        { at: 55, message: "🏷️ Updating meta descriptions...", level: "info" },
+        { at: 60, message: "📝 Optimizing title tags...", level: "info" },
+        { at: 65, message: "🖼️ Adding alt text to images...", level: "info" },
+        { at: 70, message: "📑 Fixing heading structure...", level: "info" },
+        { at: 75, message: "🔗 Improving internal linking...", level: "info" },
+        { at: 80, message: "✨ Enhancing content quality...", level: "info" },
+        {
+          at: 85,
+          message: "🎯 Optimizing keyword distribution...",
+          level: "info",
+        },
+        { at: 90, message: "💾 Saving changes to WordPress...", level: "info" },
+        {
+          at: 95,
+          message: "📊 Updating issue tracking status...",
+          level: "info",
+        },
+      ];
+
+      let stepIndex = 0;
+      const progressTimer = setInterval(() => {
+        // Increment progress
+        currentProgress = Math.min(currentProgress + Math.random() * 8 + 2, 95);
+
+        setProgressDialog((prev) => {
+          if (prev.status !== "running") {
+            clearInterval(progressTimer);
+            return prev;
+          }
+
+          const newLogs = [...prev.logs];
+
+          // Add step messages as we reach them
+          while (
+            stepIndex < progressSteps.length &&
+            currentProgress >= progressSteps[stepIndex].at
+          ) {
+            const step = progressSteps[stepIndex];
+            newLogs.push({
+              timestamp: new Date().toTimeString().split(" ")[0],
+              level: step.level as "info" | "success" | "warning" | "error",
+              message: step.message,
+            });
+            stepIndex++;
+          }
+
+          // Add some random detail messages for realism
+          if (
+            Math.random() > 0.7 &&
+            currentProgress > 50 &&
+            currentProgress < 90
+          ) {
+            const detailMessages = [
+              "• Found missing meta description",
+              "• Title tag too long - optimizing...",
+              "• Processing image without alt text",
+              "• Detected multiple H1 tags",
+              "• Improving content readability",
+              "• Adding semantic keywords",
+              "• Restructuring content hierarchy",
+            ];
+            const randomMessage =
+              detailMessages[Math.floor(Math.random() * detailMessages.length)];
+            if (!prev.logs.some((l) => l.message === randomMessage)) {
+              newLogs.push({
+                timestamp: new Date().toTimeString().split(" ")[0],
+                level: "info",
+                message: randomMessage,
+              });
+            }
+          }
+
+          return {
+            ...prev,
+            progress: currentProgress,
+            logs: newLogs,
+          };
+        });
+      }, 700); // Update every 700ms for smooth progress
+
+      // Store timer reference for cleanup
+      (window as any).__aiFixTimer = progressTimer;
+    },
+
+    onSuccess: (data: any) => {
+      // Clear the progress timer
+      if ((window as any).__aiFixTimer) {
+        clearInterval((window as any).__aiFixTimer);
+        delete (window as any).__aiFixTimer;
+      }
+
+      // Parse real logs from backend if available
+      const realLogs = data?.detailedLog
+        ? parseBackendLogs(data.detailedLog)
+        : [];
+
+      // If we have real logs, use them; otherwise keep simulated ones
+      const finalLogs =
+        realLogs.length > 0
+          ? realLogs
+          : (() => {
+              const logs = [...progressDialog.logs];
+
+              // Add summary of what was done
+              if (data?.stats) {
+                const { fixesSuccessful, fixesFailed, detailedBreakdown } =
+                  data.stats;
+
+                if (detailedBreakdown) {
+                  if (detailedBreakdown.altTextFixed > 0) {
+                    logs.push({
+                      timestamp: new Date().toTimeString().split(" ")[0],
+                      level: "success" as const,
+                      message: `✅ Fixed ${detailedBreakdown.altTextFixed} images with missing alt text`,
+                    });
+                  }
+                  if (detailedBreakdown.metaDescriptionsUpdated > 0) {
+                    logs.push({
+                      timestamp: new Date().toTimeString().split(" ")[0],
+                      level: "success" as const,
+                      message: `✅ Updated ${detailedBreakdown.metaDescriptionsUpdated} meta descriptions`,
+                    });
+                  }
+                  if (detailedBreakdown.titleTagsImproved > 0) {
+                    logs.push({
+                      timestamp: new Date().toTimeString().split(" ")[0],
+                      level: "success" as const,
+                      message: `✅ Improved ${detailedBreakdown.titleTagsImproved} title tags`,
+                    });
+                  }
+                  if (detailedBreakdown.headingStructureFixed > 0) {
+                    logs.push({
+                      timestamp: new Date().toTimeString().split(" ")[0],
+                      level: "success" as const,
+                      message: `✅ Fixed heading structure issues`,
+                    });
+                  }
+                }
+
+                logs.push({
+                  timestamp: new Date().toTimeString().split(" ")[0],
+                  level: "success" as const,
+                  message: `🎉 Successfully applied ${fixesSuccessful} fixes!`,
+                });
+
+                if (fixesFailed > 0) {
+                  logs.push({
+                    timestamp: new Date().toTimeString().split(" ")[0],
+                    level: "warning" as const,
+                    message: `⚠️ ${fixesFailed} fixes could not be applied`,
+                  });
+                }
+              }
+
+              return logs;
+            })();
+
+      // Update progress dialog with success
+      setProgressDialog((prev) => ({
+        ...prev,
+        progress: 100,
+        logs: finalLogs,
+        status: "success",
+        result: data,
+      }));
+
+      // Save full payload for detailed view
+      setFixResult(data);
+
+      // Invalidate queries to refresh data
       queryClient.invalidateQueries({
         queryKey: ["/api/seo-reports", selectedWebsite],
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/seo-detailed", selectedWebsite],
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/websites"] });
       queryClient.invalidateQueries({ queryKey: ["/api/activity-logs"] });
 
-      const websiteName = getWebsiteName(selectedWebsite);
-      const issueCount = data.issues?.length || 0;
-      const criticalIssues =
-        data.issues?.filter((i: any) => i.type === "critical").length || 0;
-      const scoreText =
-        data.score >= 80
-          ? "Excellent SEO!"
-          : data.score >= 60
-          ? "Good progress!"
-          : "Needs attention.";
-
-      const hasAIAnalysis = !!data.contentAnalysis;
-      const aiMessage = hasAIAnalysis
-        ? ` Content Quality: ${data.contentAnalysis.qualityScore}/100, E-A-T: ${data.contentAnalysis.eatScore.overall}/100.`
-        : "";
+      // Show toast notification
+      const isDry = !!data?.dryRun;
+      const successCount = data?.stats?.fixesSuccessful || 0;
 
       toast({
-        title: `${
-          hasAIAnalysis ? "AI-Enhanced" : "Technical"
-        } SEO Analysis Complete - ${data.score}/100`,
-        description: `${websiteName} analysis finished. ${scoreText} Found ${issueCount} issue(s) (${criticalIssues} critical).${aiMessage}`,
+        title: isDry ? "Dry Run Complete" : "AI Fixes Applied",
+        description: isDry
+          ? `Preview complete. ${successCount} fixes ready to apply.`
+          : `Successfully applied ${successCount} SEO improvements.`,
       });
-    } else {
-      // Update progress dialog with error
-      setProgressDialog(prev => ({
+    },
+
+    onError: (error: any) => {
+      // Clear the progress timer
+      if ((window as any).__aiFixTimer) {
+        clearInterval((window as any).__aiFixTimer);
+        delete (window as any).__aiFixTimer;
+      }
+
+      // Check if error contains logs
+      const errorLogs = error?.detailedLog
+        ? parseBackendLogs(error.detailedLog)
+        : [];
+
+      setProgressDialog((prev) => ({
         ...prev,
-        status: 'error',
-        logs: [...prev.logs, {
-          timestamp: new Date().toTimeString().split(' ')[0],
-          level: 'error' as const,
-          message: '❌ Analysis incomplete or invalid data received'
-        }]
+        status: "error",
+        logs:
+          errorLogs.length > 0
+            ? errorLogs
+            : [
+                ...prev.logs,
+                {
+                  timestamp: new Date().toTimeString().split(" ")[0],
+                  level: "error" as const,
+                  message: `❌ Fix failed: ${
+                    error?.message || "Unknown error"
+                  }`,
+                },
+              ],
       }));
 
-      queryClient.setQueryData(["/api/seo-reports", selectedWebsite], []);
-      queryClient.setQueryData(["/api/seo-detailed", selectedWebsite], null);
-
       toast({
-        title: "Analysis Incomplete",
-        description:
-          "The website analysis didn't complete successfully. Please try again or check if the website is accessible.",
+        title: "AI Fix Failed",
+        description: error?.message || "Could not apply AI fixes.",
         variant: "destructive",
       });
-    }
-  },
-   onError: (error: any) => {
-    // Clear the progress timer
-    if ((window as any).__seoAnalysisTimer) {
-      clearInterval((window as any).__seoAnalysisTimer);
-      delete (window as any).__seoAnalysisTimer;
-    }
-    
-    setProgressDialog(prev => ({
-      ...prev,
-      status: 'error',
-      logs: [...prev.logs, {
-        timestamp: new Date().toTimeString().split(' ')[0],
-        level: 'error' as const,
-        message: `❌ Analysis failed: ${error?.message || 'Unknown error'}`
-      }]
-    }));
+    },
+  });
 
-    queryClient.setQueryData(["/api/seo-reports", selectedWebsite], []);
-    queryClient.setQueryData(["/api/seo-detailed", selectedWebsite], null);
-
-    let userMessage = "Unable to analyze this website. Please try again.";
-    let title = "Analysis Failed";
-
-    if (error?.message) {
-      const errorText = error.message.toLowerCase();
-      if (
-        errorText.includes("cannot access") ||
-        errorText.includes("not accessible")
-      ) {
-        title = "Website Not Accessible";
-        userMessage =
-          "Cannot reach the website. Please check if the URL is correct and the site is online.";
-      } else if (
-        errorText.includes("timeout") ||
-        errorText.includes("took too long")
-      ) {
-        title = "Website Too Slow";
-        userMessage =
-          "The website is taking too long to respond. Try again later or check if the site is working properly.";
-      } else if (errorText.includes("dns") || errorText.includes("domain")) {
-        title = "Website Not Found";
-        userMessage =
-          "Cannot find this website. Please verify the URL is correct.";
-      } else if (
-        errorText.includes("ssl") ||
-        errorText.includes("certificate")
-      ) {
-        title = "Security Certificate Issue";
-        userMessage =
-          "There's a security certificate problem with this website. Contact the site owner to fix this issue.";
-      } else if (
-        errorText.includes("blocked") ||
-        errorText.includes("forbidden")
-      ) {
-        title = "Access Blocked";
-        userMessage =
-          "This website is blocking our analysis tool. Contact the site owner to allow SEO analysis.";
-      } else if (
-        errorText.includes("ai") ||
-        errorText.includes("content analysis")
-      ) {
-        title = "AI Analysis Unavailable";
-        userMessage =
-          "Technical analysis completed, but AI-powered content analysis failed. Configure OpenAI or Anthropic API keys for enhanced analysis.";
-      }
-    }
-
-    toast({
-      title,
-      description: userMessage,
-      variant: "destructive",
-    });
-  },
-});
-
-
-
-  // Fix with AI mutations
- const fixWithAIMutation = useMutation({
-  mutationFn: (dryRun: boolean) => api.fixWithAI(selectedWebsite, dryRun),
-  onMutate: (dryRun) => {
-    setProgressDialog({
-      open: true,
-      type: 'ai-fix',
-      title: dryRun ? 'AI Fix Preview (Dry Run)' : 'Applying AI Fixes',
-      description: `${dryRun ? 'Simulating' : 'Applying'} automatic SEO fixes for ${getWebsiteName(selectedWebsite)}...`,
-      progress: 5,
-      logs: [{
-        timestamp: new Date().toTimeString().split(' ')[0],
-        level: 'info',
-        message: `🔧 Starting AI fix process (${dryRun ? 'dry run' : 'live'} mode)...`
-      }],
-      status: 'running',
-      result: null
-    });
-    
-    // Simulate detailed progress for AI fixes
-    let currentProgress = 5;
-    const progressSteps = [
-      { at: 10, message: '🔍 Analyzing fixable issues...', level: 'info' },
-      { at: 20, message: '📊 Loading tracked SEO issues...', level: 'info' },
-      { at: 30, message: '🔐 Connecting to WordPress...', level: 'info' },
-      { at: 35, message: '✅ WordPress connection verified', level: 'success' },
-      { at: 40, message: '💾 Creating backup...', level: 'info' },
-      { at: 45, message: '📄 Fetching pages and posts...', level: 'info' },
-      { at: 50, message: '🤖 Applying AI fixes...', level: 'info' },
-      { at: 55, message: '🏷️ Updating meta descriptions...', level: 'info' },
-      { at: 60, message: '📝 Optimizing title tags...', level: 'info' },
-      { at: 65, message: '🖼️ Adding alt text to images...', level: 'info' },
-      { at: 70, message: '📑 Fixing heading structure...', level: 'info' },
-      { at: 75, message: '🔗 Improving internal linking...', level: 'info' },
-      { at: 80, message: '✨ Enhancing content quality...', level: 'info' },
-      { at: 85, message: '🎯 Optimizing keyword distribution...', level: 'info' },
-      { at: 90, message: '💾 Saving changes to WordPress...', level: 'info' },
-      { at: 95, message: '📊 Updating issue tracking status...', level: 'info' }
-    ];
-    
-    let stepIndex = 0;
-    const progressTimer = setInterval(() => {
-      // Increment progress
-      currentProgress = Math.min(currentProgress + Math.random() * 8 + 2, 95);
-      
-      setProgressDialog(prev => {
-        if (prev.status !== 'running') {
-          clearInterval(progressTimer);
-          return prev;
-        }
-        
-        const newLogs = [...prev.logs];
-        
-        // Add step messages as we reach them
-        while (stepIndex < progressSteps.length && currentProgress >= progressSteps[stepIndex].at) {
-          const step = progressSteps[stepIndex];
-          newLogs.push({
-            timestamp: new Date().toTimeString().split(' ')[0],
-            level: step.level as 'info' | 'success' | 'warning' | 'error',
-            message: step.message
-          });
-          stepIndex++;
-        }
-        
-        // Add some random detail messages for realism
-        if (Math.random() > 0.7 && currentProgress > 50 && currentProgress < 90) {
-          const detailMessages = [
-            '• Found missing meta description',
-            '• Title tag too long - optimizing...',
-            '• Processing image without alt text',
-            '• Detected multiple H1 tags',
-            '• Improving content readability',
-            '• Adding semantic keywords',
-            '• Restructuring content hierarchy'
-          ];
-          const randomMessage = detailMessages[Math.floor(Math.random() * detailMessages.length)];
-          if (!prev.logs.some(l => l.message === randomMessage)) {
-            newLogs.push({
-              timestamp: new Date().toTimeString().split(' ')[0],
-              level: 'info',
-              message: randomMessage
-            });
-          }
-        }
-        
-        return {
-          ...prev,
-          progress: currentProgress,
-          logs: newLogs
-        };
+  const clearHistoryMutation = useMutation({
+    mutationFn: () => api.clearSeoHistory(selectedWebsite),
+    onSuccess: () => {
+      // Clear the cached data
+      queryClient.setQueryData(["/api/seo-reports", selectedWebsite], []);
+      queryClient.invalidateQueries({
+        queryKey: ["/api/seo-reports", selectedWebsite],
       });
-    }, 700); // Update every 700ms for smooth progress
-    
-    // Store timer reference for cleanup
-    (window as any).__aiFixTimer = progressTimer;
-  },
-  
-  onSuccess: (data: any) => {
-    // Clear the progress timer
-    if ((window as any).__aiFixTimer) {
-      clearInterval((window as any).__aiFixTimer);
-      delete (window as any).__aiFixTimer;
-    }
-    
-    // Parse real logs from backend if available
-    const realLogs = data?.detailedLog ? parseBackendLogs(data.detailedLog) : [];
-    
-    // If we have real logs, use them; otherwise keep simulated ones
-    const finalLogs = realLogs.length > 0 ? realLogs : (() => {
-      const logs = [...progressDialog.logs];
-      
-      // Add summary of what was done
-      if (data?.stats) {
-        const { fixesSuccessful, fixesFailed, detailedBreakdown } = data.stats;
-        
-        if (detailedBreakdown) {
-          if (detailedBreakdown.altTextFixed > 0) {
-            logs.push({
-              timestamp: new Date().toTimeString().split(' ')[0],
-              level: 'success' as const,
-              message: `✅ Fixed ${detailedBreakdown.altTextFixed} images with missing alt text`
-            });
-          }
-          if (detailedBreakdown.metaDescriptionsUpdated > 0) {
-            logs.push({
-              timestamp: new Date().toTimeString().split(' ')[0],
-              level: 'success' as const,
-              message: `✅ Updated ${detailedBreakdown.metaDescriptionsUpdated} meta descriptions`
-            });
-          }
-          if (detailedBreakdown.titleTagsImproved > 0) {
-            logs.push({
-              timestamp: new Date().toTimeString().split(' ')[0],
-              level: 'success' as const,
-              message: `✅ Improved ${detailedBreakdown.titleTagsImproved} title tags`
-            });
-          }
-          if (detailedBreakdown.headingStructureFixed > 0) {
-            logs.push({
-              timestamp: new Date().toTimeString().split(' ')[0],
-              level: 'success' as const,
-              message: `✅ Fixed heading structure issues`
-            });
-          }
-        }
-        
-        logs.push({
-          timestamp: new Date().toTimeString().split(' ')[0],
-          level: 'success' as const,
-          message: `🎉 Successfully applied ${fixesSuccessful} fixes!`
-        });
-        
-        if (fixesFailed > 0) {
-          logs.push({
-            timestamp: new Date().toTimeString().split(' ')[0],
-            level: 'warning' as const,
-            message: `⚠️ ${fixesFailed} fixes could not be applied`
-          });
-        }
-      }
-      
-      return logs;
-    })();
-    
-    // Update progress dialog with success
-    setProgressDialog(prev => ({
-      ...prev,
-      progress: 100,
-      logs: finalLogs,
-      status: 'success',
-      result: data
-    }));
-    
-    // Save full payload for detailed view
-    setFixResult(data);
-    
-    // Invalidate queries to refresh data
-    queryClient.invalidateQueries({
-      queryKey: ["/api/seo-reports", selectedWebsite],
-    });
-    queryClient.invalidateQueries({
-      queryKey: ["/api/seo-detailed", selectedWebsite],
-    });
-    queryClient.invalidateQueries({ queryKey: ["/api/activity-logs"] });
-    
-    // Show toast notification
-    const isDry = !!data?.dryRun;
-    const successCount = data?.stats?.fixesSuccessful || 0;
-    
-    toast({
-      title: isDry ? "Dry Run Complete" : "AI Fixes Applied",
-      description: isDry 
-        ? `Preview complete. ${successCount} fixes ready to apply.`
-        : `Successfully applied ${successCount} SEO improvements.`,
-    });
-  },
-  
-  onError: (error: any) => {
-    // Clear the progress timer
-    if ((window as any).__aiFixTimer) {
-      clearInterval((window as any).__aiFixTimer);
-      delete (window as any).__aiFixTimer;
-    }
-    
-    // Check if error contains logs
-    const errorLogs = error?.detailedLog ? parseBackendLogs(error.detailedLog) : [];
-    
-    setProgressDialog(prev => ({
-      ...prev,
-      status: 'error',
-      logs: errorLogs.length > 0 ? errorLogs : [...prev.logs, {
-        timestamp: new Date().toTimeString().split(' ')[0],
-        level: 'error' as const,
-        message: `❌ Fix failed: ${error?.message || 'Unknown error'}`
-      }]
-    }));
-    
-    toast({
-      title: "AI Fix Failed",
-      description: error?.message || "Could not apply AI fixes.",
-      variant: "destructive",
-    });
-  },
-});
+      queryClient.invalidateQueries({
+        queryKey: ["/api/seo-detailed", selectedWebsite],
+      });
 
+      toast({
+        title: "History Cleared",
+        description: `Successfully cleared all SEO analysis history for ${getWebsiteName(
+          selectedWebsite
+        )}.`,
+      });
 
-const clearHistoryMutation = useMutation({
-  mutationFn: () => api.clearSeoHistory(selectedWebsite),
-  onSuccess: () => {
-    // Clear the cached data
-    queryClient.setQueryData(["/api/seo-reports", selectedWebsite], []);
-    queryClient.invalidateQueries({
-      queryKey: ["/api/seo-reports", selectedWebsite],
-    });
-    queryClient.invalidateQueries({
-      queryKey: ["/api/seo-detailed", selectedWebsite],
-    });
-    
-    toast({
-      title: "History Cleared",
-      description: `Successfully cleared all SEO analysis history for ${getWebsiteName(selectedWebsite)}.`,
-    });
-    
-    setShowClearHistoryDialog(false);
-  },
-  onError: (error: any) => {
-    toast({
-      title: "Failed to Clear History",
-      description: error?.message || "Unable to clear analysis history. Please try again.",
-      variant: "destructive",
-    });
-  },
-});
+      setShowClearHistoryDialog(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to Clear History",
+        description:
+          error?.message ||
+          "Unable to clear analysis history. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
   // Helper functions
   const getWebsiteName = (websiteId: string) => {
     const website = websites?.find((w) => w.id === websiteId);
@@ -868,8 +951,6 @@ const clearHistoryMutation = useMutation({
             </p>
           </div>
           <div className="mt-4 flex md:mt-0 md:ml-4 gap-2">
-            
-
             {/* Fix with AI */}
             <Button
               onClick={() => fixWithAIMutation.mutate(false)}
@@ -1304,372 +1385,438 @@ const clearHistoryMutation = useMutation({
                   <TabsTrigger value="history">History</TabsTrigger>
                 </TabsList>
 
-               <TabsContent value="issues">
-  <Card>
-    <CardHeader>
-      <CardTitle className="flex items-center justify-between">
-        <div className="flex items-center">
-          <Wrench className="w-5 h-5 mr-2 text-purple-600" />
-          SEO Issues & AI Fixes
-        </div>
-        {/* Issue Summary Badges */}
-        <div className="flex items-center space-x-2">
-          {(() => {
-            const allIssues = latestReport?.issues || [];
-            const fixableIssues = getFixableIssuesWithStatus(
-              allIssues,
-              detailedAnalysis?.trackedIssues || []
-            );
-            const detectedCount = fixableIssues.filter((i) =>
-              ["detected", "reappeared"].includes(i.trackingStatus)
-            ).length;
-            const fixedCount = fixableIssues.filter((i) =>
-              ["fixed", "resolved"].includes(i.trackingStatus)
-            ).length;
-            const fixingCount = fixableIssues.filter(
-              (i) => i.trackingStatus === "fixing"
-            ).length;
-
-            return (
-              <>
-                {detectedCount > 0 && (
-                  <Badge variant="destructive" className="text-xs">
-                    {detectedCount} Fixable
-                  </Badge>
-                )}
-                {fixingCount > 0 && (
-                  <Badge variant="default" className="text-xs animate-pulse">
-                    <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
-                    {fixingCount} Fixing
-                  </Badge>
-                )}
-                {fixedCount > 0 && (
-                  <Badge
-                    variant="secondary"
-                    className="text-xs bg-green-100 text-green-800"
-                  >
-                    <CheckCircle className="w-3 h-3 mr-1" />
-                    {fixedCount} Fixed
-                  </Badge>
-                )}
-              </>
-            );
-          })()}
-        </div>
-      </CardTitle>
-      <CardDescription>
-        Track SEO issues and their fix status. AI can automatically resolve technical issues.
-      </CardDescription>
-    </CardHeader>
-    <CardContent>
-      {/* Inner Tabs for issue categories */}
-      <Tabs defaultValue="fixable" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="fixable">AI Fixable</TabsTrigger>
-          <TabsTrigger value="manual">Manual</TabsTrigger>
-          <TabsTrigger value="resolved">Resolved</TabsTrigger>
-        </TabsList>
-
-        {/* AI Fixable Issues Tab */}
-        <TabsContent value="fixable" className="space-y-4 mt-6">
-          {(() => {
-            const allIssues = latestReport?.issues || [];
-            const fixableIssues = getFixableIssuesWithStatus(
-              allIssues,
-              detailedAnalysis?.trackedIssues || []
-            );
-            
-            // Filter out already fixed/resolved issues
-            const activeFixableIssues = fixableIssues.filter((i) =>
-              !["fixed", "resolved"].includes(i.trackingStatus)
-            );
-
-            if (activeFixableIssues.length === 0) {
-              return (
-                <div className="text-center py-8">
-                  <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">
-                    No Active AI-Fixable Issues
-                  </h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    All automatically fixable SEO issues have been resolved!
-                  </p>
-                </div>
-              );
-            }
-
-            return activeFixableIssues.map((issue, index) => {
-              const statusConfig = getIssueStatusBadge(issue.trackingStatus);
-
-              return (
-                <div
-                  key={index}
-                  className={`p-4 rounded-lg border ${getIssueColor(
-                    issue.type
-                  )} relative`}
-                >
-                  {/* Status indicator */}
-                  <div className="absolute top-2 right-2">
-                    <Badge
-                      variant={statusConfig.variant}
-                      className="text-xs"
-                    >
-                      <span className="mr-1">{statusConfig.icon}</span>
-                      {statusConfig.text}
-                    </Badge>
-                  </div>
-
-                  <div className="flex items-start justify-between pr-20">
-                    <div className="flex items-start space-x-3">
-                      {getIssueIcon(issue.type)}
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <h4 className="font-medium">{issue.title}</h4>
-                          <Badge
-                            variant="outline"
-                            className="text-xs bg-green-50 text-green-700 border-green-200"
-                          >
-                            <Zap className="w-3 h-3 mr-1" />
-                            AI Fixable
-                          </Badge>
-                          {/* Show what type of fix is available */}
+                <TabsContent value="issues">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <Wrench className="w-5 h-5 mr-2 text-purple-600" />
+                          SEO Issues & AI Fixes
+                        </div>
+                        {/* Issue Summary Badges */}
+                        <div className="flex items-center space-x-2">
                           {(() => {
-                            const titleLower = issue.title.toLowerCase();
-                            if (titleLower.includes("keyword")) {
-                              return (
-                                <Badge variant="secondary" className="text-xs">
-                                  Keyword Optimization
-                                </Badge>
-                              );
-                            }
-                            if (titleLower.includes("content structure")) {
-                              return (
-                                <Badge variant="secondary" className="text-xs">
-                                  Content Restructuring
-                                </Badge>
-                              );
-                            }
-                            if (titleLower.includes("schema") || titleLower.includes("viewport") || titleLower.includes("open graph")) {
-                              return (
-                                <Badge variant="secondary" className="text-xs">
-                                  Technical SEO
-                                </Badge>
-                              );
-                            }
-                            return null;
+                            const allIssues = latestReport?.issues || [];
+                            const fixableIssues = getFixableIssuesWithStatus(
+                              allIssues,
+                              detailedAnalysis?.trackedIssues || []
+                            );
+                            const detectedCount = fixableIssues.filter((i) =>
+                              ["detected", "reappeared"].includes(
+                                i.trackingStatus
+                              )
+                            ).length;
+                            const fixedCount = fixableIssues.filter((i) =>
+                              ["fixed", "resolved"].includes(i.trackingStatus)
+                            ).length;
+                            const fixingCount = fixableIssues.filter(
+                              (i) => i.trackingStatus === "fixing"
+                            ).length;
+
+                            return (
+                              <>
+                                {detectedCount > 0 && (
+                                  <Badge
+                                    variant="destructive"
+                                    className="text-xs"
+                                  >
+                                    {detectedCount} Fixable
+                                  </Badge>
+                                )}
+                                {fixingCount > 0 && (
+                                  <Badge
+                                    variant="default"
+                                    className="text-xs animate-pulse"
+                                  >
+                                    <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                                    {fixingCount} Fixing
+                                  </Badge>
+                                )}
+                                {fixedCount > 0 && (
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs bg-green-100 text-green-800"
+                                  >
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    {fixedCount} Fixed
+                                  </Badge>
+                                )}
+                              </>
+                            );
                           })()}
                         </div>
-                        <p className="text-sm mt-1 opacity-90">
-                          {issue.description}
-                        </p>
+                      </CardTitle>
+                      <CardDescription>
+                        Track SEO issues and their fix status. AI can
+                        automatically resolve technical issues.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {/* Inner Tabs for issue categories */}
+                      <Tabs defaultValue="fixable" className="w-full">
+                        <TabsList className="grid w-full grid-cols-3">
+                          <TabsTrigger value="fixable">AI Fixable</TabsTrigger>
+                          <TabsTrigger value="manual">Manual</TabsTrigger>
+                          <TabsTrigger value="resolved">Resolved</TabsTrigger>
+                        </TabsList>
 
-                        {/* Tracking Details */}
-                        <div className="flex items-center space-x-4 mt-3">
-                          <Badge variant="outline" className="text-xs">
-                            {issue.type.toUpperCase()}
-                          </Badge>
-                          <span className="text-xs opacity-75">
-                            {issue.affectedPages} page(s) affected
-                          </span>
-                          {issue.lastSeen && (
-                            <span className="text-xs text-gray-500">
-                              Last seen: {formatTimeAgo(issue.lastSeen)}
-                            </span>
-                          )}
-                          {issue.trackingStatus === "reappeared" && (
-                            <Badge variant="destructive" className="text-xs">
-                              <AlertTriangle className="w-3 h-3 mr-1" />
-                              Issue returned after fix
-                            </Badge>
-                          )}
-                        </div>
+                        {/* AI Fixable Issues Tab */}
+                        <TabsContent value="fixable" className="space-y-4 mt-6">
+                          {(() => {
+                            const allIssues = latestReport?.issues || [];
+                            const fixableIssues = getFixableIssuesWithStatus(
+                              allIssues,
+                              detailedAnalysis?.trackedIssues || []
+                            );
 
-                        {/* Fix History */}
-                        {issue.trackingInfo?.metadata?.fixHistory && (
-                          <details className="mt-3">
-                            <summary className="text-xs cursor-pointer text-blue-600 hover:text-blue-800">
-                              View Fix History
-                            </summary>
-                            <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
-                              <pre className="whitespace-pre-wrap">
-                                {JSON.stringify(
-                                  issue.trackingInfo.metadata.fixHistory,
-                                  null,
-                                  2
-                                )}
-                              </pre>
-                            </div>
-                          </details>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                            // Filter out already fixed/resolved issues
+                            const activeFixableIssues = fixableIssues.filter(
+                              (i) =>
+                                !["fixed", "resolved"].includes(
+                                  i.trackingStatus
+                                )
+                            );
 
-                  {/* Progress indicator for fixing status */}
-                  {issue.trackingStatus === "fixing" && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div className="flex items-center space-x-2">
-                        <RefreshCw className="w-4 h-4 text-blue-500 animate-spin" />
-                        <div className="flex-1">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span>Applying AI fix...</span>
-                            <span>In progress</span>
-                          </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-blue-500 h-2 rounded-full animate-pulse"
-                              style={{ width: "60%" }}
-                            ></div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            });
-          })()}
-        </TabsContent>
+                            if (activeFixableIssues.length === 0) {
+                              return (
+                                <div className="text-center py-8">
+                                  <CheckCircle className="mx-auto h-12 w-12 text-green-500" />
+                                  <h3 className="mt-2 text-sm font-medium text-gray-900">
+                                    No Active AI-Fixable Issues
+                                  </h3>
+                                  <p className="mt-1 text-sm text-gray-500">
+                                    All automatically fixable SEO issues have
+                                    been resolved!
+                                  </p>
+                                </div>
+                              );
+                            }
 
-        {/* Manual Issues Tab */}
-        <TabsContent value="manual" className="space-y-4 mt-6">
-          {(() => {
-            const allIssues = latestReport?.issues || [];
-            
-            // Get truly manual issues by excluding AI-fixable ones
-            const manualIssues = allIssues.filter((issue) => {
-              const titleLower = issue.title.toLowerCase();
-              
-              // Check against AI-fixable titles
-              const isAIFixable = AI_FIXABLE_TITLES.some((type) =>
-                titleLower.includes(type.toLowerCase())
-              );
-              
-              // Also check the backend flag
-              if (issue.autoFixAvailable === true) {
-                return false; // It's AI-fixable, not manual
-              }
-              
-              return !isAIFixable; // Only return true if NOT AI-fixable
-            });
+                            return activeFixableIssues.map((issue, index) => {
+                              const statusConfig = getIssueStatusBadge(
+                                issue.trackingStatus
+                              );
 
-            if (manualIssues.length === 0) {
-              return (
-                <div className="text-center py-8">
-                  <CheckCircle className="mx-auto h-12 w-12 text-blue-500" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">
-                    No Manual Issues Found
-                  </h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    All detected issues can be automatically fixed by AI.
-                  </p>
-                </div>
-              );
-            }
+                              return (
+                                <div
+                                  key={index}
+                                  className={`p-4 rounded-lg border ${getIssueColor(
+                                    issue.type
+                                  )} relative`}
+                                >
+                                  {/* Status indicator */}
+                                  <div className="absolute top-2 right-2">
+                                    <Badge
+                                      variant={statusConfig.variant}
+                                      className="text-xs"
+                                    >
+                                      <span className="mr-1">
+                                        {statusConfig.icon}
+                                      </span>
+                                      {statusConfig.text}
+                                    </Badge>
+                                  </div>
 
-            return manualIssues.map((issue, index) => (
-              <div
-                key={index}
-                className={`p-4 rounded-lg border ${getIssueColor(
-                  issue.type
-                )}`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start space-x-3">
-                    {getIssueIcon(issue.type)}
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <h4 className="font-medium">{issue.title}</h4>
-                        <Badge
-                          variant="outline"
-                          className="text-xs bg-orange-50 text-orange-700 border-orange-200"
+                                  <div className="flex items-start justify-between pr-20">
+                                    <div className="flex items-start space-x-3">
+                                      {getIssueIcon(issue.type)}
+                                      <div className="flex-1">
+                                        <div className="flex items-center space-x-2 mb-1">
+                                          <h4 className="font-medium">
+                                            {issue.title}
+                                          </h4>
+                                          <Badge
+                                            variant="outline"
+                                            className="text-xs bg-green-50 text-green-700 border-green-200"
+                                          >
+                                            <Zap className="w-3 h-3 mr-1" />
+                                            AI Fixable
+                                          </Badge>
+                                          {/* Show what type of fix is available */}
+                                          {(() => {
+                                            const titleLower =
+                                              issue.title.toLowerCase();
+                                            if (
+                                              titleLower.includes("keyword")
+                                            ) {
+                                              return (
+                                                <Badge
+                                                  variant="secondary"
+                                                  className="text-xs"
+                                                >
+                                                  Keyword Optimization
+                                                </Badge>
+                                              );
+                                            }
+                                            if (
+                                              titleLower.includes(
+                                                "content structure"
+                                              )
+                                            ) {
+                                              return (
+                                                <Badge
+                                                  variant="secondary"
+                                                  className="text-xs"
+                                                >
+                                                  Content Restructuring
+                                                </Badge>
+                                              );
+                                            }
+                                            if (
+                                              titleLower.includes("schema") ||
+                                              titleLower.includes("viewport") ||
+                                              titleLower.includes("open graph")
+                                            ) {
+                                              return (
+                                                <Badge
+                                                  variant="secondary"
+                                                  className="text-xs"
+                                                >
+                                                  Technical SEO
+                                                </Badge>
+                                              );
+                                            }
+                                            return null;
+                                          })()}
+                                        </div>
+                                        <p className="text-sm mt-1 opacity-90">
+                                          {issue.description}
+                                        </p>
+
+                                        {/* Tracking Details */}
+                                        <div className="flex items-center space-x-4 mt-3">
+                                          <Badge
+                                            variant="outline"
+                                            className="text-xs"
+                                          >
+                                            {issue.type.toUpperCase()}
+                                          </Badge>
+                                          <span className="text-xs opacity-75">
+                                            {issue.affectedPages} page(s)
+                                            affected
+                                          </span>
+                                          {issue.lastSeen && (
+                                            <span className="text-xs text-gray-500">
+                                              Last seen:{" "}
+                                              {formatTimeAgo(issue.lastSeen)}
+                                            </span>
+                                          )}
+                                          {issue.trackingStatus ===
+                                            "reappeared" && (
+                                            <Badge
+                                              variant="destructive"
+                                              className="text-xs"
+                                            >
+                                              <AlertTriangle className="w-3 h-3 mr-1" />
+                                              Issue returned after fix
+                                            </Badge>
+                                          )}
+                                        </div>
+
+                                        {/* Fix History */}
+                                        {issue.trackingInfo?.metadata
+                                          ?.fixHistory && (
+                                          <details className="mt-3">
+                                            <summary className="text-xs cursor-pointer text-blue-600 hover:text-blue-800">
+                                              View Fix History
+                                            </summary>
+                                            <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
+                                              <pre className="whitespace-pre-wrap">
+                                                {JSON.stringify(
+                                                  issue.trackingInfo.metadata
+                                                    .fixHistory,
+                                                  null,
+                                                  2
+                                                )}
+                                              </pre>
+                                            </div>
+                                          </details>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Progress indicator for fixing status */}
+                                  {issue.trackingStatus === "fixing" && (
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                      <div className="flex items-center space-x-2">
+                                        <RefreshCw className="w-4 h-4 text-blue-500 animate-spin" />
+                                        <div className="flex-1">
+                                          <div className="flex justify-between text-xs mb-1">
+                                            <span>Applying AI fix...</span>
+                                            <span>In progress</span>
+                                          </div>
+                                          <div className="w-full bg-gray-200 rounded-full h-2">
+                                            <div
+                                              className="bg-blue-500 h-2 rounded-full animate-pulse"
+                                              style={{ width: "60%" }}
+                                            ></div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            });
+                          })()}
+                        </TabsContent>
+
+                        {/* Manual Issues Tab */}
+                        <TabsContent value="manual" className="space-y-4 mt-6">
+                          {(() => {
+                            const allIssues = latestReport?.issues || [];
+
+                            // Get truly manual issues by excluding AI-fixable ones
+                            const manualIssues = allIssues.filter((issue) => {
+                              const titleLower = issue.title.toLowerCase();
+
+                              // Check against AI-fixable titles
+                              const isAIFixable = AI_FIXABLE_TITLES.some(
+                                (type) =>
+                                  titleLower.includes(type.toLowerCase())
+                              );
+
+                              // Also check the backend flag
+                              if (issue.autoFixAvailable === true) {
+                                return false; // It's AI-fixable, not manual
+                              }
+
+                              return !isAIFixable; // Only return true if NOT AI-fixable
+                            });
+
+                            if (manualIssues.length === 0) {
+                              return (
+                                <div className="text-center py-8">
+                                  <CheckCircle className="mx-auto h-12 w-12 text-blue-500" />
+                                  <h3 className="mt-2 text-sm font-medium text-gray-900">
+                                    No Manual Issues Found
+                                  </h3>
+                                  <p className="mt-1 text-sm text-gray-500">
+                                    All detected issues can be automatically
+                                    fixed by AI.
+                                  </p>
+                                </div>
+                              );
+                            }
+
+                            return manualIssues.map((issue, index) => (
+                              <div
+                                key={index}
+                                className={`p-4 rounded-lg border ${getIssueColor(
+                                  issue.type
+                                )}`}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-start space-x-3">
+                                    {getIssueIcon(issue.type)}
+                                    <div className="flex-1">
+                                      <div className="flex items-center space-x-2 mb-1">
+                                        <h4 className="font-medium">
+                                          {issue.title}
+                                        </h4>
+                                        <Badge
+                                          variant="outline"
+                                          className="text-xs bg-orange-50 text-orange-700 border-orange-200"
+                                        >
+                                          <Settings className="w-3 h-3 mr-1" />
+                                          Manual Fix Required
+                                        </Badge>
+                                      </div>
+                                      <p className="text-sm mt-1 opacity-90">
+                                        {issue.description}
+                                      </p>
+                                      <div className="flex items-center space-x-4 mt-2">
+                                        <Badge
+                                          variant="outline"
+                                          className="text-xs"
+                                        >
+                                          {issue.type.toUpperCase()}
+                                        </Badge>
+                                        <span className="text-xs opacity-75">
+                                          {issue.affectedPages} page(s) affected
+                                        </span>
+                                        <span className="text-xs text-orange-600 font-medium">
+                                          🔧 Manual fix needed
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ));
+                          })()}
+                        </TabsContent>
+
+                        {/* Resolved Issues Tab */}
+                        <TabsContent
+                          value="resolved"
+                          className="space-y-4 mt-6"
                         >
-                          <Settings className="w-3 h-3 mr-1" />
-                          Manual Fix Required
-                        </Badge>
-                      </div>
-                      <p className="text-sm mt-1 opacity-90">
-                        {issue.description}
-                      </p>
-                      <div className="flex items-center space-x-4 mt-2">
-                        <Badge variant="outline" className="text-xs">
-                          {issue.type.toUpperCase()}
-                        </Badge>
-                        <span className="text-xs opacity-75">
-                          {issue.affectedPages} page(s) affected
-                        </span>
-                        <span className="text-xs text-orange-600 font-medium">
-                          🔧 Manual fix needed
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ));
-          })()}
-        </TabsContent>
+                          {(() => {
+                            const allIssues = latestReport?.issues || [];
+                            const fixableIssues = getFixableIssuesWithStatus(
+                              allIssues,
+                              detailedAnalysis?.trackedIssues || []
+                            );
+                            const resolvedIssues = fixableIssues.filter((i) =>
+                              ["fixed", "resolved"].includes(i.trackingStatus)
+                            );
 
-        {/* Resolved Issues Tab */}
-        <TabsContent value="resolved" className="space-y-4 mt-6">
-          {(() => {
-            const allIssues = latestReport?.issues || [];
-            const fixableIssues = getFixableIssuesWithStatus(
-              allIssues,
-              detailedAnalysis?.trackedIssues || []
-            );
-            const resolvedIssues = fixableIssues.filter((i) =>
-              ["fixed", "resolved"].includes(i.trackingStatus)
-            );
+                            if (resolvedIssues.length === 0) {
+                              return (
+                                <div className="text-center py-8">
+                                  <Clock className="mx-auto h-12 w-12 text-gray-400" />
+                                  <h3 className="mt-2 text-sm font-medium text-gray-900">
+                                    No Resolved Issues Yet
+                                  </h3>
+                                  <p className="mt-1 text-sm text-gray-500">
+                                    Issues that have been fixed will appear
+                                    here.
+                                  </p>
+                                </div>
+                              );
+                            }
 
-            if (resolvedIssues.length === 0) {
-              return (
-                <div className="text-center py-8">
-                  <Clock className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">
-                    No Resolved Issues Yet
-                  </h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Issues that have been fixed will appear here.
-                  </p>
-                </div>
-              );
-            }
+                            return resolvedIssues.map((issue, index) => {
+                              const statusConfig = getIssueStatusBadge(
+                                issue.trackingStatus
+                              );
 
-            return resolvedIssues.map((issue, index) => {
-              const statusConfig = getIssueStatusBadge(issue.trackingStatus);
-
-              return (
-                <div
-                  key={index}
-                  className="p-4 rounded-lg border border-green-200 bg-green-50"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-3">
-                      <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <h4 className="font-medium text-green-900">
-                            {issue.title}
-                          </h4>
-                          <Badge
-                            variant={statusConfig.variant}
-                            className="text-xs"
-                          >
-                            <span className="mr-1">{statusConfig.icon}</span>
-                            {statusConfig.text}
-                          </Badge>
-                        </div>
-                        <p className="text-sm mt-1 text-green-800 opacity-90">
-                          {issue.description}
-                        </p>
-                        <div className="flex items-center space-x-4 mt-2">
-                          {issue.fixedAt && (
-                            <span className="text-xs text-green-600">
-                              Fixed: {formatTimeAgo(issue.fixedAt)}
-                            </span>
-                          )}
-                          {/* {issue.trackingInfo?.fix_method && (
+                              return (
+                                <div
+                                  key={index}
+                                  className="p-4 rounded-lg border border-green-200 bg-green-50"
+                                >
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex items-start space-x-3">
+                                      <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                                      <div className="flex-1">
+                                        <div className="flex items-center space-x-2 mb-1">
+                                          <h4 className="font-medium text-green-900">
+                                            {issue.title}
+                                          </h4>
+                                          <Badge
+                                            variant={statusConfig.variant}
+                                            className="text-xs"
+                                          >
+                                            <span className="mr-1">
+                                              {statusConfig.icon}
+                                            </span>
+                                            {statusConfig.text}
+                                          </Badge>
+                                        </div>
+                                        <p className="text-sm mt-1 text-green-800 opacity-90">
+                                          {issue.description}
+                                        </p>
+                                        <div className="flex items-center space-x-4 mt-2">
+                                          {issue.fixedAt && (
+                                            <span className="text-xs text-green-600">
+                                              Fixed:{" "}
+                                              {formatTimeAgo(issue.fixedAt)}
+                                            </span>
+                                          )}
+                                          {/* {issue.trackingInfo?.fix_method && (
                             <Badge
                               variant="outline"
                               className="text-xs bg-green-100 text-green-800"
@@ -1679,158 +1826,169 @@ const clearHistoryMutation = useMutation({
                                 : "👤 Manual"}
                             </Badge>
                           )} */}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </TabsContent>
+                      </Tabs>
+
+                      {/* Action Section */}
+                      <div className="mt-6 pt-4 border-t border-gray-200">
+                        <div className="flex justify-between items-center">
+                          <div className="text-sm text-gray-600">
+                            Issues are automatically tracked and updated when
+                            fixes are applied or when new analysis detects
+                            changes.
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            });
-          })()}
-        </TabsContent>
-      </Tabs>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
 
-      {/* Action Section */}
-      <div className="mt-6 pt-4 border-t border-gray-200">
-        <div className="flex justify-between items-center">
-          <div className="text-sm text-gray-600">
-            Issues are automatically tracked and updated when fixes are applied
-            or when new analysis detects changes.
-          </div>
-        
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-</TabsContent>
-
-               <TabsContent value="history">
-  <Card>
-    <CardHeader>
-      <div className="flex items-center justify-between">
-        <div>
-          <CardTitle>Analysis History</CardTitle>
-          <CardDescription>
-            Previous SEO analysis results for{" "}
-            {getWebsiteName(selectedWebsite)}
-          </CardDescription>
-        </div>
-        {seoReports && seoReports.length > 0 && (
-          <AlertDialog open={showClearHistoryDialog} onOpenChange={setShowClearHistoryDialog}>
-            <AlertDialogTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="sm"
-                className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Clear History
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Clear Analysis History?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will permanently delete all SEO analysis history for{" "}
-                  <span className="font-medium">{getWebsiteName(selectedWebsite)}</span>.
-                  This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => clearHistoryMutation.mutate()}
-                  disabled={clearHistoryMutation.isPending}
-                  className="bg-red-600 hover:bg-red-700 text-white"
-                >
-                  {clearHistoryMutation.isPending ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      Clearing...
-                    </>
-                  ) : (
-                    <>
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Clear History
-                    </>
-                  )}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
-      </div>
-    </CardHeader>
-    <CardContent>
-      {isLoading ? (
-        <div className="text-center py-8">
-          <div className="text-gray-500">
-            Loading analysis history...
-          </div>
-        </div>
-      ) : seoReports && seoReports.length > 0 ? (
-        <div className="space-y-3">
-          {seoReports.map((report) => (
-            <div
-              key={report.id}
-              className="flex items-center justify-between p-3 border rounded-lg"
-            >
-              <div className="flex items-center space-x-4">
-                <div
-                  className={`text-2xl font-bold ${getScoreColor(
-                    report.score
-                  )}`}
-                >
-                  {report.score}
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">
-                    SEO Score: {report.score}/100
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    {formatTimeAgo(report.createdAt)}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                {report.metadata?.aiAnalysisPerformed && (
-                  <Badge variant="default" className="text-xs">
-                    <Brain className="w-3 h-3 mr-1" />
-                    AI-Enhanced
-                  </Badge>
-                )}
-                {report.pageSpeedScore && (
-                  <Badge variant="outline">
-                    Speed: {report.pageSpeedScore}
-                  </Badge>
-                )}
-                <Badge variant="outline">
-                  Issues:{" "}
-                  {(report.issues as any[])?.length || 0}
-                </Badge>
-              </div>
-            </div>
-          ))}
-          <div className="text-xs text-gray-500 mt-4 pt-4 border-t">
-            {seoReports.length} analysis record{seoReports.length !== 1 ? 's' : ''} • 
-            Oldest: {formatTimeAgo(seoReports[seoReports.length - 1].createdAt)}
-          </div>
-        </div>
-      ) : (
-        <div className="text-center py-8">
-          <Search className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">
-            No analysis history
-          </h3>
-          <p className="mt-1 text-sm text-gray-500">
-            Run your first AI-enhanced SEO analysis to see
-            results here.
-          </p>
-        </div>
-      )}
-    </CardContent>
-  </Card>
-</TabsContent>
+                <TabsContent value="history">
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle>Analysis History</CardTitle>
+                          <CardDescription>
+                            Previous SEO analysis results for{" "}
+                            {getWebsiteName(selectedWebsite)}
+                          </CardDescription>
+                        </div>
+                        {seoReports && seoReports.length > 0 && (
+                          <AlertDialog
+                            open={showClearHistoryDialog}
+                            onOpenChange={setShowClearHistoryDialog}
+                          >
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Clear History
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  Clear Analysis History?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently delete all SEO analysis
+                                  history for{" "}
+                                  <span className="font-medium">
+                                    {getWebsiteName(selectedWebsite)}
+                                  </span>
+                                  . This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => clearHistoryMutation.mutate()}
+                                  disabled={clearHistoryMutation.isPending}
+                                  className="bg-red-600 hover:bg-red-700 text-white"
+                                >
+                                  {clearHistoryMutation.isPending ? (
+                                    <>
+                                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                      Clearing...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      Clear History
+                                    </>
+                                  )}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      {isLoading ? (
+                        <div className="text-center py-8">
+                          <div className="text-gray-500">
+                            Loading analysis history...
+                          </div>
+                        </div>
+                      ) : seoReports && seoReports.length > 0 ? (
+                        <div className="space-y-3">
+                          {seoReports.map((report) => (
+                            <div
+                              key={report.id}
+                              className="flex items-center justify-between p-3 border rounded-lg"
+                            >
+                              <div className="flex items-center space-x-4">
+                                <div
+                                  className={`text-2xl font-bold ${getScoreColor(
+                                    report.score
+                                  )}`}
+                                >
+                                  {report.score}
+                                </div>
+                                <div>
+                                  <p className="font-medium text-gray-900">
+                                    SEO Score: {report.score}/100
+                                  </p>
+                                  <p className="text-sm text-gray-500">
+                                    {formatTimeAgo(report.createdAt)}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                {report.metadata?.aiAnalysisPerformed && (
+                                  <Badge variant="default" className="text-xs">
+                                    <Brain className="w-3 h-3 mr-1" />
+                                    AI-Enhanced
+                                  </Badge>
+                                )}
+                                {report.pageSpeedScore && (
+                                  <Badge variant="outline">
+                                    Speed: {report.pageSpeedScore}
+                                  </Badge>
+                                )}
+                                <Badge variant="outline">
+                                  Issues:{" "}
+                                  {(report.issues as any[])?.length || 0}
+                                </Badge>
+                              </div>
+                            </div>
+                          ))}
+                          <div className="text-xs text-gray-500 mt-4 pt-4 border-t">
+                            {seoReports.length} analysis record
+                            {seoReports.length !== 1 ? "s" : ""} • Oldest:{" "}
+                            {formatTimeAgo(
+                              seoReports[seoReports.length - 1].createdAt
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-8">
+                          <Search className="mx-auto h-12 w-12 text-gray-400" />
+                          <h3 className="mt-2 text-sm font-medium text-gray-900">
+                            No analysis history
+                          </h3>
+                          <p className="mt-1 text-sm text-gray-500">
+                            Run your first AI-enhanced SEO analysis to see
+                            results here.
+                          </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
               </Tabs>
             </div>
           )}
@@ -1926,17 +2084,19 @@ const clearHistoryMutation = useMutation({
           </Card>
         )}
 
-         <ProgressDialog
-        open={progressDialog.open}
-        onClose={() => setProgressDialog(prev => ({ ...prev, open: false }))}
-        title={progressDialog.title}
-        description={progressDialog.description}
-        progress={progressDialog.progress}
-        logs={progressDialog.logs}
-        status={progressDialog.status}
-        result={progressDialog.result}
-        type={progressDialog.type}
-      />
+        <ProgressDialog
+          open={progressDialog.open}
+          onClose={() =>
+            setProgressDialog((prev) => ({ ...prev, open: false }))
+          }
+          title={progressDialog.title}
+          description={progressDialog.description}
+          progress={progressDialog.progress}
+          logs={progressDialog.logs}
+          status={progressDialog.status}
+          result={progressDialog.result}
+          type={progressDialog.type}
+        />
       </div>
     </div>
   );

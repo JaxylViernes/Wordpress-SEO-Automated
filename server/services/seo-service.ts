@@ -1763,291 +1763,333 @@ Return ONLY valid JSON with the exact structure specified.`;
     return issues;
   }
 
-  private analyzeTechnicalIssues(issues: SEOIssue[], technical: TechnicalSEODetails): void {
-    // Existing title tag checks
-    if (!technical.metaTags.hasTitle) {
-      issues.push(this.createIssue(
-        "critical",
-        "Missing Page Title",
-        "The page is missing a title tag, which is crucial for SEO and user experience.",
-        true
-      ));
-    } else {
-      if (technical.metaTags.titleLength > SEO_CONSTANTS.LIMITS.TITLE_MAX) {
-        issues.push(this.createIssue(
-          "warning",
-          "Title Tag Too Long",
-          `Title tag is ${technical.metaTags.titleLength} characters. Keep it under ${SEO_CONSTANTS.LIMITS.TITLE_MAX} characters.`,
-          true
-        ));
-      }
-      if (technical.metaTags.titleLength < SEO_CONSTANTS.LIMITS.TITLE_MIN) {
-        issues.push(this.createIssue(
-          "warning",
-          "Title Tag Too Short",
-          `Title tag is only ${technical.metaTags.titleLength} characters. Consider expanding for better SEO.`,
-          true
-        ));
-      }
-    }
 
-    // Existing meta description checks
-    if (!technical.metaTags.hasDescription) {
-      issues.push(this.createIssue(
-        "critical",
-        "Missing Meta Description",
-        "The page lacks a meta description, which impacts search result click-through rates.",
-        true
-      ));
-    } else {
-      if (technical.metaTags.descriptionLength > SEO_CONSTANTS.LIMITS.DESCRIPTION_MAX) {
-        issues.push(this.createIssue(
-          "warning",
-          "Meta Description Too Long",
-          `Meta description is ${technical.metaTags.descriptionLength} characters. Keep it under ${SEO_CONSTANTS.LIMITS.DESCRIPTION_MAX}.`,
-          true
-        ));
-      }
-      if (technical.metaTags.descriptionLength < SEO_CONSTANTS.LIMITS.DESCRIPTION_MIN) {
-        issues.push(this.createIssue(
-          "warning",
-          "Meta Description Too Short",
-          `Meta description is ${technical.metaTags.descriptionLength} characters. Expand to at least ${SEO_CONSTANTS.LIMITS.DESCRIPTION_MIN}.`,
-          true
-        ));
-      }
-    }
 
-    // Heading checks
-    if (technical.headings.h1Count === 0) {
-      issues.push(this.createIssue(
-        "critical",
-        "Missing H1 Tag",
-        "The page doesn't have an H1 tag, which should contain the main topic/keyword.",
-        true
-      ));
-    } else if (technical.headings.h1Count > 1) {
+  private async analyzeSiteWideIssues(url: string, issues: SEOIssue[]): Promise<void> {
+  const domain = new URL(url).origin;
+  
+  // ==============================================
+  // XML SITEMAP CHECK
+  // ==============================================
+  try {
+    const sitemapResponse = await axios.head(`${domain}/sitemap.xml`, {
+      timeout: 5000,
+      maxRedirects: 2,
+      validateStatus: (status) => status < 500, // Accept 404 as valid response
+    });
+    
+    if (sitemapResponse.status === 404) {
       issues.push(this.createIssue(
         "warning",
-        "Multiple H1 Tags",
-        `Found ${technical.headings.h1Count} H1 tags. Use only one H1 per page.`,
-        true
+        "missing xml sitemap",
+        "No XML sitemap found at /sitemap.xml. Create one to help search engines index your site.",
+        false // Requires server/plugin configuration
       ));
     }
-
-    if (!technical.headings.hasProperHierarchy) {
+  } catch (error: any) {
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      // Network error, skip sitemap check
+      console.log('Could not check sitemap due to network error');
+    } else if (error.response?.status === 404) {
       issues.push(this.createIssue(
         "warning",
-        "Improper Heading Hierarchy",
-        "Heading tags are not in proper hierarchical order.",
-        true
-      ));
-    }
-
-    // Image issues
-    if (technical.images.withoutAlt > 0) {
-      issues.push(this.createIssue(
-        "warning",
-        "Images Missing Alt Text",
-        `${technical.images.withoutAlt} out of ${technical.images.total} images are missing alt text.`,
-        true
-      ));
-    }
-
-    // Check for missing image dimensions and lazy loading
-    if (technical.images.withoutDimensions && technical.images.withoutDimensions > 0) {
-      issues.push(this.createIssue(
-        "warning",
-        "Images Missing Dimensions",
-        `${technical.images.withoutDimensions} images lack width/height attributes, causing layout shift.`,
-        true
-      ));
-    }
-
-    if (technical.images.withoutLazyLoading && technical.images.withoutLazyLoading > 0) {
-      issues.push(this.createIssue(
-        "info",
-        "Images Missing Lazy Loading",
-        `${technical.images.withoutLazyLoading} images could benefit from lazy loading.`,
-        true
-      ));
-    }
-
-    // Mobile and viewport
-    if (!technical.mobile.viewportMeta) {
-      issues.push(this.createIssue(
-        "critical",
-        "Missing Viewport Meta Tag",
-        "The page lacks a viewport meta tag, affecting mobile responsiveness.",
-        true
-      ));
-    }
-
-    if (!technical.mobile.responsive) {
-      issues.push(this.createIssue(
-        "warning",
-        "Not Mobile Responsive",
-        "The page may not be optimized for mobile devices.",
+        "missing xml sitemap",
+        "No XML sitemap found. Create one to help search engines discover your pages.",
         false
       ));
     }
-
-    // Schema and structured data
-    if (!technical.schema?.hasStructuredData) {
-      issues.push(this.createIssue(
-        "warning",
-        "Missing Schema Markup",
-        "No structured data found. Schema markup helps search engines understand your content.",
-        true
-      ));
-    }
-
-    // Check for specific schema types
-    if (!technical.schema?.hasFAQSchema && technical.schema?.hasFAQContent) {
-      issues.push(this.createIssue(
-        "info",
-        "Missing FAQ Schema",
-        "FAQ content detected but no FAQ schema markup found.",
-        true
-      ));
-    }
-
-    if (!technical.schema?.hasBreadcrumbs) {
+  }
+  
+  // ==============================================
+  // ROBOTS.TXT CHECK
+  // ==============================================
+  try {
+    const robotsResponse = await axios.get(`${domain}/robots.txt`, {
+      timeout: 5000,
+      maxRedirects: 2,
+      validateStatus: (status) => status < 500,
+    });
+    
+    const robotsContent = robotsResponse.data;
+    if (!robotsContent || typeof robotsContent !== 'string' || robotsContent.length < 10) {
       issues.push(this.createIssue(
         "info",
-        "Missing Breadcrumbs",
-        "No breadcrumb navigation found. Breadcrumbs improve user experience and SEO.",
-        true
+        "robots txt issues",
+        "Robots.txt file is missing or empty. Configure it to control crawler access.",
+        false // Requires server access
       ));
     }
-
-    // Social meta tags
-    if (!technical.metaTags.hasOgTags) {
+  } catch (error: any) {
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      // Network error, skip robots.txt check
+      console.log('Could not check robots.txt due to network error');
+    } else if (error.response?.status === 404) {
       issues.push(this.createIssue(
         "info",
-        "Missing Open Graph Tags",
-        "Open Graph tags improve how your content appears when shared on social media.",
-        true
+        "robots txt issues", 
+        "No robots.txt file found. Create one to guide search engine crawlers.",
+        false
       ));
     }
-
-    if (!technical.metaTags.hasTwitterCards) {
-      issues.push(this.createIssue(
-        "info",
-        "Missing Twitter Cards",
-        "Twitter Card tags optimize how your content appears on Twitter.",
-        true
-      ));
-    }
-
-    // Canonical URL check
-    if (!technical.metaTags.hasCanonical) {
-      issues.push(this.createIssue(
-        "warning",
-        "Missing Canonical URL",
-        "No canonical URL specified. This can lead to duplicate content issues.",
-        true
-      ));
-    }
-
-    // Links analysis
-    if (technical.links.internal < 3) {
+  }
+}
+ private analyzeTechnicalIssues(issues: SEOIssue[], technical: TechnicalSEODetails): void {
+  // ==============================================
+  // TITLE TAG CHECKS
+  // ==============================================
+  if (!technical.metaTags.hasTitle) {
+    issues.push(this.createIssue(
+      "critical",
+      "missing page title",
+      "The page is missing a title tag, which is crucial for SEO and user experience.",
+      true
+    ));
+  } else {
+    if (technical.metaTags.titleLength > SEO_CONSTANTS.LIMITS.TITLE_MAX) {
       issues.push(this.createIssue(
         "warning",
-        "Poor Internal Linking",
-        `Only ${technical.links.internal} internal links found. Add more to improve site structure.`,
+        "title tag too long",
+        `Title tag is ${technical.metaTags.titleLength} characters. Keep it under ${SEO_CONSTANTS.LIMITS.TITLE_MAX} characters.`,
         true
       ));
     }
-
-    if (technical.links.broken > 0) {
+    if (technical.metaTags.titleLength < SEO_CONSTANTS.LIMITS.TITLE_OPTIMAL_MIN) {
       issues.push(this.createIssue(
         "warning",
-        "Broken Internal Links",
-        `${technical.links.broken} broken internal links detected.`,
-        true
-      ));
-    }
-
-    if (technical.links.externalWithoutAttributes && technical.links.externalWithoutAttributes > 0) {
-      issues.push(this.createIssue(
-        "info",
-        "External Links Missing Attributes",
-        `${technical.links.externalWithoutAttributes} external links lack security attributes.`,
-        true
-      ));
-    }
-
-    // Check for orphan pages indicator
-    if (technical.links.inboundLinks === 0) {
-      issues.push(this.createIssue(
-        "warning",
-        "Orphan Page",
-        "This page has no internal links pointing to it.",
+        "title tag too short",
+        `Title tag is only ${technical.metaTags.titleLength} characters. Consider expanding for better SEO.`,
         true
       ));
     }
   }
 
-  private async analyzeSiteWideIssues(
-    url: string,
-    issues: SEOIssue[]
-  ): Promise<void> {
-    const domain = new URL(url).origin;
-    
-    // Check for XML sitemap
-    try {
-      const sitemapResponse = await axios.head(`${domain}/sitemap.xml`, {
-        timeout: 5000,
-        maxRedirects: 2,
-      });
-      
-      if (sitemapResponse.status === 404) {
-        issues.push(this.createIssue(
-          "warning",
-          "Missing XML Sitemap",
-          "No XML sitemap found at /sitemap.xml. This helps search engines discover your pages.",
-          true
-        ));
-      }
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        issues.push(this.createIssue(
-          "warning",
-          "Missing XML Sitemap",
-          "No XML sitemap found. Create one to help search engines index your site.",
-          true
-        ));
-      }
+  // ==============================================
+  // META DESCRIPTION CHECKS
+  // ==============================================
+  if (!technical.metaTags.hasDescription) {
+    issues.push(this.createIssue(
+      "critical",
+      "missing meta description",
+      "The page lacks a meta description, which impacts search result click-through rates.",
+      true
+    ));
+  } else {
+    if (technical.metaTags.descriptionLength > SEO_CONSTANTS.LIMITS.DESCRIPTION_MAX) {
+      issues.push(this.createIssue(
+        "warning",
+        "meta description too long",
+        `Meta description is ${technical.metaTags.descriptionLength} characters. Keep it under ${SEO_CONSTANTS.LIMITS.DESCRIPTION_MAX}.`,
+        true
+      ));
     }
-    
-    // Check for robots.txt
-    try {
-      const robotsResponse = await axios.get(`${domain}/robots.txt`, {
-        timeout: 5000,
-        maxRedirects: 2,
-      });
-      
-      const robotsContent = robotsResponse.data;
-      if (!robotsContent || robotsContent.length < 10) {
-        issues.push(this.createIssue(
-          "info",
-          "Robots.txt Issues",
-          "Robots.txt file is missing or empty. Configure it to control crawler access.",
-          true
-        ));
-      }
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        issues.push(this.createIssue(
-          "info",
-          "Robots.txt Issues", 
-          "No robots.txt file found. Create one to guide search engine crawlers.",
-          true
-        ));
-      }
+    if (technical.metaTags.descriptionLength < SEO_CONSTANTS.LIMITS.DESCRIPTION_MIN) {
+      issues.push(this.createIssue(
+        "warning",
+        "meta description too short",
+        `Meta description is ${technical.metaTags.descriptionLength} characters. Expand to at least ${SEO_CONSTANTS.LIMITS.DESCRIPTION_MIN}.`,
+        true
+      ));
     }
   }
+
+  // ==============================================
+  // HEADING CHECKS
+  // ==============================================
+  if (technical.headings.h1Count === 0) {
+    issues.push(this.createIssue(
+      "critical",
+      "missing h1 tag",
+      "The page doesn't have an H1 tag, which should contain the main topic/keyword.",
+      true
+    ));
+  } else if (technical.headings.h1Count > 1) {
+    issues.push(this.createIssue(
+      "warning",
+      "multiple h1 tags",
+      `Found ${technical.headings.h1Count} H1 tags. Use only one H1 per page.`,
+      true
+    ));
+  }
+
+  if (!technical.headings.hasProperHierarchy) {
+    issues.push(this.createIssue(
+      "warning",
+      "improper heading hierarchy",
+      "Heading tags are not in proper hierarchical order.",
+      true
+    ));
+  }
+
+  // ==============================================
+  // IMAGE ISSUES
+  // ==============================================
+  if (technical.images.withoutAlt > 0) {
+    issues.push(this.createIssue(
+      "warning",
+      "images missing alt text",
+      `${technical.images.withoutAlt} out of ${technical.images.total} images are missing alt text.`,
+      true
+    ));
+  }
+
+  if (technical.images.withoutDimensions && technical.images.withoutDimensions > 0) {
+    issues.push(this.createIssue(
+      "warning",
+      "missing image dimensions",
+      `${technical.images.withoutDimensions} images lack width/height attributes, causing layout shift.`,
+      true
+    ));
+  }
+
+  if (technical.images.withoutLazyLoading && technical.images.withoutLazyLoading > 0) {
+    issues.push(this.createIssue(
+      "info",
+      "images missing lazy loading",
+      `${technical.images.withoutLazyLoading} images could benefit from lazy loading.`,
+      true
+    ));
+  }
+
+  // Unoptimized images (large file size)
+  if (technical.performance.pageSize && 
+      technical.performance.pageSize > SEO_CONSTANTS.LIMITS.PAGE_SIZE_WARNING &&
+      technical.images.total > 0) {
+    issues.push(this.createIssue(
+      "info",
+      "unoptimized images",
+      `Page size is ${Math.round(technical.performance.pageSize / 1024)}KB. Optimize images and assets.`,
+      true
+    ));
+  }
+
+  // ==============================================
+  // MOBILE AND VIEWPORT
+  // ==============================================
+  if (!technical.mobile.viewportMeta) {
+    issues.push(this.createIssue(
+      "critical",
+      "missing viewport meta tag",
+      "The page lacks a viewport meta tag, affecting mobile responsiveness.",
+      true
+    ));
+  }
+
+  if (!technical.mobile.responsive) {
+    issues.push(this.createIssue(
+      "warning",
+      "not mobile responsive",
+      "The page may not be optimized for mobile devices.",
+      false // Requires CSS/template changes
+    ));
+  }
+
+  // ==============================================
+  // SCHEMA AND STRUCTURED DATA
+  // ==============================================
+  if (!technical.schema?.hasStructuredData) {
+    issues.push(this.createIssue(
+      "warning",
+      "missing schema markup",
+      "No structured data found. Schema markup helps search engines understand your content.",
+      true
+    ));
+  }
+
+  if (!technical.schema?.hasFAQSchema && technical.schema?.hasFAQContent) {
+    issues.push(this.createIssue(
+      "info",
+      "missing faq schema",
+      "FAQ content detected but no FAQ schema markup found.",
+      true
+    ));
+  }
+
+  if (!technical.schema?.hasBreadcrumbs) {
+    issues.push(this.createIssue(
+      "info",
+      "missing breadcrumbs",
+      "No breadcrumb navigation found. Breadcrumbs improve user experience and SEO.",
+      true
+    ));
+  }
+
+  // ==============================================
+  // SOCIAL META TAGS
+  // ==============================================
+  if (!technical.metaTags.hasOgTags) {
+    issues.push(this.createIssue(
+      "info",
+      "missing open graph tags",
+      "Open Graph tags improve how your content appears when shared on social media.",
+      true
+    ));
+  }
+
+  if (!technical.metaTags.hasTwitterCards) {
+    issues.push(this.createIssue(
+      "info",
+      "missing twitter cards",
+      "Twitter Card tags optimize how your content appears on Twitter.",
+      true
+    ));
+  }
+
+  // ==============================================
+  // CANONICAL URL
+  // ==============================================
+  if (!technical.metaTags.hasCanonical) {
+    issues.push(this.createIssue(
+      "warning",
+      "missing canonical url",
+      "No canonical URL specified. This can lead to duplicate content issues.",
+      true
+    ));
+  }
+
+  
+
+  // ==============================================
+  // INTERNAL LINKING
+  // ==============================================
+  if (technical.links.internal < 3) {
+    issues.push(this.createIssue(
+      "warning",
+      "poor internal linking",
+      `Only ${technical.links.internal} internal links found. Add more to improve site structure.`,
+      true
+    ));
+  }
+
+  if (technical.links.broken > 0) {
+    issues.push(this.createIssue(
+      "warning",
+      "broken internal links",
+      `${technical.links.broken} broken internal links detected.`,
+      true
+    ));
+  }
+
+  if (technical.links.inboundLinks === 0) {
+    issues.push(this.createIssue(
+      "warning",
+      "orphan pages",
+      "This page has no internal links pointing to it.",
+      true
+    ));
+  }
+
+  // ==============================================
+  // EXTERNAL LINKS
+  // ==============================================
+  if (technical.links.externalWithoutAttributes && technical.links.externalWithoutAttributes > 0) {
+    issues.push(this.createIssue(
+      "info",
+      "external links missing attributes",
+      `${technical.links.externalWithoutAttributes} external links lack security attributes (noopener/noreferrer).`,
+      true
+    ));
+  }
+}
 
   private createIssue(
     type: "critical" | "warning" | "info",
